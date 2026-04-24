@@ -149,12 +149,17 @@ const refs: Record<string, WikiRef> = {
   // drop / raw-text fallback for unresolved references.
 }
 
+// Only the fixture populates `infobox.image` — see wikiInfoboxSchema.image
+// JSDoc (issue #160). The LLM pipeline never emits it; a multi-modal
+// phase will later. The SVG below is a simplified redraw of Vaswani
+// et al. Figure 1 (no copyright exposure), shipped at
+// wiki/public/images/transformer-architecture.svg.
 const infobox: WikiInfobox = {
   image: {
-    url: '/images/transformer-architecture.png',
-    alt: 'Encoder-decoder architecture from the original Transformer paper',
+    url: '/images/transformer-architecture.svg',
+    alt: 'Encoder-decoder architecture diagram, simplified from the Transformer paper',
   },
-  caption: 'Figure 1 from Vaswani et al. — the canonical encoder-decoder diagram.',
+  caption: 'Encoder-decoder architecture — redrawn from Vaswani et al. (2017).',
   rows: [
     { label: 'Status', value: 'complete', valueKind: 'status' },
     { label: 'Paper', value: 'Attention Is All You Need', valueKind: 'text' },

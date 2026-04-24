@@ -53,6 +53,29 @@ export const wikiInfoboxRowSchema = z.object({
 })
 
 export const wikiInfoboxSchema = z.object({
+  /**
+   * STUB / NO-OP at the pipeline level (issue #160).
+   *
+   * The field is declared here and the client renderer (WikiInfobox)
+   * handles it when present, BUT:
+   *
+   * - No wiki-type prompt in `packages/shared/src/prompts/specs/wiki-types/*.yaml`
+   *   instructs the LLM to emit an image URL.
+   * - `core/src/lib/regen.ts` and `core/src/lib/wikiSidecar.ts` never
+   *   populate it.
+   * - Fragment ingestion (MCP `log_entry` / `log_fragment`, HTTP entry
+   *   routes) is text-only; there is no upload path for images.
+   *
+   * The only live consumer is the hand-written Transformer demo fixture
+   * at `packages/shared/src/fixtures/wikiSidecarFixture.ts`, which uses
+   * it to exercise the image branch of the renderer.
+   *
+   * Kept on the schema deliberately: multi-modal LLMs make image
+   * emission tractable as a future phase (either via user uploads or
+   * via LLM-emitted external URLs). Removing the field now would
+   * require a schema + stored-metadata migration when that phase
+   * ships. See issue #160 for the policy decision.
+   */
   image: z.object({ url: z.string(), alt: z.string() }).optional(),
   caption: z.string().optional(),
   rows: z.array(wikiInfoboxRowSchema),

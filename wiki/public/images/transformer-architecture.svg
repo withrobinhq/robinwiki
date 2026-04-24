@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 440" role="img" aria-labelledby="t">
+  <title id="t">Transformer encoder-decoder architecture (redrawn from Vaswani et al. 2017)</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <g fill="none" stroke="currentColor" stroke-width="1.5"
+     font-family="ui-sans-serif, system-ui, -apple-system, sans-serif" font-size="11">
+
+    <!-- ── Encoder column ───────────────────────────────────────── -->
+    <g transform="translate(80, 100)">
+      <text x="90" y="-14" text-anchor="middle" font-weight="600"
+            font-size="12" fill="currentColor" stroke="none">Encoder</text>
+
+      <!-- stacked-blocks illusion -->
+      <rect x="14" y="16" width="180" height="140" rx="8" opacity="0.18"/>
+      <rect x="7" y="8" width="180" height="140" rx="8" opacity="0.35"/>
+
+      <!-- front block -->
+      <rect x="0" y="0" width="180" height="140" rx="8"/>
+      <text x="90" y="26" text-anchor="middle" fill="currentColor" stroke="none">
+        Multi-Head Self-Attention
+      </text>
+      <line x1="14" y1="38" x2="166" y2="38" stroke-dasharray="3 3" stroke-width="1"/>
+      <text x="90" y="58" text-anchor="middle" fill="currentColor" stroke="none">
+        Position-wise Feed-Forward
+      </text>
+      <line x1="14" y1="70" x2="166" y2="70" stroke-dasharray="3 3" stroke-width="1"/>
+      <text x="90" y="88" text-anchor="middle" font-size="9"
+            fill="currentColor" stroke="none" opacity="0.7">
+        Add &amp; LayerNorm around each sub-layer
+      </text>
+      <text x="90" y="120" text-anchor="middle" font-size="10" font-style="italic"
+            fill="currentColor" stroke="none" opacity="0.8">N = 6 identical layers</text>
+
+      <!-- input embedding -->
+      <rect x="20" y="200" width="140" height="36" rx="4"/>
+      <text x="90" y="223" text-anchor="middle" fill="currentColor" stroke="none">
+        Input Embedding + PE
+      </text>
+
+      <text x="90" y="262" text-anchor="middle" font-style="italic"
+            fill="currentColor" stroke="none" opacity="0.7">Inputs</text>
+
+      <!-- arrows up the encoder column -->
+      <line x1="90" y1="248" x2="90" y2="238" stroke-width="1"/>
+      <line x1="90" y1="200" x2="90" y2="148" marker-end="url(#a)"/>
+    </g>
+
+    <!-- ── Decoder column ───────────────────────────────────────── -->
+    <g transform="translate(450, 100)">
+      <text x="90" y="-14" text-anchor="middle" font-weight="600"
+            font-size="12" fill="currentColor" stroke="none">Decoder</text>
+
+      <rect x="14" y="16" width="180" height="170" rx="8" opacity="0.18"/>
+      <rect x="7" y="8" width="180" height="170" rx="8" opacity="0.35"/>
+
+      <rect x="0" y="0" width="180" height="170" rx="8"/>
+      <text x="90" y="22" text-anchor="middle" fill="currentColor" stroke="none">
+        Masked Multi-Head Attention
+      </text>
+      <line x1="14" y1="34" x2="166" y2="34" stroke-dasharray="3 3" stroke-width="1"/>
+      <text x="90" y="54" text-anchor="middle" fill="currentColor" stroke="none">
+        Cross-Attention (enc → dec)
+      </text>
+      <line x1="14" y1="66" x2="166" y2="66" stroke-dasharray="3 3" stroke-width="1"/>
+      <text x="90" y="86" text-anchor="middle" fill="currentColor" stroke="none">
+        Position-wise Feed-Forward
+      </text>
+      <line x1="14" y1="98" x2="166" y2="98" stroke-dasharray="3 3" stroke-width="1"/>
+      <text x="90" y="116" text-anchor="middle" font-size="9"
+            fill="currentColor" stroke="none" opacity="0.7">
+        Add &amp; LayerNorm around each sub-layer
+      </text>
+      <text x="90" y="150" text-anchor="middle" font-size="10" font-style="italic"
+            fill="currentColor" stroke="none" opacity="0.8">N = 6 identical layers</text>
+
+      <!-- output embedding -->
+      <rect x="20" y="200" width="140" height="36" rx="4"/>
+      <text x="90" y="223" text-anchor="middle" fill="currentColor" stroke="none">
+        Output Embedding + PE
+      </text>
+
+      <text x="90" y="262" text-anchor="middle" font-style="italic"
+            fill="currentColor" stroke="none" opacity="0.7">
+        Outputs (shifted right)
+      </text>
+
+      <line x1="90" y1="248" x2="90" y2="238" stroke-width="1"/>
+      <line x1="90" y1="200" x2="90" y2="178" marker-end="url(#a)"/>
+
+      <!-- linear + softmax above -->
+      <rect x="20" y="-50" width="140" height="30" rx="4"/>
+      <text x="90" y="-30" text-anchor="middle" fill="currentColor" stroke="none">
+        Linear + Softmax
+      </text>
+      <line x1="90" y1="0" x2="90" y2="-20" marker-end="url(#a)"/>
+
+      <text x="90" y="-60" text-anchor="middle" font-style="italic"
+            fill="currentColor" stroke="none" opacity="0.7">Output probabilities</text>
+    </g>
+
+    <!-- Cross-attention arrow: encoder top → decoder cross-attention row -->
+    <path d="M 260 108 C 360 108, 360 160, 450 160"
+          marker-end="url(#a)" stroke-dasharray="4 3"/>
+    <text x="355" y="128" text-anchor="middle" font-size="9"
+          fill="currentColor" stroke="none" opacity="0.75">
+      encoder output → K, V
+    </text>
+
+    <!-- Footer caption -->
+    <text x="360" y="420" text-anchor="middle" font-size="9"
+          fill="currentColor" stroke="none" opacity="0.55">
+      Redrawn from Vaswani et al., "Attention Is All You Need" (2017).
+    </text>
+  </g>
+</svg>
