@@ -85,6 +85,7 @@ function useCollectionsData(): SidebarSectionData {
       label: c.name,
       arrow: "none" as ArrowState,
       count: c.wikiCount,
+      href: `${ROUTES.explorer}?collection=${encodeURIComponent(c.id)}`,
     }));
   }, [data]);
 
