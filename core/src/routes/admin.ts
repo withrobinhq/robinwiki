@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { sql } from 'drizzle-orm'
-import type { LinkJob } from '@robin/queue'
+import type { LinkJob, SchedulerJob } from '@robin/queue'
+import { QUEUE_NAMES } from '@robin/queue'
 import { db } from '../db/client.js'
 import { fragments, entries } from '../db/schema.js'
 import { producer } from '../queue/producer.js'
@@ -13,6 +14,69 @@ import {
 const log = logger.child({ component: 'admin' })
 
 export const adminRoutes = new Hono()
+
+/**
+ * Whitelist of scheduler job names that can be force-triggered via the
+ * debug endpoint. Restricting to these names prevents arbitrary
+ * job-name injection into the scheduler queue.
+ */
+const SCHEDULER_RUN_NOW_ALLOWED = ['embedding-retry', 'regen-batch'] as const
+type SchedulerRunNowJobName = (typeof SCHEDULER_RUN_NOW_ALLOWED)[number]
+
+/**
+ * POST /admin/scheduler/run-now/:jobName  (dev-only)
+ *
+ * Force-triggers a scheduled job (`embedding-retry` or `regen-batch`) by
+ * adding a one-shot job onto the scheduler queue with the same payload
+ * shape the cron-driven scheduler emits. The existing scheduler worker
+ * (see `core/src/queue/worker.ts`) dispatches by `job.type`, so this
+ * route just enqueues a payload that matches the discriminated union.
+ *
+ * Registration is gated on `NODE_ENV !== 'production'` so the route is
+ * literally absent in prod builds. A runtime 404 short-circuit protects
+ * against env-mutation-after-start as defense-in-depth.
+ *
+ * Used by `.uat/plans/22-onboarding-demo-seed.md` step 9 to assert the
+ * embedding-retry worker actually heals NULL embeddings.
+ */
+if (process.env.NODE_ENV !== 'production') {
+  adminRoutes.post('/scheduler/run-now/:jobName', async (c) => {
+    if (process.env.NODE_ENV === 'production') {
+      return c.json({ error: 'not available' }, 404)
+    }
+
+    const jobName = c.req.param('jobName')
+    if (!SCHEDULER_RUN_NOW_ALLOWED.includes(jobName as SchedulerRunNowJobName)) {
+      return c.json({ error: `unknown job '${jobName}'` }, 400)
+    }
+
+    const allowedName = jobName as SchedulerRunNowJobName
+    const debugId = `${allowedName}-debug-${Date.now()}`
+    const payload: SchedulerJob =
+      allowedName === 'regen-batch'
+        ? {
+            type: 'regen-batch',
+            jobId: debugId,
+            triggeredBy: 'scheduler',
+            enqueuedAt: new Date().toISOString(),
+          }
+        : {
+            type: 'embedding-retry',
+            jobId: debugId,
+            triggeredBy: 'scheduler',
+            enqueuedAt: new Date().toISOString(),
+          }
+
+    const queue = producer.getQueue(QUEUE_NAMES.scheduler)
+    const bullJob = await queue.add(allowedName, payload, { jobId: debugId })
+
+    log.info(
+      { jobName: allowedName, jobId: bullJob.id ?? debugId },
+      'scheduler run-now triggered'
+    )
+    return c.json({ ok: true, jobId: bullJob.id ?? debugId })
+  })
+}
 
 /**
  * POST /admin/retry-stuck
