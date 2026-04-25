@@ -333,6 +333,8 @@ export type WikiEntityArticleProps = {
   wikiId?: string;
   /** Called after local save completes — persist to backend here. */
   onSave?: (data: { title: string; chipLabel: string; content: string }) => void;
+  /** Custom settings click handler — when provided, the header gear calls this instead of opening AddWikiModal. */
+  onSettingsClick?: () => void;
   children: ReactNode;
 };
 
@@ -378,6 +380,7 @@ export function WikiEntityArticle({
   wikiId,
   bouncerMode,
   onSave,
+  onSettingsClick: onSettingsClickProp,
   children,
 }: WikiEntityArticleProps) {
   const [infoVisible, setInfoVisible] = useState(true);
@@ -720,7 +723,7 @@ export function WikiEntityArticle({
                     <button
                       type="button"
                       title="Wiki settings"
-                      onClick={() => setWikiSettingsOpen(true)}
+                      onClick={() => onSettingsClickProp ? onSettingsClickProp() : setWikiSettingsOpen(true)}
                       style={{
                         background: "none",
                         border: "none",
