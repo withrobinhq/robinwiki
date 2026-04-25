@@ -1,14 +1,18 @@
 # 98 — MCP Tools
 
 ## What it proves
-Every registered MCP write tool (`create_wiki`, `delete_wiki`, `log_entry`,
-`log_fragment`, `delete_person`) and its read counterparts (`get_wiki_types`,
-`get_wiki`, `get_fragment`, `find_person`, `list_wikis`) responds correctly
-to its happy path **and** its documented error path against a live core,
-exercised via the same JSON-RPC HTTP transport that production MCP clients
-use. Includes the `type` parameter on `create_wiki` shipped in PR #156
-(closes #154) — explicit valid type, explicit invalid type, type omitted
-with description (inference path), and bare title (default-to-`log` path).
+Every registered MCP write tool (`create_wiki`, `log_entry`, `log_fragment`)
+and its read counterparts (`get_wiki_types`, `get_wiki`, `get_fragment`,
+`find_person`, `list_wikis`) responds correctly to its happy path **and**
+its documented error path against a live core, exercised via the same
+JSON-RPC HTTP transport that production MCP clients use. Includes the
+`type` parameter on `create_wiki` shipped in PR #156 (closes #154) —
+explicit valid type, explicit invalid type, type omitted with description
+(inference path), and bare title (default-to-`log` path).
+
+PR #193 removed `delete_wiki`, `delete_person`, `publish_wiki`, and
+`unpublish_wiki` from the MCP surface; coverage for those moved to
+plan 30 §1-2. This plan no longer exercises them.
 
 ## Prerequisites
 - Core running on `SERVER_URL`. Plan 22 has run (Transformer fixture seeded).
@@ -383,64 +387,13 @@ else
   skip "8b. DATABASE_URL unset — entry persistence check skipped"
 fi
 
-# ── 9. delete_wiki — soft-delete the UAT wiki from step 2 ────
-# Returns { deleted: true, wikiKey: <key> } on success. DB-side,
-# deleted_at must be set (NOT NULL).
-
-if [ -n "${WIKI2_KEY:-}" ]; then
-  call_tool "9a." delete_wiki "$(jq -n --arg k "$WIKI2_KEY" '{wikiKey:$k}')"
-  if echo "$RPC_TEXT" | jq -e '.deleted == true' >/dev/null 2>&1; then
-    pass "9a. delete_wiki($WIKI2_KEY) returned {deleted: true}"
-    # Remove from cleanup list — already deleted.
-    UAT_WIKI_KEYS=("${UAT_WIKI_KEYS[@]/$WIKI2_KEY}")
-  else
-    fail "9a. delete_wiki did not return deleted=true: $RPC_TEXT"
-  fi
-  if [ -n "${DATABASE_URL:-}" ]; then
-    DEL_AT=$(psql "$DATABASE_URL" -t -A -c "SELECT deleted_at IS NOT NULL FROM wikis WHERE lookup_key='$WIKI2_KEY'" 2>/dev/null | tr -d '[:space:]')
-    [ "$DEL_AT" = "t" ] && pass "9b. wikis.deleted_at IS NOT NULL for $WIKI2_KEY" \
-      || fail "9b. wikis.deleted_at not set for $WIKI2_KEY (got '$DEL_AT')"
-  else
-    skip "9b. DATABASE_URL unset — soft-delete invariant skipped"
-  fi
-else
-  skip "9. step 2's WIKI2_KEY missing — cannot exercise delete_wiki"
-fi
-
-# ── 10. delete_person — happy path on a seeded person ───────
-# Soft-deletes ashish-vaswani, asserts the deleted_at column, then runs
-# `pnpm -C core seed-fixture` to restore the seeded fixture so plans 21
-# and 22 still find the row afterwards.
-
-if [ -n "${PERSON_KEY:-}" ] && [ "$PERSON_KEY" != "null" ]; then
-  call_tool "10a." delete_person "$(jq -n --arg k "$PERSON_KEY" '{personKey:$k}')"
-  if echo "$RPC_TEXT" | jq -e '.deleted == true' >/dev/null 2>&1; then
-    pass "10a. delete_person($PERSON_KEY) returned {deleted: true}"
-  else
-    fail "10a. delete_person did not return deleted=true: $RPC_TEXT"
-  fi
-  if [ -n "${DATABASE_URL:-}" ]; then
-    PERSON_DEL=$(psql "$DATABASE_URL" -t -A -c "SELECT deleted_at IS NOT NULL FROM people WHERE lookup_key='$PERSON_KEY'" 2>/dev/null | tr -d '[:space:]')
-    [ "$PERSON_DEL" = "t" ] && pass "10b. people.deleted_at IS NOT NULL for $PERSON_KEY" \
-      || fail "10b. people.deleted_at not set (got '$PERSON_DEL')"
-
-    # Restore the seeded fixture — downstream plans depend on
-    # ashish-vaswani being present and undeleted. seed-fixture's INSERT
-    # path collides with the existing soft-deleted row's UNIQUE(slug)
-    # constraint (it does not clear deleted_at on conflict). Issue
-    # filed; restore directly via UPDATE so the plan is self-healing
-    # and downstream plans don't break on a clean local stack.
-    psql "$DATABASE_URL" -c "UPDATE people SET deleted_at = NULL, updated_at = now() WHERE lookup_key='$PERSON_KEY' AND deleted_at IS NOT NULL" >/dev/null 2>&1 || true
-    RESTORED=$(psql "$DATABASE_URL" -t -A -c "SELECT deleted_at IS NULL FROM people WHERE lookup_key='$PERSON_KEY'" 2>/dev/null | tr -d '[:space:]')
-    [ "$RESTORED" = "t" ] && pass "10c. ashish-vaswani restored (deleted_at cleared, downstream plans unaffected)" \
-      || fail "10c. failed to restore ashish-vaswani (deleted_at NULL? got '$RESTORED') — downstream plans will break"
-  else
-    skip "10b. DATABASE_URL unset — person soft-delete invariant skipped"
-    skip "10c. DATABASE_URL unset — fixture restore via seed-fixture skipped"
-  fi
-else
-  skip "10. PERSON_KEY missing — cannot exercise delete_person"
-fi
+# ── 9 + 10 removed ──────────────────────────────────────────
+# PR #193 removed delete_wiki, delete_person, publish_wiki, and
+# unpublish_wiki from the MCP surface (destructive tools are no longer
+# exposed via MCP). The coverage previously here moved to plan 30 §1-2.
+#
+# Step 11 (find_person) is renumbered to keep history-friendly diffs;
+# the body is unchanged.
 
 # ── 11. find_person — query by seeded name ──────────────────
 # Auto-detects: lookupKey-shaped input goes via id, anything else via
@@ -545,8 +498,8 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 | 6 | `log_fragment` against `transformer-architecture` returns `{fragmentKey, fragmentSlug, threadSlug, wikiKey}`; row persisted | `handleLogFragment` |
 | 7 | `log_fragment` against unknown slug returns `isError=true` with `Wiki not found` text and `suggestions[]` array | `resolveWikiBySlug` error shape |
 | 8 | `log_entry` returns `'Entry queued: <entryKey>'` plain text; `raw_sources` row persisted | `handleLogEntry` |
-| 9 | `delete_wiki` returns `{deleted: true, wikiKey}`; `wikis.deleted_at IS NOT NULL` | `handleDeleteWiki` |
-| 10 | `delete_person` against ashish-vaswani returns `{deleted: true}`; `people.deleted_at IS NOT NULL`; `seed-fixture` CLI restores the row for downstream plans | `handleDeletePerson` + seed-fixture upsert |
+| ~~9~~ | ~~`delete_wiki`~~ — removed from MCP surface in PR #193 (covered by plan 30 §1) | n/a |
+| ~~10~~ | ~~`delete_person`~~ — removed from MCP surface in PR #193 (covered by plan 30 §2) | n/a |
 | 11 | `find_person(query="Ashish")` resolves to `person.slug="ashish-vaswani"` | `findPersonByQuery` |
 | 12 | `get_wiki`, `get_fragment`, `list_wikis` return populated payloads (sidecar, content, list) | resolver read paths |
 
