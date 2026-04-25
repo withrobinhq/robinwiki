@@ -13,6 +13,8 @@ export const entryResponseSchema = z.object({
   source: z.string(),
   state: objectStateSchema,
   ingestStatus: z.string(),
+  lastError: z.string().nullable().optional(),
+  attemptCount: z.number().optional(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 })

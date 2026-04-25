@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, UserRound, type LucideIcon } from "lucide-react";
-import { type CSSProperties, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { FONT, T } from "@/lib/typography";
 import {
   WikiEntityArticle,
@@ -21,6 +21,8 @@ import type {
 import { ROUTES } from "@/lib/routes";
 import { usePerson } from "@/hooks/usePerson";
 import { useQueryClient } from "@tanstack/react-query";
+import PersonSettingsModal from "@/components/layout/PersonSettingsModal";
+import { updatePerson } from "@/lib/api";
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -256,6 +258,8 @@ function PeopleFragmentsSection({ backlinks }: { backlinks: Array<{ id: string; 
 export default function WikiPeoplePage() {
   const { id } = useParams<{ id: string }>();
   const { data: person, isLoading, error } = usePerson(id);
+  const [personSettingsOpen, setPersonSettingsOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   const bodyStyle = { ...T.bodySmall, color: "var(--wiki-article-text)" };
 
@@ -282,18 +286,12 @@ export default function WikiPeoplePage() {
   const refs: Record<string, WikiRef> = (person.refs ?? {}) as Record<string, WikiRef>;
   const sidecarInfobox: WikiInfoboxData | null =
     (person.infobox ?? null) as WikiInfoboxData | null;
-  const queryClient = useQueryClient();
 
   const handleSaveToApi = async (data: { title: string; chipLabel: string; content: string }) => {
     try {
-      await fetch(`/api/api/content/person/${person.lookupKey}`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          frontmatter: { name: data.title },
-          body: data.content,
-        }),
+      await updatePerson({
+        path: { id: person.lookupKey },
+        body: { name: data.title, content: data.content },
       });
       await queryClient.invalidateQueries({ queryKey: ['person', id] });
       await queryClient.invalidateQueries({ queryKey: ['people'] });
@@ -327,16 +325,27 @@ export default function WikiPeoplePage() {
             ]}
           />
         ) : (
-          <PeopleInfobox person={person} />
+          <PeopleInfobox person={person} onSettingsClick={() => setPersonSettingsOpen(true)} />
         )
       }
       onSave={handleSaveToApi}
+      onSettingsClick={() => setPersonSettingsOpen(true)}
       customBottomSections={<PeopleFragmentsSection backlinks={backlinks} />}
     >
       {person.content && (
         <MarkdownContent content={person.content} style={bodyStyle} />
       )}
     </WikiEntityArticle>
+    <PersonSettingsModal
+      open={personSettingsOpen}
+      onClose={() => setPersonSettingsOpen(false)}
+      personId={person.lookupKey}
+      prefill={{
+        name: person.name,
+        aliases: person.aliases ?? [],
+        relationship: person.relationship ?? "",
+      }}
+    />
     </>
   );
 }

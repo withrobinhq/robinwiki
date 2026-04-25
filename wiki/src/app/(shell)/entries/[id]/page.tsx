@@ -11,6 +11,9 @@ import { WikiSectionH2 } from "@/components/wiki/WikiEntityArticle";
 import { MarkdownContent } from "@/components/wiki/MarkdownContent";
 import { useEntry } from "@/hooks/useEntry";
 import { useEntryFragments } from "@/hooks/useEntryFragments";
+import { useRetryEntry } from "@/hooks/useRetryEntry";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -22,6 +25,7 @@ export default function EntryPage() {
   const { data: entry, isLoading, error } = useEntry(id);
   const { data: fragmentsData } = useEntryFragments(id);
   const fragments = fragmentsData?.fragments ?? [];
+  const retryEntry = useRetryEntry();
 
   const bodyStyle = {
     ...T.bodySmall,
@@ -54,6 +58,60 @@ export default function EntryPage() {
       <ArrowLeft size={14} strokeWidth={1.5} />
       <span style={{ ...T.micro }}>Back</span>
     </Link>
+    {entry.ingestStatus === "failed" && (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+          padding: "12px 16px",
+          marginBottom: 16,
+          border: "1px solid var(--destructive)",
+          borderRadius: 6,
+          backgroundColor: "color-mix(in srgb, var(--destructive) 8%, transparent)",
+        }}
+      >
+        <AlertTriangle size={16} style={{ color: "var(--destructive)", flexShrink: 0, marginTop: 2 }} />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+          <p style={{ ...T.bodySmall, fontWeight: 600, color: "var(--destructive)", margin: 0 }}>
+            Extraction failed
+          </p>
+          {entry.lastError && (
+            <p style={{ ...T.micro, color: "var(--wiki-article-text)", margin: 0, opacity: 0.8 }}>
+              {entry.lastError}
+            </p>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => retryEntry.mutate(id)}
+            disabled={retryEntry.isPending}
+            style={{ alignSelf: "flex-start", marginTop: 4 }}
+          >
+            <RefreshCw size={14} className={retryEntry.isPending ? "animate-spin" : ""} />
+            Retry processing
+          </Button>
+        </div>
+      </div>
+    )}
+    {entry.ingestStatus === "pending" && (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "12px 16px",
+          marginBottom: 16,
+          border: "1px solid var(--border)",
+          borderRadius: 6,
+        }}
+      >
+        <Spinner className="size-4" />
+        <p style={{ ...T.bodySmall, color: "var(--wiki-article-text)", margin: 0 }}>
+          Processing entry...
+        </p>
+      </div>
+    )}
     <EntryArticle
       title={entry.title}
       infobox={{

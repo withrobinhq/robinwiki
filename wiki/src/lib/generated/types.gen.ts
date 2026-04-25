@@ -97,6 +97,8 @@ export type EntryResponseSchema = {
     source: string;
     state: 'PENDING' | 'RESOLVED' | 'LINKING' | 'DIRTY';
     ingestStatus: string;
+    lastError?: string | null;
+    attemptCount?: number;
     createdAt: string;
     updatedAt: string;
     refs?: WikiRefsMapSchema;

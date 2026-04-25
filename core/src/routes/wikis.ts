@@ -143,7 +143,7 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
   // Quick-classify unfiled fragments by embedding similarity (mechanism 2)
   try {
     const orConfig = await loadOpenRouterConfig()
-    const textToEmbed = `${body.name.trim()} ${body.prompt ?? ''}`.trim()
+    const textToEmbed = `${body.name.trim()} ${body.description ?? ''}`.trim()
     const wikiVec = await embedText(textToEmbed, {
       apiKey: orConfig.apiKey,
       model: orConfig.models.embedding,

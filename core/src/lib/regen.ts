@@ -36,6 +36,7 @@ type RegenOutput = z.infer<typeof regenOutputSchema>
 import { db as defaultDb, type DB } from '../db/client.js'
 import { wikis, wikiTypes, edges, fragments, edits } from '../db/schema.js'
 import { loadOpenRouterConfig } from './openrouter-config.js'
+import { hybridSearch } from './search.js'
 import { nanoid } from './id.js'
 import { logger } from './logger.js'
 import { emitAuditEvent } from '../db/audit.js'
@@ -197,7 +198,6 @@ export async function classifyUnfiledFragments(
   database: DB,
   wikiKey: string
 ): Promise<{ linked: number; autoFiled: number; llmFiled: number; llmRejected: number }> {
-  // Get the wiki's embedding for cosine similarity
   const [wiki] = await database
     .select({
       lookupKey: wikis.lookupKey,
@@ -205,7 +205,6 @@ export async function classifyUnfiledFragments(
       type: wikis.type,
       prompt: wikis.prompt,
       description: wikis.description,
-      embedding: wikis.embedding,
     })
     .from(wikis)
     .where(eq(wikis.lookupKey, wikiKey))
@@ -213,113 +212,51 @@ export async function classifyUnfiledFragments(
 
   if (!wiki) return { linked: 0, autoFiled: 0, llmFiled: 0, llmRejected: 0 }
 
-  // If wiki has no embedding, generate one from name + description (WHAT the wiki is about)
-  let wikiEmbedding = wiki.embedding
-  if (!wikiEmbedding) {
-    try {
-      const orConfig = await loadOpenRouterConfig()
-      const text = `${wiki.name} ${wiki.description ?? ''}`.trim()
-      const vec = await embedText(text, {
-        apiKey: orConfig.apiKey,
-        model: orConfig.models.embedding,
-      })
-      if (vec) {
-        wikiEmbedding = vec
-        // Persist the embedding for future use
-        await database
-          .update(wikis)
-          .set({ embedding: vec })
-          .where(eq(wikis.lookupKey, wikiKey))
-      }
-    } catch (err) {
-      log.warn({ wikiKey, err }, 'failed to generate wiki embedding for classification')
-    }
-  }
+  // Hybrid search: BM25 + vector (when embedding available) via RRF fusion.
+  // This replaces the cosine-only approach — BM25 alone can find candidates
+  // even without a wiki embedding.
+  const searchText = `${wiki.name} ${wiki.description ?? ''}`.trim()
+  const orConfig = await loadOpenRouterConfig()
 
-  if (!wikiEmbedding) {
-    log.info({ wikiKey }, 'no wiki embedding available, skipping cosine pre-filter')
-    return { linked: 0, autoFiled: 0, llmFiled: 0, llmRejected: 0 }
-  }
+  const hybridResults = await hybridSearch(database, searchText, {
+    tables: ['fragment'],
+    limit: MAX_UNFILED_PER_REGEN * 2,
+    embedConfig: { apiKey: orConfig.apiKey, model: orConfig.models.embedding },
+  })
 
-  // Query unfiled fragments ordered by cosine similarity to this wiki
-  // Only take those above LLM_REVIEW_THRESHOLD (similarity > 0.4 = distance < 0.6)
-  const maxDistance = 1 - LLM_REVIEW_THRESHOLD
-  const vecLiteral = JSON.stringify(wikiEmbedding)
+  // Post-filter to unfiled fragments only
+  const filedFragKeys = new Set(
+    (await database.select({ srcId: edges.srcId }).from(edges)
+      .where(and(eq(edges.edgeType, 'FRAGMENT_IN_WIKI'), isNull(edges.deletedAt)))
+    ).map(r => r.srcId)
+  )
+  const unfiledResults = hybridResults.filter(r => !filedFragKeys.has(r.id)).slice(0, MAX_UNFILED_PER_REGEN)
 
-  const candidates = await database
-    .select({
-      lookupKey: fragments.lookupKey,
-      content: fragments.content,
-      distance: sql<number>`${fragments.embedding} <=> ${vecLiteral}::vector`,
-    })
-    .from(fragments)
-    .where(
-      and(
-        isNull(fragments.deletedAt),
-        sql`${fragments.embedding} IS NOT NULL`,
-        sql`${fragments.lookupKey} NOT IN (
-          SELECT src_id FROM edges
-          WHERE edge_type = 'FRAGMENT_IN_WIKI' AND deleted_at IS NULL
-        )`,
-        sql`${fragments.embedding} <=> ${vecLiteral}::vector < ${maxDistance}`
-      )
-    )
-    .orderBy(sql`${fragments.embedding} <=> ${vecLiteral}::vector`)
-    .limit(MAX_UNFILED_PER_REGEN)
+  if (unfiledResults.length === 0) return { linked: 0, autoFiled: 0, llmFiled: 0, llmRejected: 0 }
 
-  if (candidates.length === 0) return { linked: 0, autoFiled: 0, llmFiled: 0, llmRejected: 0 }
+  // Load full content for candidates
+  const candidateKeys = unfiledResults.map(r => r.id)
+  const fragRows = candidateKeys.length > 0
+    ? await database
+        .select({ lookupKey: fragments.lookupKey, content: fragments.content })
+        .from(fragments)
+        .where(and(inArray(fragments.lookupKey, candidateKeys), isNull(fragments.deletedAt)))
+    : []
+  const contentMap = new Map(fragRows.map(f => [f.lookupKey, f.content]))
+
+  // All candidates go to LLM review — hybrid search is the pre-filter,
+  // the LLM is the correct judge for backward classification.
+  const llmReviewFrags = unfiledResults.map(r => ({
+    lookupKey: r.id,
+    content: contentMap.get(r.id) ?? r.snippet,
+    hybridScore: r.score,
+  }))
 
   let autoFiled = 0
   let llmFiled = 0
   let llmRejected = 0
 
-  // Tier 1: Auto-file high-similarity fragments
-  const autoFileFrags: typeof candidates = []
-  const llmReviewFrags: typeof candidates = []
-
-  for (const c of candidates) {
-    const similarity = 1 - c.distance
-    if (similarity >= AUTO_FILE_THRESHOLD) {
-      autoFileFrags.push(c)
-    } else {
-      llmReviewFrags.push(c)
-    }
-  }
-
-  // Auto-file: create edges directly
-  for (const frag of autoFileFrags) {
-    const similarity = 1 - frag.distance
-    try {
-      await database
-        .insert(edges)
-        .values({
-          id: crypto.randomUUID(),
-          srcType: 'fragment',
-          srcId: frag.lookupKey,
-          dstType: 'wiki',
-          dstId: wikiKey,
-          edgeType: 'FRAGMENT_IN_WIKI',
-          attrs: { score: similarity, method: 'cosine-auto', signal: 'strong' },
-        })
-        .onConflictDoNothing()
-      autoFiled++
-      log.info(
-        { fragmentKey: frag.lookupKey, wikiKey, similarity: similarity.toFixed(3), method: 'cosine-auto' },
-        'regen classify: auto-filed (above threshold)'
-      )
-      try {
-        await createRelatedToEdges(database, frag.lookupKey, wikiKey)
-      } catch (relErr) {
-        log.warn({ fragmentKey: frag.lookupKey, err: relErr }, 'failed to create RELATED_TO edges')
-      }
-    } catch (err) {
-      log.warn({ fragmentKey: frag.lookupKey, err }, 'failed to auto-file fragment')
-    }
-  }
-
-  // Tier 2: LLM review for borderline fragments
   if (llmReviewFrags.length > 0) {
-    const orConfig = await loadOpenRouterConfig()
     const agents = createIngestAgents(orConfig)
 
     const deps = {
@@ -348,7 +285,6 @@ export async function classifyUnfiledFragments(
     }
 
     for (const frag of llmReviewFrags) {
-      const similarity = 1 - frag.distance
       try {
         const result = await wikiClassify(deps, {
           fragmentContent: frag.content,
@@ -357,11 +293,10 @@ export async function classifyUnfiledFragments(
           entryKey: '',
         })
 
-        // Log all raw scores
         for (const a of result.data.rawAssignments ?? []) {
           log.info(
-            { fragmentKey: frag.lookupKey, wikiKey: a.wikiKey, confidence: a.confidence, cosineSimilarity: similarity.toFixed(3), reasoning: a.reasoning },
-            'regen classify: LLM review score'
+            { fragmentKey: frag.lookupKey, wikiKey: a.wikiKey, confidence: a.confidence, hybridScore: frag.hybridScore.toFixed(3), reasoning: a.reasoning },
+            'regen classify: LLM review score (hybrid)'
           )
         }
 
@@ -378,8 +313,8 @@ export async function classifyUnfiledFragments(
                 edgeType: 'FRAGMENT_IN_WIKI',
                 attrs: {
                   score: edge.score,
-                  cosineSimilarity: similarity,
-                  method: 'llm-review',
+                  hybridScore: frag.hybridScore,
+                  method: 'hybrid-llm-review',
                   signal: edge.score >= STRONG_SIGNAL_THRESHOLD ? 'strong' : 'weak',
                 },
               })
@@ -394,8 +329,8 @@ export async function classifyUnfiledFragments(
         } else {
           llmRejected++
           log.info(
-            { fragmentKey: frag.lookupKey, wikiKey, cosineSimilarity: similarity.toFixed(3) },
-            'regen classify: LLM rejected (below confidence threshold)'
+            { fragmentKey: frag.lookupKey, wikiKey, hybridScore: frag.hybridScore.toFixed(3) },
+            'regen classify: LLM rejected (hybrid)'
           )
         }
       } catch (err) {
@@ -406,8 +341,8 @@ export async function classifyUnfiledFragments(
 
   const totalLinked = autoFiled + llmFiled
   log.info(
-    { wikiKey, candidates: candidates.length, autoFiled, llmFiled, llmRejected, totalLinked },
-    'unfiled fragment classification completed'
+    { wikiKey, candidates: unfiledResults.length, autoFiled, llmFiled, llmRejected, totalLinked },
+    'unfiled fragment classification completed (hybrid)'
   )
 
   return { linked: totalLinked, autoFiled, llmFiled, llmRejected }

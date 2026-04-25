@@ -161,4 +161,47 @@ entries.get('/:id/fragments', async (c) => {
   )
 })
 
+// POST /entries/:id/retry — re-enqueue a failed entry for extraction
+entries.post('/:id/retry', async (c) => {
+  const id = c.req.param('id')
+
+  const [entry] = await db
+    .select()
+    .from(entriesTable)
+    .where(and(eq(entriesTable.lookupKey, id), isNull(entriesTable.deletedAt)))
+  if (!entry) return c.json({ error: 'Not found' }, 404)
+
+  if (entry.ingestStatus !== 'failed') {
+    return c.json({ error: 'Entry is not in failed state' }, 409)
+  }
+
+  await db
+    .update(entriesTable)
+    .set({ ingestStatus: 'pending', lastError: null, updatedAt: new Date() })
+    .where(eq(entriesTable.lookupKey, id))
+
+  const { ulid: entryUlid } = parseLookupKey(id)
+  const job: ExtractionJob = {
+    type: 'extraction',
+    jobId: entryUlid,
+    entryKey: id,
+    content: entry.content,
+    source: entry.source,
+    enqueuedAt: new Date().toISOString(),
+  }
+
+  await producer.enqueueExtraction(job)
+
+  await emitAuditEvent(db, {
+    entityType: 'raw_source',
+    entityId: id,
+    eventType: 'retried',
+    source: 'api',
+    summary: `Entry retried: ${entry.title.slice(0, 80)}`,
+    detail: { entryKey: id },
+  })
+
+  return c.json({ ok: true, entryKey: id }, 202)
+})
+
 export { entries }
