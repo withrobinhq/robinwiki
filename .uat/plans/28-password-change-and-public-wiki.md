@@ -32,7 +32,7 @@ source core/.env 2>/dev/null || true
 
 SERVER_URL="${SERVER_URL:-http://localhost:3000}"
 WIKI_URL="${WIKI_URL:-http://localhost:8080}"
-ORIGIN="${WIKI_ORIGIN_HEADER:-http://localhost:3000}"
+ORIGIN="${WIKI_ORIGIN_HEADER:-http://localhost:8080}"
 
 # Two cookie jars: OLD_JAR holds the session signed in with the original
 # password; NEW_JAR is empty until step 4 signs in with the new password.
@@ -370,9 +370,9 @@ fi
 if command -v npx >/dev/null 2>&1 && npx --no -- agent-browser --help >/dev/null 2>&1; then
   npx agent-browser open "$WIKI_URL/login" 2>/dev/null
   npx agent-browser wait --load networkidle
-  npx agent-browser fill 'input[name="email"]' "${INITIAL_USERNAME:-}" 2>/dev/null
-  npx agent-browser fill 'input[name="password"]' "$NEW_PASSWORD" 2>/dev/null
-  npx agent-browser click 'button[type="submit"]' 2>/dev/null
+  npx agent-browser fill '#email' "${INITIAL_USERNAME:-}"
+  npx agent-browser fill '#password' "$NEW_PASSWORD"
+  npx agent-browser click 'button[type="submit"]'
   npx agent-browser wait --load networkidle
 
   npx agent-browser open "$WIKI_URL/profile" 2>/dev/null
