@@ -91,6 +91,25 @@ if [ -z "${DATABASE_URL:-}" ]; then
 fi
 pass "0c. DATABASE_URL set — state-column assertions enabled"
 
+# 0d. The seeded fixture has wikis.regenerate=false, but every assertion in
+# §1 below assumes regen actually runs and writes state='RESOLVED'. Capture
+# the original value so we can restore it on exit, then flip it to true so
+# regenerateWiki() proceeds rather than no-op'ing on the gate.
+ORIG_REGENERATE=$(psql "$DATABASE_URL" -t -A -c \
+  "SELECT regenerate FROM wikis WHERE slug='transformer-architecture' AND deleted_at IS NULL" \
+  2>/dev/null | tr -d '[:space:]')
+psql "$DATABASE_URL" -t -A -c \
+  "UPDATE wikis SET regenerate=true WHERE slug='transformer-architecture' AND deleted_at IS NULL" \
+  >/dev/null 2>&1
+NEW_REGENERATE=$(psql "$DATABASE_URL" -t -A -c \
+  "SELECT regenerate FROM wikis WHERE slug='transformer-architecture' AND deleted_at IS NULL" \
+  2>/dev/null | tr -d '[:space:]')
+if [ "$NEW_REGENERATE" = "t" ]; then
+  pass "0d. wikis.regenerate flipped to true for the run (was '$ORIG_REGENERATE'); will restore on exit"
+else
+  fail "0d. could not flip wikis.regenerate to true (got '$NEW_REGENERATE') — §1 will likely fail"
+fi
+
 HAS_OPENROUTER=0
 if [ -n "${OPENROUTER_API_KEY:-}" ]; then
   HAS_OPENROUTER=1
@@ -492,6 +511,15 @@ fi
 psql "$DATABASE_URL" -t -A -c \
   "UPDATE wikis SET state='RESOLVED', updated_at=NOW() WHERE lookup_key='$WIKI_KEY' AND state != 'RESOLVED'" \
   >/dev/null 2>&1 || true
+
+# Restore wikis.regenerate to its pre-run value (see §0d).
+if [ "$ORIG_REGENERATE" = "t" ] || [ "$ORIG_REGENERATE" = "f" ]; then
+  RESTORE_VAL="false"
+  [ "$ORIG_REGENERATE" = "t" ] && RESTORE_VAL="true"
+  psql "$DATABASE_URL" -t -A -c \
+    "UPDATE wikis SET regenerate=$RESTORE_VAL WHERE slug='transformer-architecture' AND deleted_at IS NULL" \
+    >/dev/null 2>&1 || true
+fi
 
 echo ""
 echo "$PASS passed, $FAIL failed, $SKIP skipped"
