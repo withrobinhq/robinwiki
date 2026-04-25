@@ -59,6 +59,7 @@ systemRoutes.get('/status', async (c) => {
   const instanceId = await getOrCreateInstanceId()
 
   return c.json({
+    status: 'ok',
     initialized: onboarded,
     version: pkg.version,
     instanceId,
