@@ -26,3 +26,12 @@ next-env.d.ts
 
 
 ## docs/plans tracked for design decisions
+
+# >>> studio (managed) >>>
+.jira
+.planning
+.retrospective
+.uat
+.studio
+.workspacerc
+# <<< studio (managed) <<<
