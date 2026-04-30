@@ -1,3 +1,13 @@
+-- Bootstrap migration — squashes the original 0000_init … 0013_people_is_owner
+-- chain into a single fresh-install schema. Pure data backfills (0001, 0010,
+-- 0012) are intentionally omitted: seed-wiki-types runs the latest taxonomy at
+-- boot, and zombie-edge backfill is a one-time fix not relevant to fresh DBs.
+--
+-- DEPLOY NOTE: existing deployments must wipe their DB before pulling this
+-- version (see DEPLOY-NOTES.md). Drizzle's `__drizzle_migrations` tracking
+-- table will see this bootstrap as un-applied and re-run it, which fails on
+-- pre-existing tables.
+
 CREATE EXTENSION IF NOT EXISTS vector;--> statement-breakpoint
 CREATE TYPE "public"."object_state" AS ENUM('PENDING', 'LINKING', 'RESOLVED');--> statement-breakpoint
 
@@ -88,6 +98,7 @@ CREATE TABLE "configs" (
 --> statement-breakpoint
 
 -- ─── Wiki Types ───
+-- `based_on_version` was appended by the original 0002; column order preserved.
 
 CREATE TABLE "wiki_types" (
 	"slug" text PRIMARY KEY NOT NULL,
@@ -98,7 +109,8 @@ CREATE TABLE "wiki_types" (
 	"is_default" boolean DEFAULT false NOT NULL,
 	"user_modified" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	"based_on_version" integer DEFAULT 1 NOT NULL
 );
 --> statement-breakpoint
 
@@ -125,6 +137,8 @@ CREATE TABLE "raw_sources" (
 	"attempt_count" integer DEFAULT 0 NOT NULL
 );
 --> statement-breakpoint
+-- `embedding_attempt_count` and `embedding_last_attempt_at` were appended by
+-- the original 0006; column order preserved to match the old chain.
 CREATE TABLE "fragments" (
 	"lookup_key" text PRIMARY KEY NOT NULL,
 	"slug" text NOT NULL,
@@ -142,9 +156,14 @@ CREATE TABLE "fragments" (
 	"confidence" real,
 	"entry_id" text,
 	"embedding" vector(1536),
-	"search_vector" "tsvector"
+	"search_vector" "tsvector",
+	"embedding_attempt_count" integer DEFAULT 0 NOT NULL,
+	"embedding_last_attempt_at" timestamp
 );
 --> statement-breakpoint
+-- Later migrations appended `metadata` (0003), `citation_declarations` (0004),
+-- `description` (0007), and `structure` (0011). Column order matches the old
+-- chain so `SELECT *` projection stays byte-identical.
 CREATE TABLE "wikis" (
 	"lookup_key" text PRIMARY KEY NOT NULL,
 	"slug" text NOT NULL,
@@ -167,7 +186,11 @@ CREATE TABLE "wikis" (
 	"bouncer_mode" text DEFAULT 'auto' NOT NULL,
 	"embedding" vector(1536),
 	"search_vector" "tsvector",
-	"progress" jsonb
+	"progress" jsonb,
+	"metadata" jsonb,
+	"citation_declarations" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"description" text DEFAULT '' NOT NULL,
+	"structure" text DEFAULT '' NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "group_wikis" (
@@ -177,6 +200,7 @@ CREATE TABLE "group_wikis" (
 	PRIMARY KEY ("group_id", "wiki_id")
 );
 --> statement-breakpoint
+-- `is_owner` was appended by the original 0013; column order preserved.
 CREATE TABLE "people" (
 	"lookup_key" text PRIMARY KEY NOT NULL,
 	"slug" text NOT NULL,
@@ -196,7 +220,8 @@ CREATE TABLE "people" (
 	"verified" boolean DEFAULT false NOT NULL,
 	"last_rebuilt_at" timestamp,
 	"embedding" vector(1536),
-	"search_vector" "tsvector"
+	"search_vector" "tsvector",
+	"is_owner" boolean DEFAULT false NOT NULL
 );
 --> statement-breakpoint
 
@@ -286,6 +311,11 @@ ALTER TABLE "group_wikis" ADD CONSTRAINT "group_wikis_group_id_groups_id_fk" FOR
 ALTER TABLE "group_wikis" ADD CONSTRAINT "group_wikis_wiki_id_wikis_lookup_key_fk" FOREIGN KEY ("wiki_id") REFERENCES "public"."wikis"("lookup_key") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
 -- ─── Indexes ───
+-- `wikis_slug_uidx` is partial on `deleted_at IS NULL` (was widened in the
+-- original 0005 to let soft-deleted wikis free their slug).
+-- `fragments_dedup_hash_idx` is partial on `deleted_at IS NULL` (original 0008).
+-- `fragments_embedding_null_idx` was added in 0006 for retry scheduling.
+-- `people_is_owner_uidx` was added in 0013 to enforce at-most-one owner.
 
 CREATE UNIQUE INDEX "groups_slug_uidx" ON "groups" USING btree ("slug");--> statement-breakpoint
 CREATE UNIQUE INDEX "configs_scope_kind_key_uidx" ON "configs" USING btree ("scope","kind","key");--> statement-breakpoint
@@ -293,11 +323,14 @@ CREATE INDEX "configs_kind_idx" ON "configs" USING btree ("kind");--> statement-
 CREATE UNIQUE INDEX "raw_sources_slug_uidx" ON "raw_sources" USING btree ("slug");--> statement-breakpoint
 CREATE INDEX "raw_sources_ingest_status_idx" ON "raw_sources" USING btree ("ingest_status");--> statement-breakpoint
 CREATE UNIQUE INDEX "fragments_slug_uidx" ON "fragments" USING btree ("slug");--> statement-breakpoint
-CREATE UNIQUE INDEX "wikis_slug_uidx" ON "wikis" USING btree ("slug");--> statement-breakpoint
+CREATE INDEX "fragments_dedup_hash_idx" ON "fragments" USING btree ("dedup_hash") WHERE "fragments"."deleted_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "fragments_embedding_null_idx" ON "fragments" ("embedding_last_attempt_at") WHERE "embedding" IS NULL AND "deleted_at" IS NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "wikis_slug_uidx" ON "wikis" USING btree ("slug") WHERE "wikis"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "wikis_published_slug_uidx" ON "wikis" USING btree ("published_slug");--> statement-breakpoint
 CREATE INDEX "group_wikis_wiki_idx" ON "group_wikis" USING btree ("wiki_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "people_slug_uidx" ON "people" USING btree ("slug");--> statement-breakpoint
 CREATE INDEX "people_aliases_gin_idx" ON "people" USING gin ("aliases");--> statement-breakpoint
+CREATE UNIQUE INDEX "people_is_owner_uidx" ON "people" ((is_owner)) WHERE is_owner = true AND deleted_at IS NULL;--> statement-breakpoint
 CREATE INDEX "edits_object_idx" ON "edits" USING btree ("object_type","object_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "edges_src_dst_type_uidx" ON "edges" USING btree ("src_type","src_id","dst_type","dst_id","edge_type");--> statement-breakpoint
 CREATE INDEX "edges_src_idx" ON "edges" USING btree ("src_type","src_id","edge_type");--> statement-breakpoint
@@ -318,36 +351,52 @@ CREATE INDEX "fragments_embedding_hnsw_idx" ON "fragments" USING hnsw ("embeddin
 CREATE INDEX "people_embedding_hnsw_idx" ON "people" USING hnsw ("embedding" vector_cosine_ops) WITH (m = 16, ef_construction = 64);--> statement-breakpoint
 
 -- ─── tsvector triggers and GIN indexes ───
+-- These are the post-0009 versions: fragments includes tags, wikis includes
+-- description, and every trigger fires on the full set of columns the vector
+-- depends on. Drizzle-kit can't generate triggers from the schema DSL, so they
+-- are managed here as raw SQL.
 
--- Wikis: name (A) + prompt (B) + content (C)
+-- Wikis: name (A) + prompt + description (B) + content (C)
 CREATE OR REPLACE FUNCTION wikis_search_vector_update() RETURNS trigger AS $$
 BEGIN
   NEW.search_vector :=
     setweight(to_tsvector('english', coalesce(NEW.name, '')), 'A') ||
     setweight(to_tsvector('english', coalesce(NEW.prompt, '')), 'B') ||
+    setweight(to_tsvector('english', coalesce(NEW.description, '')), 'B') ||
     setweight(to_tsvector('english', coalesce(NEW.content, '')), 'C');
   RETURN NEW;
 END
 $$ LANGUAGE plpgsql;--> statement-breakpoint
 
 CREATE TRIGGER wikis_search_vector_trigger
-  BEFORE INSERT OR UPDATE OF name, prompt ON "wikis"
+  BEFORE INSERT OR UPDATE OF name, prompt, description, content ON "wikis"
   FOR EACH ROW EXECUTE FUNCTION wikis_search_vector_update();--> statement-breakpoint
 
 CREATE INDEX "wikis_search_vector_gin_idx" ON "wikis" USING gin ("search_vector");--> statement-breakpoint
 
--- Fragments: title (A) + content (B)
+-- Fragments: title (A) + content (B) + tags (C)
 CREATE OR REPLACE FUNCTION fragments_search_vector_update() RETURNS trigger AS $$
 BEGIN
   NEW.search_vector :=
     setweight(to_tsvector('english', coalesce(NEW.title, '')), 'A') ||
-    setweight(to_tsvector('english', coalesce(NEW.content, '')), 'B');
+    setweight(to_tsvector('english', coalesce(NEW.content, '')), 'B') ||
+    setweight(
+      to_tsvector(
+        'english',
+        coalesce(
+          (SELECT string_agg(replace(value, '-', ' '), ' ')
+             FROM jsonb_array_elements_text(NEW.tags)),
+          ''
+        )
+      ),
+      'C'
+    );
   RETURN NEW;
 END
 $$ LANGUAGE plpgsql;--> statement-breakpoint
 
 CREATE TRIGGER fragments_search_vector_trigger
-  BEFORE INSERT OR UPDATE OF title ON "fragments"
+  BEFORE INSERT OR UPDATE OF title, content, tags ON "fragments"
   FOR EACH ROW EXECUTE FUNCTION fragments_search_vector_update();--> statement-breakpoint
 
 CREATE INDEX "fragments_search_vector_gin_idx" ON "fragments" USING gin ("search_vector");--> statement-breakpoint
@@ -366,7 +415,7 @@ END
 $$ LANGUAGE plpgsql;--> statement-breakpoint
 
 CREATE TRIGGER people_search_vector_trigger
-  BEFORE INSERT OR UPDATE OF name, relationship ON "people"
+  BEFORE INSERT OR UPDATE OF name, aliases, slug, relationship, content ON "people"
   FOR EACH ROW EXECUTE FUNCTION people_search_vector_update();--> statement-breakpoint
 
 CREATE INDEX "people_search_vector_gin_idx" ON "people" USING gin ("search_vector");
