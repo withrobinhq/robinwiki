@@ -32,7 +32,7 @@
     {
       "name": "core",
       "source": {
-        "repo": "withrobinhq/robin",
+        "repo": "withrobinhq/robinwiki",
         "branch": "main",
         "rootDirectory": "/"
       },
@@ -58,7 +58,7 @@
     {
       "name": "wiki",
       "source": {
-        "repo": "withrobinhq/robin",
+        "repo": "withrobinhq/robinwiki",
         "branch": "main",
         "rootDirectory": "/"
       },
