@@ -111,6 +111,13 @@ template: |
       infobox rows inside the main markdown body.
   12. Emit citations as a structured field (see [CITATIONS]); never add
       inline [^cite:...] markers in the markdown.
+  13. Typography — never emit straight ASCII double-quote characters
+      (the U+0022 "). For prose, replace them with single quotes ('like
+      this') or italics (*like this*). When the body contains HTML or
+      embedded markup with attribute values, use curly quotes (“…”)
+      or the &quot; entity so attribute round-trip stays safe. This rule
+      keeps the renderer's smart-quote pairing from colliding with raw
+      quotes in user-edit content.
 
   [CITATIONS — PER SECTION, STRUCTURED FIELD]
   In the 'citations' output field, declare which fragments back each
