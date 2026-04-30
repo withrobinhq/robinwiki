@@ -110,7 +110,7 @@ describe('handleCreateWiki — issue #154', () => {
     const deps = makeDeps(db)
     const res = await handleCreateWiki(
       deps,
-      { title: 'Foo', type: 'nonsense' },
+      { title: 'Foo', description: 'something', type: 'nonsense' },
       'user-1'
     )
     expect(res.isError).toBe(true)
@@ -122,20 +122,36 @@ describe('handleCreateWiki — issue #154', () => {
     expect(inferWikiTypeMock).not.toHaveBeenCalled()
   })
 
-  it('falls through to inferWikiType when `type` is omitted (regression guard)', async () => {
+  it('rejects a missing `description` (#232 — strict, no inference)', async () => {
     const { db, insertCaptured } = makeDb(undefined)
     const deps = makeDeps(db)
-    inferWikiTypeMock.mockReturnValueOnce('research')
+    const res = await handleCreateWiki(
+      deps,
+      { title: 'Foo', type: 'decision' },
+      'user-1'
+    )
+    expect(res.isError).toBe(true)
+    expect((res.content[0] as { text: string }).text).toMatch(
+      /description is required/
+    )
+    expect(insertCaptured.values).toBeUndefined()
+    expect(inferWikiTypeMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a missing `type` with a pointer to get_wiki_types (#232)', async () => {
+    const { db, insertCaptured } = makeDb(undefined)
+    const deps = makeDeps(db)
     const res = await handleCreateWiki(
       deps,
       { title: 'Foo', description: 'a curated library of references and findings on a topic' },
       'user-1'
     )
-    expect(res.isError).toBeUndefined()
-    expect(inferWikiTypeMock).toHaveBeenCalledOnce()
-    expect(insertCaptured.values?.type).toBe('research')
-    const payload = JSON.parse((res.content[0] as { text: string }).text)
-    expect(payload.type).toBe('research')
-    expect(payload.inferredType).toBe('research')
+    expect(res.isError).toBe(true)
+    expect((res.content[0] as { text: string }).text).toMatch(
+      /type is required/
+    )
+    expect((res.content[0] as { text: string }).text).toMatch(/get_wiki_types/)
+    expect(insertCaptured.values).toBeUndefined()
+    expect(inferWikiTypeMock).not.toHaveBeenCalled()
   })
 })

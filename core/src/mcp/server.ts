@@ -98,22 +98,21 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     'create_wiki',
     {
       description:
-        'Create a new wiki in the knowledge base. Pass `type` explicitly ' +
-        '(list valid slugs via get_wiki_types), or omit it and Robin will ' +
-        'infer the type from the description.',
+        'Create a new wiki in the knowledge base. Both `description` and ' +
+        '`type` are required (#232) — Robin no longer infers a type when ' +
+        'one is missing. Use the get_wiki_types tool first to pick a ' +
+        'valid type slug.',
       inputSchema: {
         title: z.string().describe('Wiki title (becomes the slug)'),
         description: z
           .string()
-          .optional()
           .describe(
-            'What this wiki is for — persisted on the wiki row and used to infer the type when `type` is omitted'
+            'What this wiki is for — persisted on the wiki row and shown to users'
           ),
         type: z
           .string()
-          .optional()
           .describe(
-            'Explicit wiki type slug from get_wiki_types (bypasses inference)'
+            'Wiki type slug from get_wiki_types. Required — there is no inference fallback.'
           ),
       },
     },
