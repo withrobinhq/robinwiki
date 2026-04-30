@@ -749,8 +749,13 @@ npx agent-browser screenshot /tmp/uat-21-15-infobox.png
 # (2) flex sibling of .wiki-article-content inside .wiki-article-layout.
 # Both squeeze the body. Render-above-body fix puts the .winfo OUTSIDE
 # .wiki-article-layout entirely.
-WINFO_IN_ASIDE_SLOT=$(npx agent-browser eval \
+# `agent-browser eval` returns the JSON-encoded value, so a string return
+# arrives wrapped in literal double-quotes (e.g. `"outside"`). Strip them
+# before comparison so the bash equality check does what the assertion
+# means.
+WINFO_IN_ASIDE_SLOT_RAW=$(npx agent-browser eval \
   "(() => { const w = document.querySelector('.winfo'); if (!w) return 'no-winfo'; if (w.closest('.wiki-aside-infobox')) return 'in-legacy-aside'; const layout = w.closest('.wiki-article-layout'); const body = document.querySelector('.wiki-article-content'); if (layout && body && layout.contains(body)) return 'sibling-of-body'; return 'outside'; })()")
+WINFO_IN_ASIDE_SLOT=$(echo "$WINFO_IN_ASIDE_SLOT_RAW" | sed 's/^"//;s/"$//')
 if [ "$WINFO_IN_ASIDE_SLOT" = "outside" ]; then
   pass "15c. Structured .winfo renders outside any aside slot"
 elif [ "$WINFO_IN_ASIDE_SLOT" = "no-winfo" ]; then
@@ -776,8 +781,11 @@ fi
 # 15e. The .winfo renders ABOVE the article body — DOM order precedes
 # .wiki-article-content. compareDocumentPosition with the body returns
 # DOCUMENT_POSITION_FOLLOWING (bit 4 = 4) when the infobox is above.
-WINFO_BEFORE_BODY=$(npx agent-browser eval \
+# `agent-browser eval` returns the JSON-encoded value; strings come back
+# wrapped in literal quotes — strip them before comparing.
+WINFO_BEFORE_BODY_RAW=$(npx agent-browser eval \
   "(() => { const w = document.querySelector('.winfo'); const b = document.querySelector('.wiki-article-content'); if (!w || !b) return 'missing'; return (w.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? 'above' : 'below'; })()")
+WINFO_BEFORE_BODY=$(echo "$WINFO_BEFORE_BODY_RAW" | sed 's/^"//;s/"$//')
 if [ "$WINFO_BEFORE_BODY" = "above" ]; then
   pass "15e. Structured .winfo renders above .wiki-article-content"
 elif [ "$WINFO_BEFORE_BODY" = "missing" ]; then
