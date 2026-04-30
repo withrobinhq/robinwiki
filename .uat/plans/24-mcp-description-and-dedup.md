@@ -183,10 +183,69 @@ if [ -n "${DATABASE_URL:-}" ]; then
   else
     fail "1c. fragments_dedup_hash_idx missing — dedup lookup will table-scan at scale"
   fi
+
+  # ── 1d. Partial dedup index used by hot-path query ──
+  # Existence of the index (1c) is necessary but not sufficient. The
+  # index in core/src/db/schema.ts:225-227 is PARTIAL (`WHERE deleted_at
+  # IS NULL`). For Postgres to use it, the planner needs the predicate
+  # `deleted_at IS NULL` IN the query. findDuplicateFragment in
+  # core/src/db/dedup.ts:42-49 currently emits only
+  # `WHERE dedup_hash = $1` — no deleted_at filter — so the planner
+  # falls back to a Seq Scan. This regression fires until #223 is
+  # closed by adding `isNull(fragments.deletedAt)` to the .where()
+  # chain.
+  # `enable_seqscan = off` is critical: on a tiny `fragments` table the
+  # planner picks Seq Scan even when the index is fully usable (cost
+  # ~6.51 vs index ~8.15). Forcing the planner to consider indices
+  # decouples the assertion from row count — if the partial-index
+  # predicates aren't met, the planner STILL won't use it (it picks Seq
+  # Scan with disable-cost ~1e10), and we score that as a fail. With
+  # the deleted_at predicate added (post-#223), the same query flips to
+  # `Index Scan using fragments_dedup_hash_idx`.
+  EXPLAIN_HASH="ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff${RUN_ID:0:2}"
+  # psql -t -A still emits a `SET` line for the SET command before the
+  # JSON body — strip everything before the opening `[` so jq parses
+  # only the EXPLAIN payload.
+  EXPLAIN_RAW=$(psql "$DATABASE_URL" -t -A -c \
+    "SET enable_seqscan=off; EXPLAIN (FORMAT JSON) SELECT * FROM fragments WHERE dedup_hash = '$EXPLAIN_HASH'" \
+    2>/dev/null)
+  EXPLAIN_JSON=$(echo "$EXPLAIN_RAW" | sed -n '/^\[/,$p')
+
+  if [ -n "$EXPLAIN_JSON" ]; then
+    NODE_TYPE=$(echo "$EXPLAIN_JSON" | jq -r '.[0].Plan."Node Type" // empty' 2>/dev/null)
+    INDEX_NAME=$(echo "$EXPLAIN_JSON" | jq -r '
+      [.[0].Plan."Index Name",
+       (.[0].Plan.Plans // [])[]?."Index Name"]
+      | map(select(. != null and . != ""))
+      | .[0] // empty' 2>/dev/null)
+
+    case "$NODE_TYPE" in
+      "Index Scan"|"Index Only Scan"|"Bitmap Heap Scan")
+        if [ "$INDEX_NAME" = "fragments_dedup_hash_idx" ]; then
+          pass "1d. findDuplicateFragment hot-path uses fragments_dedup_hash_idx ($NODE_TYPE) — partial index hit"
+        else
+          fail "1d. plan is $NODE_TYPE on '$INDEX_NAME' (expected fragments_dedup_hash_idx) — wrong index chosen"
+        fi
+        ;;
+      "Seq Scan")
+        fail "1d. findDuplicateFragment hot-path is Seq Scan — partial index unused (#223 — handler missing isNull(fragments.deletedAt) so planner can't match the WHERE deleted_at IS NULL partial)"
+        ;;
+      "")
+        echo "$EXPLAIN_JSON" > /tmp/uat-24-explain.json
+        skip "1d. EXPLAIN returned no parseable JSON — see /tmp/uat-24-explain.json"
+        ;;
+      *)
+        fail "1d. unexpected plan node type '$NODE_TYPE' (index='$INDEX_NAME') — investigate EXPLAIN manually"
+        ;;
+    esac
+  else
+    skip "1d. EXPLAIN query returned empty — psql/jq unavailable or fragments table absent"
+  fi
 else
   skip "1a. DATABASE_URL unset — wikis.description column check skipped"
   skip "1b. DATABASE_URL unset — fragments.dedup_hash column check skipped"
   skip "1c. DATABASE_URL unset — fragments_dedup_hash_idx check skipped"
+  skip "1d. DATABASE_URL unset — partial-index hot-path EXPLAIN skipped"
 fi
 
 # ── 2. create_wiki tool description text mentions persistence (#168) ──
@@ -487,6 +546,7 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 | 1a | `wikis.description` column exists in DB (migration 0007 applied) | #168 dependency |
 | 1b | `fragments.dedup_hash` column exists (`baseColumns()` in `0000_init.sql`) | #184 dependency |
 | 1c | `fragments_dedup_hash_idx` index exists (PR #187 schema diff) | PR #187 |
+| 1d | `findDuplicateFragment` hot-path query is planned as Index Scan over `fragments_dedup_hash_idx` (not Seq Scan) — partial index actually used | #223 — `core/src/db/dedup.ts:42-49` vs `schema.ts:225-227` |
 | 2a | `tools/list` advertises the new `description` schema text containing 'persisted on the wiki row' | PR #187 — `core/src/mcp/server.ts:108` |
 | 3a | `create_wiki` with explicit valid `type` + `description` returns `{slug, lookupKey, type, inferredType: undefined}` | #168 acceptance test #1 |
 | 3b | DB row's `description` column matches input verbatim | #168 acceptance test #1 |
@@ -509,6 +569,26 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 
 ## Notes
 
+- **§1d is expected to FAIL until #223 is fixed.** `core/src/db/dedup.ts:42-49`
+  filters only on `dedup_hash`. The index at `core/src/db/schema.ts:225-227`
+  is partial `WHERE deleted_at IS NULL`, so the planner needs
+  `deleted_at IS NULL` in the query predicate to use it. Fix is one
+  line: add `isNull(fragments.deletedAt)` to the `.where()` chain
+  (with an `and(...)` wrapper). After fix, EXPLAIN emits
+  `Index Scan using fragments_dedup_hash_idx`. Asserting on planner
+  shape — not raw timing — keeps the signal stable across DB sizes
+  and `random_page_cost` tuning.
+- **§1d uses `SET enable_seqscan=off`.** Live confirmation against
+  the `.dev/postgres` instance with a tiny `fragments` table showed
+  Seq Scan for both query shapes (cost ~6.51) — the planner is too
+  cheap on small tables to pick the index regardless of predicate
+  fitness. With `enable_seqscan=off`, the planner is forced to
+  consider indices; if the partial-index predicate `deleted_at IS NULL`
+  is missing from the query, the planner has no usable index and
+  falls back to Seq Scan with disable-cost ~1e10. With the predicate
+  present, the same query flips to `Index Scan using
+  fragments_dedup_hash_idx` (cost ~8.15). This makes §1d deterministic
+  on any DB size including a freshly-bootstrapped staging DB.
 - **Tools/list-as-contract.** Step 2 leans on `tools/list` to assert the
   schema-text change in `core/src/mcp/server.ts:108`. If a future change
   inlines or rephrases that text, step 2a regresses — update the grep
