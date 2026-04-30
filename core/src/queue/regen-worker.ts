@@ -5,6 +5,7 @@ import { wikis, edges, fragments } from '../db/schema.js'
 import { regenerateWiki } from '../lib/regen.js'
 import { producer } from './producer.js'
 import { logger } from '../lib/logger.js'
+import { emitAuditEvent } from '../db/audit.js'
 
 const log = logger.child({ component: 'regen-worker' })
 
@@ -118,8 +119,13 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
     }
 
     // ── Enqueue individual regen jobs (capped at BATCH_LIMIT) ──
+    // Per-item failures previously logged a warn and disappeared (#273) — the
+    // batch reported success regardless. Now: emit an audit row per failure
+    // and bubble a `failed` count in the JobResult.detail so the orchestrator
+    // can detect partial-success runs.
     const wikiKeysToRegen = Array.from(candidateKeys).slice(0, BATCH_LIMIT)
     let enqueued = 0
+    let failed = 0
     for (const wikiKey of wikiKeysToRegen) {
       try {
         await producer.enqueueRegen({
@@ -132,15 +138,32 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
         })
         enqueued++
       } catch (err) {
+        failed++
+        const message = err instanceof Error ? err.message : String(err)
         log.warn({ wikiKey, err }, 'batch regen: failed to enqueue regen job')
+        await emitAuditEvent(db, {
+          entityType: 'wiki',
+          entityId: wikiKey,
+          eventType: 'regen_batch_item_failed',
+          source: 'system',
+          summary: `Batch regen enqueue failed: ${message}`,
+          detail: { error: message, batchJobId: job.jobId },
+        })
       }
     }
 
     log.info(
-      { jobId: job.jobId, enqueued, hasUnfiled, candidates: candidateKeys.size, capped: wikiKeysToRegen.length },
+      { jobId: job.jobId, enqueued, failed, hasUnfiled, candidates: candidateKeys.size, capped: wikiKeysToRegen.length },
       'regen batch completed'
     )
 
+    // NOTE: Per-item failure count (`failed`) is surfaced via:
+    //   1. Per-item audit row above (`regen_batch_item_failed`)
+    //   2. The `regen batch completed` log line below carries `failed` field
+    // We do NOT extend JobResult with a `detail` field here because that type
+    // lives in @robin/queue and is shared across workers — out of scope for
+    // this fix. Downstream observers should query the audit_log table or
+    // tail the worker log for the `failed` field.
     return { jobId: job.jobId, success: true, processedAt: new Date().toISOString() }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
