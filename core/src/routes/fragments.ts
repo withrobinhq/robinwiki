@@ -265,6 +265,51 @@ fragmentsRouter.put('/:id', zValidator('json', updateFragmentBodySchema, validat
   return c.json(fragmentResponseSchema.parse({ ...fragment, id: fragment.lookupKey }))
 })
 
+// DELETE /fragments/:id — soft-delete the fragment and cascade-soft-delete
+// every edge that references it in either direction. Mirrors the pattern at
+// core/src/routes/wikis.ts:715-739 (lookup → 404 if missing → soft-delete row
+// + cascade joins → audit emit → 204 no body).
+fragmentsRouter.delete('/:id', async (c) => {
+  const id = c.req.param('id')
+  const [fragment] = await db
+    .select()
+    .from(fragments)
+    .where(and(eq(fragments.lookupKey, id), isNull(fragments.deletedAt)))
+  if (!fragment) return c.json({ error: 'Not found' }, 404)
+
+  const now = new Date()
+
+  await db
+    .update(fragments)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(eq(fragments.lookupKey, id))
+
+  // Cascade: soft-delete every active edge that references the fragment in
+  // either direction. Covers FRAGMENT_IN_WIKI, FRAGMENT_RELATED_TO_FRAGMENT
+  // (both src and dst), FRAGMENT_MENTIONS_PERSON, ENTRY_HAS_FRAGMENT — i.e.
+  // any edge type whose row mentions this lookup_key.
+  await db
+    .update(edges)
+    .set({ deletedAt: now })
+    .where(
+      and(
+        isNull(edges.deletedAt),
+        sql`(${edges.srcId} = ${id} OR ${edges.dstId} = ${id})`
+      )
+    )
+
+  await emitAuditEvent(db, {
+    entityType: 'fragment',
+    entityId: id,
+    eventType: 'deleted',
+    source: 'api',
+    summary: `Fragment deleted: ${fragment.title}`,
+    detail: { fragmentKey: id, fragmentSlug: fragment.slug },
+  })
+
+  return c.body(null, 204)
+})
+
 // POST /fragments/:id/accept — accept fragment into a review-mode wiki
 fragmentsRouter.post('/:id/accept', zValidator('json', fragmentReviewBodySchema, validationHook), async (c) => {
   const id = c.req.param('id')
