@@ -1,9 +1,11 @@
 import { Hono } from 'hono'
-import { eq, and, isNull, inArray } from 'drizzle-orm'
+import { eq, and, isNull, inArray, sql } from 'drizzle-orm'
 import { zValidator } from '@hono/zod-validator'
+import { generateSlug, makeLookupKey } from '@robin/shared'
 import { sessionMiddleware } from '../middleware/session.js'
 import { db } from '../db/client.js'
 import { people, edges, fragments, wikis } from '../db/schema.js'
+import { resolvePersonSlug } from '../db/slug.js'
 import { logger } from '../lib/logger.js'
 import { validationHook } from '../lib/validation.js'
 import { buildSidecar } from '../lib/wikiSidecar.js'
@@ -13,6 +15,8 @@ import {
   personDetailResponseSchema,
   personListResponseSchema,
   updatePersonBodySchema,
+  createPersonBodySchema,
+  mergePersonBodySchema,
   personListQuerySchema,
 } from '../schemas/people.schema.js'
 import { emitAuditEvent } from '../db/audit.js'
@@ -67,6 +71,62 @@ peopleRouter.get('/', async (c) => {
 
   return c.json(
     personListResponseSchema.parse({ people: rows.map((r) => ({ ...r, id: r.lookupKey })) })
+  )
+})
+
+// POST /people — manual create (#234). Bypasses AI extraction; the row lands
+// verified=true / state=RESOLVED so the matcher treats it as a canonical
+// anchor. Returns 409 on duplicate canonical name (case-insensitive).
+peopleRouter.post('/', zValidator('json', createPersonBodySchema, validationHook), async (c) => {
+  const body = c.req.valid('json')
+  const trimmedName = body.name.trim()
+  if (!trimmedName) return c.json({ error: 'name is required' }, 400)
+
+  const lowered = trimmedName.toLowerCase()
+  const [collision] = await db
+    .select({ key: people.lookupKey })
+    .from(people)
+    .where(and(sql`lower(${people.name}) = ${lowered}`, isNull(people.deletedAt)))
+    .limit(1)
+  if (collision) {
+    return c.json({ error: `Person "${trimmedName}" already exists` }, 409)
+  }
+
+  const lookupKey = makeLookupKey('person')
+  const slug = await resolvePersonSlug(db, generateSlug(trimmedName))
+
+  const [created] = await db
+    .insert(people)
+    .values({
+      lookupKey,
+      slug,
+      name: trimmedName,
+      canonicalName: trimmedName,
+      relationship: body.relationship ?? '',
+      aliases: body.aliases ?? [],
+      verified: true,
+      state: 'RESOLVED',
+    })
+    .returning()
+
+  await emitAuditEvent(db, {
+    entityType: 'person',
+    entityId: lookupKey,
+    eventType: 'created',
+    source: 'api',
+    summary: `Person created (manual): ${trimmedName}`,
+    detail: { personKey: lookupKey, manual: true },
+  })
+
+  return c.json(
+    {
+      ...created,
+      id: created.lookupKey,
+      content: created.content ?? '',
+      backlinks: [] as Array<{ id: string; title: string }>,
+      wikis: [] as Array<unknown>,
+    },
+    201
   )
 })
 
@@ -219,6 +279,129 @@ peopleRouter.post('/:id/regenerate', async (c) => {
   return c.json({ error: 'Person regen disabled in M2 — will be restored in M3' }, 503)
 })
 
+
+// POST /people/:id/merge — merge source person into a target person (#234).
+// Steps:
+//   1. Repoint FRAGMENT_MENTIONS_PERSON edges from source to target
+//   2. Append source name + aliases into target.aliases (deduped, lower-trim)
+//   3. Rewrite [[person:source-slug]] → [[person:target-slug]] in every
+//      non-deleted wiki body so previously-rendered prose still resolves
+//   4. Soft-delete the source row
+//   5. Emit audit event with the alias delta
+peopleRouter.post(
+  '/:id/merge',
+  zValidator('json', mergePersonBodySchema, validationHook),
+  async (c) => {
+    const sourceId = c.req.param('id')
+    const { targetPersonId } = c.req.valid('json')
+
+    if (sourceId === targetPersonId) {
+      return c.json({ error: 'Cannot merge a person into themselves' }, 400)
+    }
+
+    const [source] = await db
+      .select()
+      .from(people)
+      .where(and(eq(people.lookupKey, sourceId), isNull(people.deletedAt)))
+    if (!source) return c.json({ error: 'Source person not found' }, 404)
+
+    const [target] = await db
+      .select()
+      .from(people)
+      .where(and(eq(people.lookupKey, targetPersonId), isNull(people.deletedAt)))
+    if (!target) return c.json({ error: 'Target person not found' }, 404)
+
+    // 1. Repoint FRAGMENT_MENTIONS_PERSON edges
+    const repointed = await db
+      .update(edges)
+      .set({ dstId: targetPersonId })
+      .where(
+        and(
+          eq(edges.dstId, sourceId),
+          eq(edges.edgeType, 'FRAGMENT_MENTIONS_PERSON'),
+          isNull(edges.deletedAt)
+        )
+      )
+      .returning({ id: edges.id })
+
+    // 2. Alias union — dedup case-insensitively, preserve target ordering.
+    const seen = new Set<string>()
+    const merged: string[] = []
+    const push = (raw: string) => {
+      const t = raw.trim()
+      if (!t) return
+      const k = t.toLowerCase()
+      if (seen.has(k)) return
+      seen.add(k)
+      merged.push(t)
+    }
+    for (const a of target.aliases ?? []) push(a)
+    for (const a of source.aliases ?? []) push(a)
+    if (source.name) push(source.name)
+    // Don't fold the target's own canonical name into its own aliases.
+    const targetCanon = (target.canonicalName || target.name || '').trim().toLowerCase()
+    const finalAliases = merged.filter((a) => a.trim().toLowerCase() !== targetCanon)
+
+    await db
+      .update(people)
+      .set({ aliases: finalAliases, embedding: null, updatedAt: new Date() })
+      .where(eq(people.lookupKey, targetPersonId))
+
+    // 3. Rewrite [[person:source-slug]] in non-deleted wiki bodies
+    let bodiesRewritten = 0
+    if (source.slug && target.slug && source.slug !== target.slug) {
+      const sourceToken = `[[person:${source.slug}]]`
+      const targetToken = `[[person:${target.slug}]]`
+      const updated = await db
+        .update(wikis)
+        .set({
+          content: sql`replace(${wikis.content}, ${sourceToken}, ${targetToken})`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            isNull(wikis.deletedAt),
+            sql`${wikis.content} like ${'%' + sourceToken + '%'}`
+          )
+        )
+        .returning({ id: wikis.lookupKey })
+      bodiesRewritten = updated.length
+    }
+
+    // 4. Soft-delete source
+    await db
+      .update(people)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(eq(people.lookupKey, sourceId))
+
+    // 5. Audit
+    await emitAuditEvent(db, {
+      entityType: 'person',
+      entityId: targetPersonId,
+      eventType: 'merged',
+      source: 'api',
+      summary: `Person merged: ${source.name} → ${target.name}`,
+      detail: {
+        sourcePersonKey: sourceId,
+        targetPersonKey: targetPersonId,
+        edgesRepointed: repointed.length,
+        bodiesRewritten,
+        addedAliases: finalAliases.filter(
+          (a) => !(target.aliases ?? []).some((b) => b.toLowerCase() === a.toLowerCase())
+        ),
+      },
+    })
+
+    return c.json({
+      ok: true,
+      sourcePersonId: sourceId,
+      targetPersonId,
+      edgesRepointed: repointed.length,
+      bodiesRewritten,
+      aliases: finalAliases,
+    })
+  }
+)
 
 // DELETE /people/:id — soft delete
 peopleRouter.delete('/:id', async (c) => {

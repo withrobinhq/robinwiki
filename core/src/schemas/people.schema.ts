@@ -56,6 +56,25 @@ export const updatePersonBodySchema = z.object({
   content: z.string().optional(),
 })
 
+/**
+ * Manual "Add Person" — bypasses AI extraction. Manually-created persons
+ * land verified=true / state=RESOLVED so they don't loiter in the
+ * matcher's settlement queue. (#234)
+ */
+export const createPersonBodySchema = z.object({
+  name: z.string().min(1),
+  aliases: z.array(z.string()).optional().default([]),
+  relationship: z.string().optional().default(''),
+})
+
+/**
+ * POST /people/:id/merge — repoint edges + alias union + slug rewrite +
+ * soft-delete the source. (#234)
+ */
+export const mergePersonBodySchema = z.object({
+  targetPersonId: z.string().min(1),
+})
+
 // ── Query schemas ───────────────────────────────────────────────────────────
 
 export const personListQuerySchema = paginationQuerySchema.extend({

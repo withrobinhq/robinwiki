@@ -8,6 +8,7 @@ import { useLogout } from "@/hooks/useLogout";
 
 import AddWikiModal from "@/components/layout/AddWikiModal";
 import AddEntryModal from "@/components/layout/AddEntryModal";
+import AddPersonModal from "@/components/layout/AddPersonModal";
 import WikiHeaderSearch from "@/components/layout/WikiHeaderSearch";
 
 interface HeaderProps {
@@ -16,8 +17,10 @@ interface HeaderProps {
 
 export default function Header({ onMenuToggle }: HeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [addWikiOpen, setAddWikiOpen] = useState(false);
   const [addEntryOpen, setAddEntryOpen] = useState(false);
+  const [addPersonOpen, setAddPersonOpen] = useState(false);
   const { session } = useSession();
   const router = useRouter();
   const pathname = usePathname();
@@ -112,48 +115,129 @@ export default function Header({ onMenuToggle }: HeaderProps) {
           </span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => setAddWikiOpen(true)}
-          className="wiki-add-wiki-btn flex cursor-pointer items-center justify-center"
-          style={{
-            gap: 4,
-            padding: "8px 12px",
-            height: 35,
-            boxSizing: "border-box",
-            background: "transparent",
-            border: "none",
-            borderRadius: 2,
-          }}
-        >
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden
-          >
-            <path
-              d="M12 5v14M5 12h14"
-              stroke={addWikiFg}
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-          <span
+        <div style={{ position: "relative" }}>
+          <button
+            type="button"
+            onClick={() => setAddMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={addMenuOpen}
+            className="wiki-add-wiki-btn flex cursor-pointer items-center justify-center"
             style={{
-              ...T.bodySmall,
-              fontWeight: 600,
-              lineHeight: "normal",
-              letterSpacing: "-0.0336px",
-              color: addWikiFg,
-              whiteSpace: "nowrap",
+              gap: 4,
+              padding: "8px 12px",
+              height: 35,
+              boxSizing: "border-box",
+              background: "transparent",
+              border: "none",
+              borderRadius: 2,
             }}
           >
-            Add Wiki
-          </span>
-        </button>
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden
+            >
+              <path
+                d="M12 5v14M5 12h14"
+                stroke={addWikiFg}
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span
+              style={{
+                ...T.bodySmall,
+                fontWeight: 600,
+                lineHeight: "normal",
+                letterSpacing: "-0.0336px",
+                color: addWikiFg,
+                whiteSpace: "nowrap",
+              }}
+            >
+              Add Wiki
+            </span>
+          </button>
+
+          {addMenuOpen && (
+            <>
+              <div
+                style={{ position: "fixed", inset: 0, zIndex: 40 }}
+                onClick={() => setAddMenuOpen(false)}
+              />
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 6px)",
+                  right: 0,
+                  zIndex: 50,
+                  minWidth: 160,
+                  backgroundColor: "var(--bg)",
+                  border: "1px solid var(--card-border)",
+                  borderRadius: 6,
+                  padding: "4px 0",
+                  boxShadow: "var(--shadow-dropdown)",
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    setAddWikiOpen(true);
+                  }}
+                  className="flex w-full cursor-pointer items-center"
+                  style={{
+                    gap: 10,
+                    padding: "8px 14px",
+                    background: "none",
+                    border: "none",
+                    ...T.caption,
+                    color: "var(--heading-color)",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.backgroundColor = "var(--card-border)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.backgroundColor = "transparent")
+                  }
+                >
+                  Wiki
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    setAddPersonOpen(true);
+                  }}
+                  className="flex w-full cursor-pointer items-center"
+                  style={{
+                    gap: 10,
+                    padding: "8px 14px",
+                    background: "none",
+                    border: "none",
+                    ...T.caption,
+                    color: "var(--heading-color)",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.backgroundColor = "var(--card-border)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.backgroundColor = "transparent")
+                  }
+                >
+                  Person
+                </button>
+              </div>
+            </>
+          )}
+        </div>
 
         <div className="flex items-center" style={{ gap: 8, position: "relative" }}>
           <div className="flex items-start">
@@ -300,6 +384,7 @@ export default function Header({ onMenuToggle }: HeaderProps) {
 
       <AddWikiModal open={addWikiOpen} onClose={() => setAddWikiOpen(false)} />
       <AddEntryModal open={addEntryOpen} onClose={() => setAddEntryOpen(false)} />
+      <AddPersonModal open={addPersonOpen} onClose={() => setAddPersonOpen(false)} />
     </header>
   );
 }
