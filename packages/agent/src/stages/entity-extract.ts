@@ -159,23 +159,31 @@ export async function entityExtract(
   // 4. Call LLM (returns Zod-validated output)
   const parsed = await deps.llmCall(spec.system, spec.user)
 
-  // 6. Resolve each extraction
+  // 6. Resolve each extraction. #237: Elfie is matcher-only — unmatched
+  // mentions are DROPPED instead of becoming new Person rows. The
+  // resolvePerson() helper is still the score-based matcher; when it
+  // reports `isNew: true` we treat that as a "no match" signal and
+  // skip the mention entirely. Authorship for first-person pronouns is
+  // handled downstream by the classifier's [AUTHORSHIP] block (#238),
+  // not here.
   const peopleMap = new Map<string, string>()
   const newAliases = new Map<string, string[]>()
   const newPeople: EntityExtractResult['newPeople'] = []
+  let unmatchedDropped = 0
 
   for (const extraction of parsed.people) {
     const resolved = resolvePerson(extraction, knownPeople, deps.config, deps.makePeopleKey)
 
-    peopleMap.set(extraction.mention, resolved.personKey)
-
     if (resolved.isNew) {
-      newPeople.push({
-        personKey: resolved.personKey,
-        canonicalName: extraction.inferredName,
-        verified: false,
-      })
+      // No matching Person row — drop this mention. Do NOT add it to
+      // peopleMap (which would seed a FRAGMENT_MENTIONS_PERSON edge to
+      // a non-existent person) and do NOT push it onto newPeople
+      // (which would have persist.ts upsert a Person on its behalf).
+      unmatchedDropped++
+      continue
     }
+
+    peopleMap.set(extraction.mention, resolved.personKey)
 
     if (resolved.newAlias) {
       const existing = newAliases.get(resolved.personKey) ?? []
@@ -191,6 +199,8 @@ export async function entityExtract(
     status: 'completed',
     metadata: {
       totalMentions: parsed.people.length,
+      matchedMentions: peopleMap.size,
+      unmatchedDropped,
       newPeople: newPeople.length,
     },
   })
@@ -199,7 +209,10 @@ export async function entityExtract(
     data: {
       peopleMap,
       newAliases,
-      extractions: parsed.people,
+      // Filter extractions down to those that matched so persist's
+      // mention-to-fragment edge logic can't re-introduce a dropped
+      // mention. Unmatched mentions never reach persist.
+      extractions: parsed.people.filter((e) => peopleMap.has(e.mention)),
       newPeople,
     },
     durationMs: Date.now() - start,

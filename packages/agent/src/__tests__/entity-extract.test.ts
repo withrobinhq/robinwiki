@@ -146,7 +146,14 @@ describe('resolvePerson', () => {
 describe('entityExtract', () => {
   beforeEach(resetKeyCounter)
 
-  it('calls LLM, parses output, resolves mentions, returns peopleMap', async () => {
+  it('matches known people and DROPS unmatched mentions (#237 — matcher-only)', async () => {
+    // Even if the LLM mistakenly returns a matchedKey: null candidate
+    // (i.e. ignores the prompt's instruction to drop unknowns), the
+    // stage must still drop it: no peopleMap entry, no newPeople push.
+    // resolvePerson will report isNew = true because the score floor
+    // is unmet against the lone known person, and the stage now
+    // treats isNew as a "no match" signal rather than a "create new"
+    // signal.
     const mockDeps: EntityExtractDeps = {
       loadAllPeople: vi
         .fn()
@@ -182,11 +189,19 @@ describe('entityExtract', () => {
       jobId: 'job001',
     })
 
-    expect(result.data.peopleMap.size).toBe(2)
+    // Only the matched mention survives.
+    expect(result.data.peopleMap.size).toBe(1)
     expect(result.data.peopleMap.get('Sarah')).toBe('personABC')
-    expect(result.data.peopleMap.get('Bob')).toBeDefined()
-    expect(result.data.newPeople).toHaveLength(1)
-    expect(result.data.newPeople[0].canonicalName).toBe('Bob')
+    expect(result.data.peopleMap.has('Bob')).toBe(false)
+
+    // Elfie no longer creates Person rows.
+    expect(result.data.newPeople).toHaveLength(0)
+
+    // extractions returned to persist must also be filtered down so
+    // matchMentionsToFragments cannot re-introduce a dropped mention.
+    expect(result.data.extractions).toHaveLength(1)
+    expect(result.data.extractions[0].mention).toBe('Sarah')
+
     expect(result.durationMs).toBeGreaterThanOrEqual(0)
   })
 
