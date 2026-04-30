@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 
 import { T } from "@/lib/typography";
@@ -16,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { updatePerson } from "@/lib/api";
+import { updatePerson, listPeople } from "@/lib/api";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -50,7 +51,12 @@ export default function PersonSettingsModal({
   const [aliases, setAliases] = useState<string[]>(prefill.aliases);
   const [aliasInput, setAliasInput] = useState("");
   const [relationship, setRelationship] = useState(prefill.relationship);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [mergePickerOpen, setMergePickerOpen] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState<string>("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   useEffect(() => {
     if (open) {
@@ -58,6 +64,10 @@ export default function PersonSettingsModal({
       setAliases(prefill.aliases);
       setRelationship(prefill.relationship);
       setAliasInput("");
+      setConfirmDelete(false);
+      setMergePickerOpen(false);
+      setMergeTargetId("");
+      setActionError(null);
     }
   }, [open, prefill.name, prefill.aliases, prefill.relationship]);
 
@@ -74,6 +84,74 @@ export default function PersonSettingsModal({
       onClose();
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/people/${personId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok && res.status !== 204) {
+        throw new Error(`Delete failed (${res.status})`);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["people"] });
+      onClose();
+      router.push("/wiki");
+    },
+    onError: (err) => {
+      setActionError(err instanceof Error ? err.message : "Delete failed");
+    },
+  });
+
+  const mergeMutation = useMutation({
+    mutationFn: async (targetPersonId: string) => {
+      const res = await fetch(`/api/people/${personId}/merge`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetPersonId }),
+      });
+      if (!res.ok) {
+        let msg = `Merge failed (${res.status})`;
+        try {
+          const j = (await res.json()) as { error?: string };
+          if (j?.error) msg = j.error;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["people"] });
+      queryClient.invalidateQueries({ queryKey: ["wikis"] });
+      onClose();
+      router.push("/wiki");
+    },
+    onError: (err) => {
+      setActionError(err instanceof Error ? err.message : "Merge failed");
+    },
+  });
+
+  const peopleQuery = useMutation({
+    mutationFn: async () => {
+      const { data } = await listPeople({ query: { limit: 200 } });
+      return (data?.people ?? []).filter(
+        (p) => (p.id ?? p.lookupKey) !== personId,
+      );
+    },
+  });
+
+  const peopleList = peopleQuery.data ?? [];
+  const sortedPeople = useMemo(
+    () =>
+      [...peopleList].sort((a, b) =>
+        (a.name ?? "").localeCompare(b.name ?? ""),
+      ),
+    [peopleList],
+  );
 
   function addAlias(value: string) {
     const trimmed = value.trim();
@@ -100,7 +178,7 @@ export default function PersonSettingsModal({
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
-        style={{ maxWidth: 480, display: "flex", flexDirection: "column", gap: 20 }}
+        style={{ maxWidth: 520, display: "flex", flexDirection: "column", gap: 20 }}
       >
         <DialogHeader>
           <DialogTitle style={T.h2}>Person Settings</DialogTitle>
@@ -184,6 +262,127 @@ export default function PersonSettingsModal({
               placeholder="e.g. Colleague, Friend, Family"
             />
           </div>
+        </div>
+
+        {/* Dedup actions: Merge + Delete */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            paddingTop: 8,
+            borderTop: "1px solid var(--border)",
+          }}
+        >
+          <FieldLabel>Dedup</FieldLabel>
+
+          {!mergePickerOpen ? (
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setActionError(null);
+                  setMergePickerOpen(true);
+                  if (peopleList.length === 0) peopleQuery.mutate();
+                }}
+              >
+                Merge into…
+              </Button>
+              {!confirmDelete ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setActionError(null);
+                    setConfirmDelete(true);
+                  }}
+                  style={{ color: "var(--destructive)", borderColor: "var(--destructive)" }}
+                >
+                  Delete
+                </Button>
+              ) : (
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ ...T.micro, color: "var(--destructive)" }}>
+                    Delete this person?
+                  </span>
+                  <Button
+                    type="button"
+                    onClick={() => deleteMutation.mutate()}
+                    disabled={deleteMutation.isPending}
+                    style={{ background: "var(--destructive)", color: "#fff" }}
+                  >
+                    {deleteMutation.isPending ? "Deleting..." : "Confirm Delete"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setConfirmDelete(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={{ ...T.micro, color: "#545353" }}>
+                Pick the person to merge into. The current person will be
+                soft-deleted; their aliases and edges follow the target.
+              </span>
+              <select
+                value={mergeTargetId}
+                onChange={(e) => setMergeTargetId(e.target.value)}
+                aria-label="Merge target person"
+                style={{
+                  height: 38,
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  padding: "0 8px",
+                  background: "transparent",
+                  ...T.bodySmall,
+                }}
+              >
+                <option value="">
+                  {peopleQuery.isPending
+                    ? "Loading people…"
+                    : sortedPeople.length === 0
+                      ? "No other people to merge into"
+                      : "Choose target…"}
+                </option>
+                {sortedPeople.map((p) => (
+                  <option key={p.id ?? p.lookupKey} value={p.id ?? p.lookupKey}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button
+                  type="button"
+                  onClick={() => mergeMutation.mutate(mergeTargetId)}
+                  disabled={!mergeTargetId || mergeMutation.isPending}
+                >
+                  {mergeMutation.isPending ? "Merging…" : "Merge"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setMergePickerOpen(false);
+                    setMergeTargetId("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {actionError ? (
+            <span style={{ ...T.micro, color: "var(--destructive)" }}>
+              {actionError}
+            </span>
+          ) : null}
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 8 }}>

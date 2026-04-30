@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { customAlphabet } from 'nanoid'
-import { entries, fragments, wikis } from './schema.js'
+import { entries, fragments, people, wikis } from './schema.js'
 import { checkSlugCollision } from '@robin/shared'
 import type { DB } from './client.js'
 
@@ -70,4 +70,21 @@ export async function resolveWikiSlug(database: DB, slug: string): Promise<strin
   }
 
   throw new Error(`Slug collision: could not disambiguate "${slug}" after 5 attempts`)
+}
+
+/**
+ * @summary Resolve a unique slug for a person, appending -2, -3 etc. on collision.
+ *
+ * Mirrors the entry/fragment pattern (numeric suffix, predictable). People
+ * are user-visible by name so a deterministic suffix is fine. (#234)
+ */
+export async function resolvePersonSlug(database: DB, slug: string): Promise<string> {
+  return checkSlugCollision(slug, async (candidate) => {
+    const [existing] = await database
+      .select({ key: people.lookupKey })
+      .from(people)
+      .where(eq(people.slug, candidate))
+      .limit(1)
+    return !!existing
+  })
 }

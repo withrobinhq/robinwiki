@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pencil } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { T } from "@/lib/typography";
 import { Button } from "@/components/ui/button";
-import { ActionButton } from "@/components/ui/action-button";
 import { Toast } from "@/components/ui/toast";
 import {
   Dialog,
@@ -22,11 +20,10 @@ import { Switch } from "@/components/ui/switch";
 import type { WikiSettingsPrefill } from "@/lib/wikiSettingsPrefill";
 import {
   useWikiTypesList,
-  findWikiType,
   type WikiTypeListItem,
 } from "@/hooks/useWikiTypesList";
 import { useToggleBouncerMode } from "@/hooks/useToggleBouncerMode";
-import { updateWiki } from "@/lib/generated";
+import { publishWiki, unpublishWiki, updateWiki } from "@/lib/generated";
 
 export type { WikiSettingsPrefill } from "@/lib/wikiSettingsPrefill";
 
@@ -88,11 +85,14 @@ export default function AddWikiModal({
   const [wikiType, setWikiType] = useState("");
   const [description, setDescription] = useState("");
   const [subtitle, setSubtitle] = useState<string | undefined>(undefined);
-  /** Wiki prompt state (emulated local state; will move to OS.robin store later) */
+  /**
+   * #240: Wiki Structure (UI label rename) — inline override of the
+   * type's system_message. Empty string === "use the type default".
+   * `wikis.prompt` storage stays a system_message override; only the UI
+   * label and presentation changed.
+   */
   const [wikiPrompt, setWikiPrompt] = useState<string>("");
   const [wikiPromptEdited, setWikiPromptEdited] = useState<boolean>(false);
-  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
-  const [promptDraft, setPromptDraft] = useState<string>("");
   /** Existing-wiki settings: form read-only until user clicks Edit Wiki */
   const [fieldsEditable, setFieldsEditable] = useState(true);
   const [showSavedToast, setShowSavedToast] = useState(false);
@@ -101,6 +101,11 @@ export default function AddWikiModal({
   const prevWikiTypeRef = useRef<string>("");
   const [bouncerMode, setBouncerMode] = useState<"auto" | "review">("auto");
   const initialBouncerModeRef = useRef<"auto" | "review">("auto");
+  /** #255: publish toggle state inside settings modal. */
+  const [published, setPublished] = useState<boolean>(false);
+  const [publishedSlug, setPublishedSlug] = useState<string | null>(null);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
 
   const isSettingsView = Boolean(prefill);
 
@@ -145,6 +150,9 @@ export default function AddWikiModal({
           const bm = prefill.bouncerMode ?? "auto";
           setBouncerMode(bm);
           initialBouncerModeRef.current = bm;
+          setPublished(Boolean(prefill.published));
+          setPublishedSlug(prefill.publishedSlug ?? null);
+          setPublishError(null);
           setFieldsEditable(false);
         } else {
           setName("");
@@ -156,9 +164,11 @@ export default function AddWikiModal({
           prevWikiTypeRef.current = "";
           setBouncerMode("auto");
           initialBouncerModeRef.current = "auto";
+          setPublished(false);
+          setPublishedSlug(null);
+          setPublishError(null);
           setFieldsEditable(true);
         }
-        setPromptDialogOpen(false);
       }
       wasOpen.current = true;
     } else {
@@ -444,60 +454,45 @@ export default function AddWikiModal({
             />
           </div>
 
-          {/* Wiki Prompt */}
+          {/* Wiki Structure (#240) — inline textarea matching the
+              Description field's shape. Empty value = "use the type
+              default"; the Revert button clears the override. */}
           <div className="px-5 pt-4 flex flex-col gap-2">
-            <FieldLabel>
-              Wiki Prompt <InfoIcon className="text-[#545353]" />
-            </FieldLabel>
-            {(() => {
-              const hasType = Boolean(wikiType);
-              const typeLabel =
-                findWikiType(wikiTypesData, wikiType)?.displayLabel ??
-                (wikiType
-                  ? wikiType.charAt(0).toUpperCase() + wikiType.slice(1)
-                  : "");
-              const disabled = locked || !hasType;
-              const badgeText = !hasType
-                ? "Pick a type to customize"
-                : wikiPromptEdited
-                  ? `Customized ${typeLabel} Prompt`
-                  : `Default ${typeLabel} Prompt`;
-              const badgeColors = wikiPromptEdited
-                ? { fg: "var(--wiki-link)", bg: "rgba(51, 102, 204, 0.10)", bd: "var(--wiki-link)" }
-                : { fg: "var(--input-label)", bg: "var(--surface-subtle)", bd: "var(--btn-disabled-bg)" };
-              return (
-                <div
-                  className="flex h-10 w-full items-center justify-between rounded-lg border border-input bg-transparent px-2.5"
-                  style={{ opacity: disabled ? 0.6 : 1 }}
-                >
-                  <span
-                    className="inline-flex items-center"
-                    style={{
-                      ...T.micro,
-                      padding: "2px 8px",
-                      color: badgeColors.fg,
-                      background: badgeColors.bg,
-                      border: `1px solid ${badgeColors.bd}`,
-                    }}
-                  >
-                    {badgeText}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (disabled) return;
-                      setPromptDraft(wikiPrompt);
-                      setPromptDialogOpen(true);
-                    }}
-                    disabled={disabled}
-                    aria-label="Edit wiki prompt"
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-[#545353] transition-colors hover:bg-[#f5f5f5] disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                  >
-                    <Pencil size={14} strokeWidth={1.5} aria-hidden />
-                  </button>
-                </div>
-              );
-            })()}
+            <div className="flex items-center justify-between gap-2">
+              <FieldLabel>
+                Wiki Structure <InfoIcon className="text-[#545353]" />
+              </FieldLabel>
+              <button
+                type="button"
+                onClick={() => {
+                  setWikiPrompt("");
+                  setWikiPromptEdited(false);
+                }}
+                disabled={locked || !wikiPromptEdited}
+                aria-label="Revert to default"
+                className="text-[11px] leading-4 underline disabled:opacity-50 disabled:no-underline"
+                style={{ color: "var(--wiki-link)", background: "none", border: "none", padding: 0, cursor: locked || !wikiPromptEdited ? "default" : "pointer" }}
+              >
+                Revert to default
+              </button>
+            </div>
+            <Textarea
+              value={wikiPrompt}
+              onChange={(e) => {
+                const next = e.target.value;
+                setWikiPrompt(next);
+                setWikiPromptEdited(next.trim().length > 0);
+              }}
+              placeholder={"# Type: title\n## Section\n- bullet\n## Another section"}
+              rows={6}
+              disabled={locked || !wikiType}
+              className="min-h-[120px] resize-none font-mono"
+            />
+            <span className="text-[11px] leading-4" style={{ color: "#676d76" }}>
+              {wikiPromptEdited
+                ? "Custom structure overrides the type default at regen time."
+                : "Empty — uses the wiki type's default structure."}
+            </span>
           </div>
 
           {/* Fragment Review Mode toggle -- settings mode only */}
@@ -519,6 +514,88 @@ export default function AddWikiModal({
                 disabled={locked}
                 size="sm"
               />
+            </div>
+          )}
+
+          {/* #255: Publish/unpublish toggle — settings mode only.
+              Calls the existing /wikis/:id/publish + /unpublish endpoints
+              eagerly (no save-button gating) so the toggle reflects the
+              live published state at all times. */}
+          {isSettingsView && wikiId && wikiId !== "preview" && (
+            <div className="px-5 pt-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <FieldLabel>Publish</FieldLabel>
+                  <span className="text-[11px] leading-4" style={{ color: "#676d76" }}>
+                    {published
+                      ? "Public — anyone with the link can read this wiki"
+                      : "Private — only you can read this wiki"}
+                  </span>
+                </div>
+                <Switch
+                  aria-label="Publish wiki"
+                  checked={published}
+                  onCheckedChange={async (next: boolean) => {
+                    if (publishBusy) return;
+                    setPublishBusy(true);
+                    setPublishError(null);
+                    try {
+                      if (next) {
+                        const { data, error } = await publishWiki({
+                          path: { id: wikiId },
+                          credentials: "include",
+                        });
+                        if (error) throw new Error((error as { error?: string })?.error ?? "Publish failed");
+                        setPublished(true);
+                        setPublishedSlug(
+                          (data as { publishedSlug?: string } | undefined)?.publishedSlug ?? null,
+                        );
+                      } else {
+                        const { error } = await unpublishWiki({
+                          path: { id: wikiId },
+                          credentials: "include",
+                        });
+                        if (error) throw new Error((error as { error?: string })?.error ?? "Unpublish failed");
+                        setPublished(false);
+                      }
+                      await queryClient.invalidateQueries({ queryKey: ["wikis"] });
+                      await queryClient.invalidateQueries({ queryKey: ["wiki", wikiId] });
+                    } catch (err) {
+                      setPublishError(err instanceof Error ? err.message : "Toggle failed");
+                    } finally {
+                      setPublishBusy(false);
+                    }
+                  }}
+                  disabled={publishBusy}
+                  size="sm"
+                />
+              </div>
+              {published && publishedSlug ? (
+                <div
+                  className="flex items-center justify-between gap-2 rounded-md px-2 py-1"
+                  style={{ background: "var(--surface-subtle)", border: "1px solid var(--btn-disabled-bg)" }}
+                >
+                  <span
+                    style={{ ...T.micro, color: "var(--input-label)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  >
+                    {`/p/${publishedSlug}`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = `${window.location.origin}/p/${publishedSlug}`;
+                      void navigator.clipboard.writeText(url).catch(() => {});
+                    }}
+                    className="rounded px-2 text-[11px]"
+                    style={{ background: "transparent", border: "1px solid var(--btn-disabled-bg)", color: "var(--wiki-link)" }}
+                  >
+                    Copy link
+                  </button>
+                </div>
+              ) : null}
+              {publishError ? (
+                <span style={{ ...T.micro, color: "var(--destructive)" }}>{publishError}</span>
+              ) : null}
             </div>
           )}
 
@@ -558,69 +635,6 @@ export default function AddWikiModal({
                     : confirmLabel}
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Wiki prompt edit dialog */}
-      <Dialog
-        open={promptDialogOpen}
-        onOpenChange={(next) => {
-          if (!next) setPromptDialogOpen(false);
-        }}
-      >
-        <DialogContent className="sm:max-w-[480px] gap-4 rounded-xl">
-          {(() => {
-            const typeLabel =
-              findWikiType(wikiTypesData, wikiType)?.displayLabel ?? "";
-            const typeLabelLower = typeLabel.toLowerCase();
-            return (
-              <>
-                <DialogHeader>
-                  <DialogTitle
-                    style={{
-                      ...T.bodySmall,
-                      fontWeight: 600,
-                      color: "var(--heading-color)",
-                    }}
-                  >
-                    {typeLabel} Prompt
-                  </DialogTitle>
-                  <DialogDescription>
-                    {`Optional extra instructions. Appended to the ${typeLabelLower} type's system message at regen time. Leave empty to use the default alone.`}
-                  </DialogDescription>
-                </DialogHeader>
-
-                <Textarea
-                  value={promptDraft}
-                  onChange={(e) => setPromptDraft(e.target.value)}
-                  className="min-h-[240px] resize-none"
-                  rows={12}
-                  placeholder={`Extra guidance appended to the ${typeLabel} default. Leave blank for the default alone.`}
-                />
-
-                <div className="flex items-center justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setPromptDraft("")}
-                    className="rounded-none"
-                  >
-                    Clear
-                  </Button>
-                  <ActionButton
-                    type="button"
-                    onClick={() => {
-                      setWikiPrompt(promptDraft);
-                      setWikiPromptEdited(promptDraft.trim().length > 0);
-                      setPromptDialogOpen(false);
-                    }}
-                  >
-                    Save
-                  </ActionButton>
-                </div>
-              </>
-            );
-          })()}
         </DialogContent>
       </Dialog>
 

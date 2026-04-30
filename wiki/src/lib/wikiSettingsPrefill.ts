@@ -11,6 +11,10 @@ export type WikiSettingsPrefill = {
   promptOverride?: string;
   /** Current bouncer mode: 'auto' or 'review' */
   bouncerMode?: 'auto' | 'review';
+  /** Current publish state — drives the publish toggle in settings (#255) */
+  published?: boolean;
+  /** Public published-wiki nanoid slug (when published) */
+  publishedSlug?: string | null;
 };
 
 /** Placeholder — callers may supply a real description in the future. */

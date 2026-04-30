@@ -344,9 +344,9 @@ export default function ProfilePage() {
           </Card>
         </section>
 
-        {/* WIKI MANAGEMENT */}
+        {/* USER MANAGEMENT — owner identity (name + wiki count) */}
         <section className="mt-8" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <p style={sectionLabel}>Wiki Management</p>
+          <p style={sectionLabel}>User Management</p>
 
           <Card size="sm" className="rounded-none">
             <CardContent className="space-y-3">

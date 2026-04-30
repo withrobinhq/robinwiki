@@ -64,6 +64,17 @@ export const fragmentReviewBodySchema = z.object({
   wikiId: z.string().min(1, 'wikiId is required'),
 })
 
+/**
+ * #235 — POST /fragments/log : direct-to-wiki capture from web UI.
+ * Same shape as the MCP `log_fragment` tool. Bypasses the classifier.
+ */
+export const logFragmentBodySchema = z.object({
+  content: z.string().min(1, 'content is required'),
+  threadSlug: z.string().min(1, 'threadSlug is required'),
+  title: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+})
+
 // ── Query schemas ───────────────────────────────────────────────────────────
 
 export const fragmentListQuerySchema = paginationQuerySchema.extend({

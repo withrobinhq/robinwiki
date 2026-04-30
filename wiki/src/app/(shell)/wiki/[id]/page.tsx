@@ -299,6 +299,8 @@ export default function WikiDetailPage() {
       promptOverride={wiki.prompt}
       description={wiki.description ?? wiki.shortDescriptor ?? ''}
       bouncerMode={wiki.bouncerMode as 'auto' | 'review' | undefined}
+      published={wiki.published === true}
+      publishedSlug={wiki.publishedSlug ?? null}
       infobox={{ kind: "simple", typeLabel, lastUpdated: wiki.updatedAt, showSettings: true }}
       renderCustomInfobox={
         sidecarInfobox

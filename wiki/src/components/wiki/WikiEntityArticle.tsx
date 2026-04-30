@@ -91,12 +91,12 @@ const infoboxBodyMuted = {
 export function WikiInfoboxTypeUpdated({
   typeLabel,
   lastUpdated,
-  showSettings,
-  onSettingsClick,
 }: {
   typeLabel: string;
   lastUpdated?: string;
+  /** @deprecated #250: gear lives on the toolbar; this prop is now ignored. */
   showSettings?: boolean;
+  /** @deprecated #250: gear lives on the toolbar; this prop is now ignored. */
   onSettingsClick?: () => void;
 }) {
   return (
@@ -115,30 +115,6 @@ export function WikiInfoboxTypeUpdated({
         alignSelf: "flex-start",
       }}
     >
-      {showSettings ? (
-        <button
-          type="button"
-          aria-label="Infobox settings"
-          onClick={() => onSettingsClick?.()}
-          style={{
-            position: "absolute",
-            top: -1,
-            right: 0,
-            width: 28,
-            height: 28,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: 0,
-          }}
-        >
-          <SettingsIcon />
-        </button>
-      ) : null}
-
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <p style={infoboxLabel}>Type</p>
         <p style={{ ...infoboxBodyMuted, margin: 0 }}>{typeLabel}</p>
@@ -167,15 +143,15 @@ export function WikiInfoboxGoalStyle({
   targetDate,
   momentum,
   lastUpdated,
-  showSettings,
-  onSettingsClick,
 }: {
   typeValue: string;
   startedAt?: string;
   targetDate?: string;
   momentum?: string;
   lastUpdated?: string;
+  /** @deprecated #250: gear lives on the toolbar; this prop is now ignored. */
   showSettings?: boolean;
+  /** @deprecated #250: gear lives on the toolbar; this prop is now ignored. */
   onSettingsClick?: () => void;
 }) {
   const linkValue = {
@@ -210,29 +186,6 @@ export function WikiInfoboxGoalStyle({
         ...T.micro,
       }}
     >
-      {showSettings ? (
-        <button
-          type="button"
-          aria-label="Infobox settings"
-          onClick={() => onSettingsClick?.()}
-          style={{
-            position: "absolute",
-            top: -1,
-            right: 0,
-            width: 28,
-            height: 28,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: 0,
-          }}
-        >
-          <SettingsIcon />
-        </button>
-      ) : null}
       {rows.map((row) => (
         <div
           key={row.label}
@@ -329,6 +282,10 @@ export type WikiEntityArticleProps = {
   description?: string;
   /** Current bouncer mode for settings modal prefill */
   bouncerMode?: 'auto' | 'review';
+  /** Current publish state — feeds the publish toggle in settings modal (#255). */
+  published?: boolean;
+  /** Public published-wiki nanoid slug (when published) for share-link UI. */
+  publishedSlug?: string | null;
   /** Real wiki id for settings-mode PUT. Prototype pages omit → 'preview' sentinel. */
   wikiId?: string;
   /** Called after local save completes — persist to backend here. */
@@ -379,6 +336,8 @@ export function WikiEntityArticle({
   description,
   wikiId,
   bouncerMode,
+  published,
+  publishedSlug,
   onSave,
   onSettingsClick: onSettingsClickProp,
   children,
@@ -430,11 +389,23 @@ export function WikiEntityArticle({
   const displayChipIcon = getWikiTypeIcon(displayChipLabel);
   const draftChipColors = getWikiTypeColors(draftChipLabel);
   const wikiTypeLocked = isPeopleWikiType(displayChipLabel);
-  const showSettings = infobox.showSettings === true;
+  // #250: settings gear is permanent next to the eye toggle whenever the
+  // hosting page has somewhere to send the click — i.e. we have a real wiki
+  // id (sentinel 'preview' counts as a real id for prototype pages) OR the
+  // page has wired its own onSettingsClick handler. Pages that explicitly
+  // opt out (Fragments) pass infobox.showSettings === false; honour that.
+  const settingsOptedOut = infobox.showSettings === false;
+  const hasSettingsTarget = Boolean(wikiId) || Boolean(onSettingsClickProp);
+  const showSettings = !settingsOptedOut && hasSettingsTarget;
 
   const wikiSettingsPrefill = useMemo(
-    () => ({ ...wikiEntitySettingsPrefill({ title: displayTitle, chipLabel: displayChipLabel, description, promptOverride }), bouncerMode }),
-    [displayTitle, displayChipLabel, description, promptOverride, bouncerMode],
+    () => ({
+      ...wikiEntitySettingsPrefill({ title: displayTitle, chipLabel: displayChipLabel, description, promptOverride }),
+      bouncerMode,
+      published,
+      publishedSlug,
+    }),
+    [displayTitle, displayChipLabel, description, promptOverride, bouncerMode, published, publishedSlug],
   );
 
   const tabs = ["Read", "Edit", "View history"] as const;

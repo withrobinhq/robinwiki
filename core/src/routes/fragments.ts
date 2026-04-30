@@ -10,6 +10,8 @@ import { fragments, entries, edges, wikis, people } from '../db/schema.js'
 import { producer } from '../queue/producer.js'
 import { logger } from '../lib/logger.js'
 import { validationHook } from '../lib/validation.js'
+import { handleLogFragment } from '../mcp/handlers.js'
+import type { McpServerDeps } from '../mcp/handlers.js'
 import {
   fragmentResponseSchema,
   fragmentWithContentResponseSchema,
@@ -19,6 +21,7 @@ import {
   updateFragmentBodySchema,
   fragmentListQuerySchema,
   fragmentReviewBodySchema,
+  logFragmentBodySchema,
 } from '../schemas/fragments.schema.js'
 import { emitAuditEvent } from '../db/audit.js'
 
@@ -168,6 +171,52 @@ fragmentsRouter.get('/:id', async (c) => {
     })
   )
 })
+
+// POST /fragments/log — #235 direct-to-wiki capture (bypasses classifier).
+// Mirrors the MCP `log_fragment` tool: persist a fragment straight to a
+// known wiki by slug. Skips the AI extraction pipeline so user-confirmed
+// destinations aren't second-guessed.
+fragmentsRouter.post(
+  '/log',
+  zValidator('json', logFragmentBodySchema, validationHook),
+  async (c) => {
+    const body = c.req.valid('json')
+    const userId = c.get('userId') as string | undefined
+
+    const deps: McpServerDeps = {
+      db,
+      producer,
+      spawnWriteWorker: () => {},
+      // Web direct-send mirrors the MCP wiring (no entity extraction).
+      // The classifier-bypass is the whole point — keep this fail-open.
+      entityExtractCall: async () => ({ people: [] }),
+      loadUserPeople: async () => [],
+    }
+
+    // Body is validated by Zod above (content + threadSlug both `min(1)`),
+    // but core's tsconfig has `strict: false` which weakens Zod's narrowing
+    // on optional vs required. Cast to the handler's signature explicitly.
+    const result = await handleLogFragment(
+      deps,
+      body as { content: string; threadSlug: string; title?: string; tags?: string[] },
+      userId
+    )
+    if (result.isError) {
+      const text =
+        result.content.find((p) => p.type === 'text')?.text ?? 'log_fragment failed'
+      return c.json({ error: text.replace(/^Error:\s*/, '') }, 400)
+    }
+
+    const text = result.content.find((p) => p.type === 'text')?.text ?? '{}'
+    let parsed: Record<string, unknown> = {}
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>
+    } catch {
+      return c.json({ ok: true, raw: text })
+    }
+    return c.json(parsed, 201)
+  }
+)
 
 // POST /fragments — create fragment
 fragmentsRouter.post('/', zValidator('json', createFragmentBodySchema, validationHook), async (c) => {

@@ -62,7 +62,9 @@ const navigationData: SidebarSectionData = {
 };
 
 function useEntriesData(): SidebarSectionData {
-  const { data } = useEntries({ limit: 20 });
+  // #250: cap recent-entries at 5; the page entries view paginates, so the
+  // sidebar's role is "the most recent handful", not "every entry".
+  const { data } = useEntries({ limit: 5 });
   const items = useMemo<NavItem[]>(() => {
     const entries = data?.entries;
     if (!entries || entries.length === 0) return [];
