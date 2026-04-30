@@ -411,6 +411,150 @@ else
   skip "9. agent-browser not available — UI flow skipped"
 fi
 
+# ── 9b. Public page renders HTML-saved bodies as DOM, not literal text (#253) ──
+# The public page (`wiki/src/app/(public)/p/[nanoid]/page.tsx`) currently
+# routes the body through `<MarkdownContent>` unconditionally. Tiptap-edited
+# wikis store HTML in `wikis.content`; ReactMarkdown then renders the raw
+# `<p>...</p>` etc. as escaped text (`&lt;p&gt;`) for any external viewer.
+# The shell wiki page already detects HTML bodies via leading-`<` and
+# branches to `<HtmlWikiBody>`; the public page must mirror that branch.
+#
+# Bug present (current main): the rendered HTML response contains escaped
+# tags (`&lt;p&gt;`, `&lt;strong&gt;`, `&lt;ul&gt;`, `&lt;li&gt;`).
+# Fix (fork commit 1e294cb): leading-`<` body short-circuits to
+# `dangerouslySetInnerHTML`, producing real `<p>` / `<strong>` DOM nodes.
+
+# 9b-i. Create a UAT-only wiki, write a deterministic HTML body via the
+# Tiptap save endpoint, publish it. Anonymous-curl the public page and
+# assert HTML renders as DOM. Tear down at the end.
+
+UAT9B_NAME="UAT-28 HTML Render $(date +%s)"
+CREATE9B_HTTP=$(curl -s -o /tmp/uat-28-9b-create.json -w "%{http_code}" \
+  -b "$NEW_JAR" -X POST \
+  -H "Content-Type: application/json" \
+  -H "Origin: $ORIGIN" \
+  -d "$(jq -n --arg n "$UAT9B_NAME" '{name:$n, type:"project", prompt:""}')" \
+  "$SERVER_URL/wikis")
+
+if [ "$CREATE9B_HTTP" = "200" ] || [ "$CREATE9B_HTTP" = "201" ]; then
+  pass "9b-i. Created UAT wiki for HTML-render test (HTTP $CREATE9B_HTTP)"
+else
+  fail "9b-i. Could not create UAT wiki (HTTP $CREATE9B_HTTP) — section 9b will be skipped"
+fi
+UAT9B_KEY=$(jq -r '.lookupKey // .id // empty' /tmp/uat-28-9b-create.json)
+
+if [ -n "${UAT9B_KEY:-}" ] && [ "$UAT9B_KEY" != "null" ]; then
+  # Deterministic HTML body — leading `<` triggers the branch the fix introduces.
+  # `UAT-28-§9b-marker` is a unique anchor we grep for.
+  UAT9B_HTML='<p>UAT-28-§9b-marker hello</p><p><strong>BoldChunk9b</strong> and <em>ItalicChunk9b</em></p><ul><li>list-item-9b-one</li><li>list-item-9b-two</li></ul>'
+  HTML_PUT_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+    -b "$NEW_JAR" -X PUT \
+    -H "Content-Type: application/json" \
+    -H "Origin: $ORIGIN" \
+    -d "$(jq -n --arg body "$UAT9B_HTML" --arg name "$UAT9B_NAME" '{frontmatter:{name:$name,type:"project",prompt:""},body:$body}')" \
+    "$SERVER_URL/api/content/wiki/$UAT9B_KEY")
+  if [ "$HTML_PUT_HTTP" = "200" ] || [ "$HTML_PUT_HTTP" = "204" ]; then
+    pass "9b-ii. Seeded UAT wiki with HTML body via PUT /api/content/wiki (HTTP $HTML_PUT_HTTP)"
+  else
+    fail "9b-ii. PUT HTML body failed (HTTP $HTML_PUT_HTTP)"
+  fi
+
+  # Sanity: confirm wikis.content actually starts with `<` (so isHtmlBody
+  # branch will fire on a fixed page; bug or fix, the input is the same).
+  if command -v psql >/dev/null 2>&1 && [ -n "${DATABASE_URL:-}" ]; then
+    DB_HEAD=$(psql "$DATABASE_URL" -t -A -c "SELECT substring(content from 1 for 1) FROM wikis WHERE lookup_key='$UAT9B_KEY'" 2>/dev/null || echo "")
+    if [ "$DB_HEAD" = "<" ]; then
+      pass "9b-iii. wikis.content starts with '<' (HTML body confirmed at DB layer)"
+    else
+      fail "9b-iii. wikis.content does NOT start with '<' (got '$DB_HEAD') — Tiptap save did not persist HTML, downstream assertions invalid"
+    fi
+  else
+    skip "9b-iii. psql/DATABASE_URL unavailable — DB layer body-shape check skipped"
+  fi
+
+  # Publish the wiki for the public surface.
+  PUB9B_HTTP=$(curl -s -o /tmp/uat-28-9b-pub.json -w "%{http_code}" \
+    -b "$NEW_JAR" -X POST \
+    -H "Content-Type: application/json" \
+    -H "Origin: $ORIGIN" \
+    "$SERVER_URL/wikis/$UAT9B_KEY/publish")
+  UAT9B_SLUG=$(jq -r '.publishedSlug // empty' /tmp/uat-28-9b-pub.json)
+  if [ "$PUB9B_HTTP" = "200" ] && [ -n "$UAT9B_SLUG" ]; then
+    pass "9b-iv. Published UAT wiki (slug=$UAT9B_SLUG)"
+  else
+    fail "9b-iv. Publish failed (HTTP $PUB9B_HTTP, slug='$UAT9B_SLUG') — page assertions will be skipped"
+    UAT9B_SLUG=""
+  fi
+
+  if [ -n "$UAT9B_SLUG" ]; then
+    # 9b-v. Anon-curl the public page (no cookies, no auth).
+    PAGE9B_HTTP=$(curl -s -o /tmp/uat-28-9b-page.html -w "%{http_code}" "$WIKI_URL/p/$UAT9B_SLUG")
+    [ "$PAGE9B_HTTP" = "200" ] && pass "9b-v. Anon GET $WIKI_URL/p/$UAT9B_SLUG → 200" \
+                              || fail "9b-v. Anon GET returned HTTP $PAGE9B_HTTP"
+
+    # 9b-vi. Body marker text is present (proves the body reached the page
+    # at all — both branches of the fix should pass this).
+    if grep -qF "UAT-28-§9b-marker" /tmp/uat-28-9b-page.html; then
+      pass "9b-vi. Body marker text 'UAT-28-§9b-marker' is in the rendered page"
+    else
+      fail "9b-vi. Body marker missing from rendered page — body never reached the public surface"
+    fi
+
+    # 9b-vii. NEGATIVE: escaped HTML tags ('&lt;p&gt;', '&lt;strong&gt;',
+    # '&lt;ul&gt;') must NOT appear in the page body. ReactMarkdown
+    # escapes raw HTML — finding any of these is a deterministic positive
+    # for #253. We restrict the search to the article body region by
+    # scoping to lines containing the marker substring chunks, then sweep
+    # the whole response as a coarse fallback.
+    ESCAPED_LEAKS=0
+    for tag in "&lt;p&gt;" "&lt;strong&gt;" "&lt;ul&gt;" "&lt;li&gt;"; do
+      if grep -qF "$tag" /tmp/uat-28-9b-page.html; then
+        ESCAPED_LEAKS=$((ESCAPED_LEAKS+1))
+        fail "9b-vii. Escaped HTML tag found in public page: '$tag' — #253 still present (MarkdownContent rendered HTML body as literal text)"
+      fi
+    done
+    if [ "$ESCAPED_LEAKS" = "0" ]; then
+      pass "9b-vii. No escaped HTML tags ('&lt;p&gt;' etc.) in the public page — HTML body branch fired"
+    fi
+
+    # 9b-viii. POSITIVE: the rendered DOM should contain real `<strong>`
+    # and `<em>` nodes wrapping our marker chunks. Use agent-browser to
+    # parse the page and look for the actual elements.
+    if command -v npx >/dev/null 2>&1 && npx --no -- agent-browser --help >/dev/null 2>&1; then
+      npx agent-browser open "$WIKI_URL/p/$UAT9B_SLUG"
+      npx agent-browser wait --load networkidle
+      sleep 1
+      DOM_STRONG=$(npx agent-browser eval "Array.from(document.querySelectorAll('strong')).some(n => (n.textContent || '').includes('BoldChunk9b'))" | tr -d '"')
+      DOM_LI=$(npx agent-browser eval "Array.from(document.querySelectorAll('li')).filter(n => (n.textContent || '').includes('list-item-9b')).length" | tr -d '"')
+      [ "$DOM_STRONG" = "true" ] && pass "9b-viii. <strong>BoldChunk9b</strong> rendered as a real DOM node" \
+                                || fail "9b-viii. <strong> with BoldChunk9b not in DOM — HTML body still rendered as literal text"
+      if [ "${DOM_LI:-0}" = "2" ] 2>/dev/null; then
+        pass "9b-ix. <li> elements rendered (count=$DOM_LI, expected 2)"
+      else
+        fail "9b-ix. Expected 2 <li> nodes containing 'list-item-9b', got $DOM_LI"
+      fi
+      npx agent-browser close 2>/dev/null || true
+    else
+      skip "9b-viii/ix. agent-browser unavailable — DOM-shape assertions skipped (escaped-tag check above is the load-bearing one)"
+    fi
+
+    # 9b-x. Cleanup: unpublish.
+    UNPUB9B_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+      -b "$NEW_JAR" -X POST -H "Origin: $ORIGIN" "$SERVER_URL/wikis/$UAT9B_KEY/unpublish")
+    [ "$UNPUB9B_HTTP" = "200" ] && pass "9b-x. Unpublished UAT wiki (HTTP $UNPUB9B_HTTP)" \
+                               || skip "9b-x. Unpublish returned HTTP $UNPUB9B_HTTP — wiki delete below also tears down public access"
+  fi
+
+  # 9b-xi. Cleanup: delete the UAT wiki.
+  DEL9B_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+    -b "$NEW_JAR" -X DELETE -H "Origin: $ORIGIN" "$SERVER_URL/wikis/$UAT9B_KEY")
+  if [ "$DEL9B_HTTP" = "200" ] || [ "$DEL9B_HTTP" = "204" ]; then
+    pass "9b-xi. Deleted UAT wiki (HTTP $DEL9B_HTTP)"
+  else
+    skip "9b-xi. UAT wiki delete returned HTTP $DEL9B_HTTP — wiki may linger as an orphan"
+  fi
+fi
+
 # ── 10. CLEANUP — restore INITIAL_PASSWORD ────────────────────────
 # CRITICAL: if this fails, every subsequent UAT plan that signs in with
 # INITIAL_PASSWORD will lock out. We try the API path first, and fall
@@ -476,6 +620,7 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 | 7 | Anon `GET $WIKI_URL/p/<slug>` returns 200 HTML with wiki name, `og:title` + `og:type=article` meta, "Robin Wiki" branding, no authenticated chrome | `wiki/src/app/(public)/p/[nanoid]/page.tsx` + `PublishedWikiArticle.tsx` |
 | 8 | Anon mutating call (unpublish) returns 401; after authed unpublish, anon JSON + page both 404; bogus slug also 404 | `wikis.ts:503-525` + `published.ts:29-31` |
 | 9 | Profile UI renders Security → Change password section with three fields and mismatch validation message (skipped if agent-browser unavailable) | `wiki/src/app/profile/page.tsx` (PR #191) |
+| 9b | #253 — Public page renders HTML-saved bodies as DOM, not literal text: PUT an HTML body via `/api/content/wiki`, publish, anon-curl `/p/<slug>`; assert no escaped HTML tags (`&lt;p&gt;` etc.) in response, real `<strong>` / `<li>` DOM nodes present. Cleanup unpublishes + deletes the UAT wiki. | `wiki/src/components/wiki/PublishedWikiArticle.tsx:84` (current unconditional `MarkdownContent`), shell branch `wiki/src/app/(shell)/wiki/[id]/page.tsx:259-261` (`isHtmlBody` via leading `<`) |
 | 10 | Cleanup: `change-password` restores `INITIAL_PASSWORD`; `/auth/recover` fallback if step fails; final sign-in with `INITIAL_PASSWORD` confirms subsequent UAT plans are unblocked | better-auth + plan 07 fallback |
 
 ---
@@ -489,3 +634,4 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 - **OG metadata assertion.** `generateMetadata` in `page.tsx` emits `openGraph: { title, description, type: "article", publishedTime, siteName }`. Step 7c/7d look for `og:title` and `og:type=article`. Next.js renders these as `<meta property="og:title" ...>` in the SSR HTML — the assertion uses `property="..."` matching first, then falls back to `name="..."` for tooling that emits the older form.
 - **Cleanup is mandatory.** Step 10 uses two paths: the API restore (preferred — exercises the feature symmetrically) and the `/auth/recover` fallback from plan 07. The final assertion 10c is the gate: if `INITIAL_PASSWORD` does not sign in at the end of this plan, every later plan that depends on baseline auth (03, 04, 05, 06, 09, 16, 21, 22, …) will fail. A failing 10c should halt the suite.
 - **Storage is Postgres-only.** Password hashes live in `accounts.password` (bcrypt via better-auth). Published wiki rows live in `wikis` with `published`, `published_slug`, `published_at` columns. No filesystem state on either feature.
+- **Section 9b reproduces #253** (public page renders HTML-saved bodies as literal text via `MarkdownContent`). The deterministic input is an HTML body that begins with `<p>` — we PUT it through the same `/api/content/wiki/:key` endpoint Tiptap save uses. The bug-present signature is `&lt;p&gt;`, `&lt;strong&gt;`, `&lt;ul&gt;`, `&lt;li&gt;` appearing in the SSR HTML response (ReactMarkdown escapes raw HTML). The bug-fixed signature is real `<strong>` and `<li>` DOM nodes wrapping our chunks. Both halves are asserted: the escaped-tag grep is the load-bearing negative; the DOM-shape check via agent-browser is the load-bearing positive (skipped only if agent-browser is unavailable, in which case the negative carries the section). Section 9b creates and tears down its own UAT wiki — it never publishes the Transformer fixture, so it composes cleanly with section 5/6/7 which target the seeded Transformer.
