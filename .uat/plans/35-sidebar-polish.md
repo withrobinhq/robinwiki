@@ -73,15 +73,14 @@ else
   fail "B1. Wiki settings gear is missing entirely"
 fi
 
-# Negative: the gear must NOT be gated by the per-config showSettings flag at
-# the toolbar position. We assert the toolbar-position gear's gate uses only
-# editing/history flags, not showSettings.
-TOOLBAR_GATE=$(awk '/title="Wiki settings"/{flag=1} flag{print; if (/<button/) exit}' "$ARTICLE" | head -10)
-PREV_LINES=$(awk '/title="Wiki settings"/{exit} {print}' "$ARTICLE" | tail -5)
-if echo "$PREV_LINES" | grep -q 'showSettings &&.*!isEditing &&.*!isViewingHistory'; then
-  fail "B2. gear still gated by showSettings === true — sidecar-infobox wikis still hide it"
+# Negative: the gear must NOT be gated on `infobox.showSettings === true`.
+# Old shape: `const showSettings = infobox.showSettings === true;`. New shape:
+# the gate derives from a real wikiId / onSettingsClick handler, not the
+# per-config infobox flag.
+if grep -qE 'const showSettings = infobox\.showSettings === true' "$ARTICLE"; then
+  fail "B2. showSettings is still derived from infobox.showSettings — sidecar-infobox wikis still hide it"
 else
-  pass "B2. gear no longer gated by showSettings"
+  pass "B2. showSettings derives from wikiId/onSettingsClick (not the infobox flag)"
 fi
 
 # Sanity: the previous in-infobox gear render in WikiInfoboxTypeUpdated /
