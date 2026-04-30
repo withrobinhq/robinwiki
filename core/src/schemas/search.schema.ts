@@ -16,6 +16,20 @@ export const searchQuerySchema = z.object({
       return v.split(',').map((s) => s.trim()) as Array<'fragment' | 'wiki' | 'person'>
     })
     .pipe(z.array(searchTableEnum).min(1)),
+  // ?tags=foo,bar — UNION semantics (any-of). Mirrors `tables=`, which
+  // is also a union over the row discriminator. Ignored for wiki/person
+  // tables because those rows have no tags column.
+  tags: z
+    .string()
+    .optional()
+    .transform((v) => {
+      if (!v) return undefined
+      const parts = v
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+      return parts.length > 0 ? parts : undefined
+    }),
   mode: searchModeEnum.default('hybrid'),
 })
 

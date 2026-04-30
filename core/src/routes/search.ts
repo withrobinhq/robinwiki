@@ -14,12 +14,13 @@ search.get('/', async (c) => {
     q: c.req.query('q'),
     limit: c.req.query('limit'),
     tables: c.req.query('tables'),
+    tags: c.req.query('tags'),
     mode: c.req.query('mode'),
   })
   if (!parsed.success)
     return c.json({ error: 'Validation failed', fields: parsed.error.flatten() }, 400)
 
-  const { q, limit, tables, mode } = parsed.data
+  const { q, limit, tables, tags, mode } = parsed.data
 
   let embedConfig: { apiKey: string; model: string } | undefined
   if (mode === 'hybrid' || mode === 'vector') {
@@ -31,7 +32,7 @@ search.get('/', async (c) => {
     }
   }
 
-  const results = await hybridSearch(db, q, { limit, tables, mode, embedConfig })
+  const results = await hybridSearch(db, q, { limit, tables, tags, mode, embedConfig })
 
   return c.json(searchResponseSchema.parse({ results }))
 })

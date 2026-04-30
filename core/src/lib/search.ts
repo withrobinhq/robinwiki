@@ -13,6 +13,48 @@ export interface SearchResult {
 
 type SearchTable = 'fragment' | 'wiki' | 'person'
 
+// to_tsquery operators we have to neutralise before splitting raw user
+// input — postgres throws "syntax error in tsquery" if any of these
+// reach the parser unescaped.
+const TSQUERY_RESERVED = /[&|!():*<@'"\\]/g
+
+/**
+ * Convert raw user input into a safe `to_tsquery` OR-string.
+ *
+ * - Strips reserved tsquery operators (`& | ! ( ) : * < @ ' " \`).
+ * - Splits on whitespace + any remaining non-alphanumeric junk.
+ * - Lowercases and dedupes tokens.
+ * - Joins with ` | ` for OR semantics. ts_rank still scores
+ *   all-terms-matched docs higher than partial matches, so recall
+ *   improves without flattening the ranking signal.
+ *
+ * Returns `null` when no usable tokens remain — callers should treat
+ * that as "match nothing" and skip the BM25 query entirely.
+ */
+export function buildOrTsQuery(raw: string): string | null {
+  const cleaned = raw.replace(TSQUERY_RESERVED, ' ')
+  // Split on whitespace AND hyphens — `to_tsquery('machine-learning')`
+  // becomes a phrase query (`<->` operator) on the english parser, so a
+  // doc containing only the standalone stems wouldn't match. Splitting
+  // on `-` lets us OR the parts and trade phrase-precision for recall.
+  const tokens = cleaned
+    .split(/[^A-Za-z0-9_]+/)
+    .map((t) => t.trim().toLowerCase())
+    .filter((t) => t.length > 0)
+  if (tokens.length === 0) return null
+  // Dedupe while preserving order so the query string stays stable
+  // for caching and easier debugging.
+  const seen = new Set<string>()
+  const unique: string[] = []
+  for (const t of tokens) {
+    if (!seen.has(t)) {
+      seen.add(t)
+      unique.push(t)
+    }
+  }
+  return unique.join(' | ')
+}
+
 // Reciprocal Rank Fusion: score = sum(1 / (k + rank)) across all lists
 function rrfFuse(lists: SearchResult[][], k = 60): SearchResult[] {
   const scores = new Map<string, { result: SearchResult; score: number }>()
@@ -76,10 +118,35 @@ async function bm25SearchTable(
   database: DB,
   query: string,
   tableType: SearchTable,
-  limit: number
+  limit: number,
+  tagsFilter?: string[]
 ): Promise<SearchResult[]> {
   const meta = tableMeta[tableType]
-  const tsQuery = sql`plainto_tsquery('english', ${query})`
+  const orQuery = buildOrTsQuery(query)
+  if (orQuery === null) return []
+  const tsQuery = sql`to_tsquery('english', ${orQuery})`
+
+  // Tag filter (issue #46) only applies to fragments — wikis and
+  // people have no tags column. UNION semantics: `tags=a,b` matches
+  // any fragment whose tags array intersects {a,b}. Mirrors `tables=`,
+  // which is also union over the row discriminator. Wikis/people
+  // return no rows when a tag filter is set (none could ever satisfy).
+  const tags =
+    tagsFilter && tagsFilter.length > 0 ? tagsFilter : null
+  if (tags && tableType !== 'fragment') return []
+
+  // Build the tags filter clause separately because postgres-js does
+  // not serialise JS arrays into a `text[]` parameter cleanly. We
+  // pass each tag as its own parameter and bind them inside an
+  // EXISTS over jsonb_array_elements_text — equivalent to
+  // `tags ?| array[...]` (UNION) but bind-safe.
+  const whereClause =
+    tags && tableType === 'fragment'
+      ? sql`${meta.deletedAtCol} IS NULL AND ${meta.searchVectorCol} @@ ${tsQuery} AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(${fragments.tags}) AS t(elem) WHERE t.elem IN (${sql.join(
+          tags.map((tag) => sql`${tag}`),
+          sql`, `
+        )}))`
+      : sql`${meta.deletedAtCol} IS NULL AND ${meta.searchVectorCol} @@ ${tsQuery}`
 
   const rows = await database
     .select({
@@ -89,9 +156,7 @@ async function bm25SearchTable(
       score: sql<number>`ts_rank(${meta.searchVectorCol}, ${tsQuery})`,
     })
     .from(meta.table)
-    .where(
-      sql`${meta.deletedAtCol} IS NULL AND ${meta.searchVectorCol} @@ ${tsQuery}`
-    )
+    .where(whereClause)
     .orderBy(sql`ts_rank(${meta.searchVectorCol}, ${tsQuery}) DESC`)
     .limit(limit)
 
@@ -107,13 +172,13 @@ async function bm25SearchTable(
 async function bm25Search(
   database: DB,
   query: string,
-  opts: { limit?: number; tables?: SearchTable[] } = {}
+  opts: { limit?: number; tables?: SearchTable[]; tags?: string[] } = {}
 ): Promise<SearchResult[]> {
   const limit = opts.limit ?? 20
   const tables = opts.tables ?? ['fragment', 'wiki', 'person']
 
   const results = await Promise.all(
-    tables.map((t) => bm25SearchTable(database, query, t, limit))
+    tables.map((t) => bm25SearchTable(database, query, t, limit, opts.tags))
   )
 
   return results
@@ -126,10 +191,24 @@ async function vectorSearchTable(
   database: DB,
   queryEmbedding: number[],
   tableType: SearchTable,
-  limit: number
+  limit: number,
+  tagsFilter?: string[]
 ): Promise<SearchResult[]> {
   const meta = tableMeta[tableType]
   const vecLiteral = JSON.stringify(queryEmbedding)
+
+  // Same tag-filter rules as bm25SearchTable: fragments only.
+  const tags =
+    tagsFilter && tagsFilter.length > 0 ? tagsFilter : null
+  if (tags && tableType !== 'fragment') return []
+
+  const whereClause =
+    tags && tableType === 'fragment'
+      ? sql`${meta.deletedAtCol} IS NULL AND ${meta.embeddingCol} IS NOT NULL AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(${fragments.tags}) AS t(elem) WHERE t.elem IN (${sql.join(
+          tags.map((tag) => sql`${tag}`),
+          sql`, `
+        )}))`
+      : sql`${meta.deletedAtCol} IS NULL AND ${meta.embeddingCol} IS NOT NULL`
 
   const rows = await database
     .select({
@@ -139,9 +218,7 @@ async function vectorSearchTable(
       distance: sql<number>`${meta.embeddingCol} <=> ${vecLiteral}::vector`,
     })
     .from(meta.table)
-    .where(
-      sql`${meta.deletedAtCol} IS NULL AND ${meta.embeddingCol} IS NOT NULL`
-    )
+    .where(whereClause)
     .orderBy(sql`${meta.embeddingCol} <=> ${vecLiteral}::vector`)
     .limit(limit)
 
@@ -157,13 +234,15 @@ async function vectorSearchTable(
 async function vectorSearch(
   database: DB,
   queryEmbedding: number[],
-  opts: { limit?: number; tables?: SearchTable[] } = {}
+  opts: { limit?: number; tables?: SearchTable[]; tags?: string[] } = {}
 ): Promise<SearchResult[]> {
   const limit = opts.limit ?? 20
   const tables = opts.tables ?? ['fragment', 'wiki', 'person']
 
   const results = await Promise.all(
-    tables.map((t) => vectorSearchTable(database, queryEmbedding, t, limit))
+    tables.map((t) =>
+      vectorSearchTable(database, queryEmbedding, t, limit, opts.tags)
+    )
   )
 
   return results
@@ -178,6 +257,7 @@ export async function hybridSearch(
   opts: {
     limit?: number
     tables?: SearchTable[]
+    tags?: string[]
     mode?: 'hybrid' | 'bm25' | 'vector'
     embedConfig?: EmbedConfig
   } = {}
@@ -185,18 +265,19 @@ export async function hybridSearch(
   const limit = opts.limit ?? 20
   const tables = opts.tables ?? ['fragment', 'wiki', 'person']
   const mode = opts.mode ?? 'hybrid'
+  const tags = opts.tags
 
   const lists: SearchResult[][] = []
 
   if (mode === 'bm25' || mode === 'hybrid') {
-    lists.push(await bm25Search(database, query, { limit, tables }))
+    lists.push(await bm25Search(database, query, { limit, tables, tags }))
   }
 
   if (mode === 'vector' || mode === 'hybrid') {
     if (opts.embedConfig) {
       const vec = await embedText(query, opts.embedConfig)
       if (vec) {
-        lists.push(await vectorSearch(database, vec, { limit, tables }))
+        lists.push(await vectorSearch(database, vec, { limit, tables, tags }))
       }
     }
   }

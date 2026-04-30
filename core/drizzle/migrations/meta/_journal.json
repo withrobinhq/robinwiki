@@ -64,6 +64,13 @@
       "when": 1777939200000,
       "tag": "0008_fragments_dedup_hash_partial_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778025600000,
+      "tag": "0009_search_recall_tags_and_triggers",
+      "breakpoints": true
     }
   ]
 }
