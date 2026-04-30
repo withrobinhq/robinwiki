@@ -43,6 +43,18 @@ export function assertProdEnv(): void {
 // in production produces one clean error instead of a Zod-style wall of issues.
 assertProdEnv()
 
+/**
+ * Prepend `https://` to a bare hostname so values like the Railway interpolation
+ * `${{wiki.RAILWAY_PUBLIC_DOMAIN}}` (which resolves to `wiki-prod.up.railway.app`
+ * — no scheme) survive URL validation. Existing `http://` or `https://` prefixes
+ * are preserved so local dev stays untouched.
+ */
+export function normalizeOrigin(value: string): string {
+  const trimmed = value.trim()
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return `https://${trimmed}`
+}
+
 export const env = createConfigVar({
   schema: {
     DATABASE_URL: z.string().min(1).describe('Postgres connection string'),
@@ -51,7 +63,14 @@ export const env = createConfigVar({
       .string()
       .min(32)
       .describe('32+ char session signing key (openssl rand -hex 32)'),
-    SERVER_PUBLIC_URL: z.string().url().describe('Server public URL, e.g. https://api.example.com'),
+    SERVER_PUBLIC_URL: z
+      .string()
+      .min(1)
+      .transform(normalizeOrigin)
+      .pipe(z.string().url())
+      .describe(
+        'Server public URL, e.g. https://api.example.com (bare domain auto-prepends https://)',
+      ),
     MASTER_KEY: z
       .string()
       .regex(/^[a-f0-9]{64}$/)
@@ -63,13 +82,32 @@ export const env = createConfigVar({
     WIKI_ORIGIN: z
       .string()
       .min(1)
-      .refine(
-        (val) => val.split(',').every((u) => /^https?:\/\//.test(u.trim())),
-        'Each comma-separated origin must start with http:// or https://',
+      .transform((val) =>
+        val
+          .split(',')
+          .map((entry) => normalizeOrigin(entry))
+          .join(','),
       )
-      .describe('Wiki frontend URL(s) for CORS — comma-separated for multiple origins'),
+      .pipe(
+        z
+          .string()
+          .refine(
+            (val) => val.split(',').every((u) => z.string().url().safeParse(u).success),
+            'Each comma-separated origin must be a valid URL (bare domain auto-prepends https://)',
+          ),
+      )
+      .describe(
+        'Wiki frontend URL(s) for CORS — comma-separated; bare domains auto-prepend https://',
+      ),
     PORT: z.coerce.number().default(3000).describe('Server port'),
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     LOG_LEVEL: z.string().default('info'),
   },
 })
+
+// Propagate normalized values back to process.env. Several call sites read
+// `process.env.SERVER_PUBLIC_URL` / `process.env.WIKI_ORIGIN` directly
+// (auth.ts, index.ts, routes/users.ts) and won't see the schema's transform
+// otherwise. Mutating here keeps the validator the single source of truth.
+if (env.SERVER_PUBLIC_URL) process.env.SERVER_PUBLIC_URL = env.SERVER_PUBLIC_URL
+if (env.WIKI_ORIGIN) process.env.WIKI_ORIGIN = env.WIKI_ORIGIN
