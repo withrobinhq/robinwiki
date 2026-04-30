@@ -36,7 +36,7 @@ fail() { FAIL=$((FAIL+1)); echo "  FAIL $1"; }
 echo "43 — Tighten wiki-writing rules (#254)"
 
 YAML_DIR=packages/shared/src/prompts/specs/wiki-types
-yamls=( agent belief collection decision log objective principles project skill voice )
+yamls=( agent belief research decision log objective principle project skill voice )
 
 # Per-type sentinel strings that USED TO live in rule 3 (the layout-shape
 # rule we're killing). After the fix, NONE of these should appear in the
@@ -44,11 +44,11 @@ yamls=( agent belief collection decision log objective principles project skill 
 declare -A killed_rule3
 killed_rule3[agent]='Focus on configuration details and performance observations'
 killed_rule3[belief]='Present the position clearly, then supporting evidence'
-killed_rule3[collection]='Group items by sub-theme where it aids organization'
+killed_rule3[research]='Group items by sub-theme where it aids organization'
 killed_rule3[decision]='Present the decision first, then context and reasoning'
 killed_rule3[log]='Organize entries chronologically, most recent last'
 killed_rule3[objective]='Focus on measurable outcomes and progress signals'
-killed_rule3[principles]='State each principle as a clear commitment'
+killed_rule3[principle]='State each principle as a clear commitment'
 killed_rule3[project]='Reflect the current state of the project from the fragments'
 killed_rule3[skill]='Focus on actionable techniques and practical knowledge'
 killed_rule3[voice]='Focus on concrete language patterns and style observations'

@@ -6,16 +6,16 @@ import type { WikiType } from '@robin/shared'
  * inference works without loading YAML specs at runtime.
  */
 const WIKI_TYPE_DESCRIPTORS: Record<WikiType, string> = {
-  log:        'a chronological synthesis of events and observations',
-  collection: 'a curated library of related items',
-  belief:     'a synthesis of a held position or mental model',
-  decision:   'a record of a discrete choice and its reasoning',
-  project:    'a living document of an active initiative',
-  objective:  'a high-level objective with measurable direction',
-  skill:      'a knowledge base for a capability being built',
-  agent:      'documentation for a configured AI assistant',
-  voice:      'a style guide for communication',
-  principles: 'a document of operating rules and commitments',
+  log:       'a chronological synthesis of events and observations',
+  research:  'a curated library of references and findings on a topic',
+  belief:    'a synthesis of a held position or mental model',
+  decision:  'a record of a discrete choice and its reasoning',
+  project:   'a living document of an active initiative',
+  objective: 'a high-level objective with measurable direction',
+  skill:     'a knowledge base for a capability being built',
+  agent:     'documentation for a configured AI assistant',
+  voice:     'a style guide for communication',
+  principle: 'a document of an operating rule or commitment',
 }
 
 /**

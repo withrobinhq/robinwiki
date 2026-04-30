@@ -4,7 +4,7 @@ import type { PromptResult } from '../types.js'
 import type { PromptSpec } from '../schema.js'
 import type { WikiType } from '../../types/wiki.js'
 import { logWikiSchema } from '../specs/wiki-types/log.schema.js'
-import { collectionWikiSchema } from '../specs/wiki-types/collection.schema.js'
+import { researchWikiSchema } from '../specs/wiki-types/research.schema.js'
 import { beliefWikiSchema } from '../specs/wiki-types/belief.schema.js'
 import { decisionWikiSchema } from '../specs/wiki-types/decision.schema.js'
 import { projectWikiSchema } from '../specs/wiki-types/project.schema.js'
@@ -12,7 +12,7 @@ import { objectiveWikiSchema } from '../specs/wiki-types/objective.schema.js'
 import { skillWikiSchema } from '../specs/wiki-types/skill.schema.js'
 import { agentWikiSchema } from '../specs/wiki-types/agent.schema.js'
 import { voiceWikiSchema } from '../specs/wiki-types/voice.schema.js'
-import { principlesWikiSchema } from '../specs/wiki-types/principles.schema.js'
+import { principleWikiSchema } from '../specs/wiki-types/principle.schema.js'
 
 /**
  * Shape a fragment row into the [FRAGMENTS] inline-slug format consumed by
@@ -102,7 +102,7 @@ const inputSchema = z.object({
 
 const schemaMap: Record<WikiType, z.ZodType> = {
   log: logWikiSchema,
-  collection: collectionWikiSchema,
+  research: researchWikiSchema,
   belief: beliefWikiSchema,
   decision: decisionWikiSchema,
   project: projectWikiSchema,
@@ -110,7 +110,7 @@ const schemaMap: Record<WikiType, z.ZodType> = {
   skill: skillWikiSchema,
   agent: agentWikiSchema,
   voice: voiceWikiSchema,
-  principles: principlesWikiSchema,
+  principle: principleWikiSchema,
 }
 
 /**

@@ -1,46 +1,46 @@
 name: QuillTheWriter
 version: 2
 category: generation
-display_label: "Principles"
-display_description: "A document of operating rules, values, and commitments that guide behavior"
-display_short_descriptor: "Operating rules"
+display_label: "Principle"
+display_description: "A document of an operating rule, value, or commitment that guides behavior"
+display_short_descriptor: "Operating rule"
 display_order: 100
-task: thread_wiki_principles
-description: Generates a principles wiki — a document of operating rules and commitments.
+task: thread_wiki_principle
+description: Generates a principle wiki — a document of an operating rule or commitment.
 temperature: 0.3
 
 default_structure: |
   Use this exact structure:
-  # Principles: {{title}}
+  # Principle: {{title}}
 
-  ## Core Principles
-  The fundamental rules, each stated as a clear commitment.
+  ## The Principle
+  The core rule, stated as a clear commitment.
 
-  ## Why These Principles
-  The reasoning and experience behind each rule.
+  ## Why This Principle
+  The reasoning and experience behind this rule.
 
   ## In Practice
-  How these principles show up in day-to-day decisions.
+  How this principle shows up in day-to-day decisions.
 
-  ## What These Principles Reject
-  The opposite behaviors or approaches these principles guard against.
+  ## What This Principle Rejects
+  The opposite behaviors or approaches this principle guards against.
 
 
 system_message: |
-  You are Quill, writing as a principles author. Your job is to produce
-  a document of operating rules and commitments from thread fragments.
+  You are Quill, writing as a principle author. Your job is to produce
+  a document of an operating rule or commitment from thread fragments.
   You faithfully represent what the fragments say — you do not add
   interpretations, conclusions, or information not present in the fragments.
 
 template: |
   [MOCK ACKNOWLEDGMENT]
-  Understood. I am Quill, writing a principles wiki. I document operating
-  rules and commitments. I include only what the fragments contain. I preserve
+  Understood. I am Quill, writing a principle wiki. I document an operating
+  rule or commitment. I include only what the fragments contain. I preserve
   attribution, hedging, and uncertainty. My output is clean markdown
   that follows the required structure exactly.
 
   [TASK]
-  Generate a principles wiki document for the thread "{{title}}" from the
+  Generate a principle wiki document for the thread "{{title}}" from the
   following {{count}} fragments.
 
   [LINKING SYNTAX — USE EXACTLY]

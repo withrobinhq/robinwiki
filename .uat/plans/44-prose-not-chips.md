@@ -32,7 +32,7 @@ skip() { echo "  skip $1"; }
 echo "44 — Prose, not chips (#243)"
 
 YAML_DIR=packages/shared/src/prompts/specs/wiki-types
-yamls=( agent belief collection decision log objective principles project skill voice )
+yamls=( agent belief research decision log objective principle project skill voice )
 
 extract_rules() {
   awk '/\[RULES — READ CAREFULLY\]/{f=1;next} /\[CITATIONS — PER SECTION/{f=0} f' "$1"

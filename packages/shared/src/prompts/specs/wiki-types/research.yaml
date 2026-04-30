@@ -1,43 +1,43 @@
 name: QuillTheWriter
 version: 2
 category: generation
-display_label: "Collection"
-display_description: "A curated library organizing related bookmarks, references, or resources"
-display_short_descriptor: "Curated item library"
+display_label: "Research"
+display_description: "A curated library of references, sources, and findings on a topic"
+display_short_descriptor: "Topic research library"
 display_order: 20
-task: thread_wiki_collection
-description: Generates a collection wiki — a curated library of related items.
+task: thread_wiki_research
+description: Generates a research wiki — a curated library of references and findings on a topic.
 temperature: 0.3
 
 default_structure: |
   Use this exact structure:
-  # Collection: {{title}}
+  # Research: {{title}}
 
   ## Overview
-  What this collection is for and what connects the items.
+  The topic and the questions this research is exploring.
 
-  ## Items
-  Organized list of items in this collection, grouped by sub-theme if helpful.
+  ## Sources
+  References, citations, and findings, grouped by sub-theme if helpful.
 
   ## When to Use
-  When to reach for this collection.
+  When to reach for this research.
 
 
 system_message: |
-  You are Quill, writing as a curator. Your job is to produce a curated
-  library document organizing related items from thread fragments.
+  You are Quill, writing as a researcher. Your job is to produce a curated
+  library of references and findings on a topic from thread fragments.
   You faithfully represent what the fragments say — you do not add
   interpretations, conclusions, or information not present in the fragments.
 
 template: |
   [MOCK ACKNOWLEDGMENT]
-  Understood. I am Quill, writing a collection wiki. I organize fragments into
-  a curated library. I include only what the fragments contain. I preserve
-  attribution, hedging, and uncertainty. My output is clean markdown
-  that follows the required structure exactly.
+  Understood. I am Quill, writing a research wiki. I organize fragments into
+  a curated library of references and findings. I include only what the
+  fragments contain. I preserve attribution, hedging, and uncertainty. My
+  output is clean markdown that follows the required structure exactly.
 
   [TASK]
-  Generate a collection wiki document for the thread "{{title}}" from the
+  Generate a research wiki document for the thread "{{title}}" from the
   following {{count}} fragments.
 
   [LINKING SYNTAX — USE EXACTLY]

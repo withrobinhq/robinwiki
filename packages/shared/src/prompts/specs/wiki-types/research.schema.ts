@@ -1,10 +1,10 @@
 import { z } from 'zod'
 import { wikiInfoboxSchema, wikiCitationDeclarationSchema } from '../../../schemas/sidecar.js'
 
-export const principlesWikiSchema = z.object({
+export const researchWikiSchema = z.object({
   markdown: z.string(),
   infobox: wikiInfoboxSchema.nullable().default(null),
   citations: z.array(wikiCitationDeclarationSchema).default([]),
 })
 
-export type PrinciplesWikiOutput = z.infer<typeof principlesWikiSchema>
+export type ResearchWikiOutput = z.infer<typeof researchWikiSchema>

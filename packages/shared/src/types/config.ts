@@ -8,7 +8,7 @@ import type { WikiType } from './wiki.js'
 
 export type WikiGuideKey =
   | 'wiki-guide-log'
-  | 'wiki-guide-collection'
+  | 'wiki-guide-research'
   | 'wiki-guide-belief'
   | 'wiki-guide-decision'
   | 'wiki-guide-project'
@@ -16,11 +16,11 @@ export type WikiGuideKey =
   | 'wiki-guide-skill'
   | 'wiki-guide-agent'
   | 'wiki-guide-voice'
-  | 'wiki-guide-principles'
+  | 'wiki-guide-principle'
 
 export const WIKI_TYPE_TO_GUIDE_KEY: Record<WikiType, WikiGuideKey> = {
   log: 'wiki-guide-log',
-  collection: 'wiki-guide-collection',
+  research: 'wiki-guide-research',
   belief: 'wiki-guide-belief',
   decision: 'wiki-guide-decision',
   project: 'wiki-guide-project',
@@ -28,5 +28,5 @@ export const WIKI_TYPE_TO_GUIDE_KEY: Record<WikiType, WikiGuideKey> = {
   skill: 'wiki-guide-skill',
   agent: 'wiki-guide-agent',
   voice: 'wiki-guide-voice',
-  principles: 'wiki-guide-principles',
+  principle: 'wiki-guide-principle',
 }

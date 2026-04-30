@@ -16,7 +16,7 @@ const wikiFixtures = {
 
 const allTypes: WikiType[] = [
   'log',
-  'collection',
+  'research',
   'belief',
   'decision',
   'project',
@@ -24,7 +24,7 @@ const allTypes: WikiType[] = [
   'skill',
   'agent',
   'voice',
-  'principles',
+  'principle',
 ]
 
 describe('wiki-types specs', () => {

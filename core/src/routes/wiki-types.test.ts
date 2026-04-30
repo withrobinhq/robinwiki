@@ -146,11 +146,11 @@ const WIKI_TYPES_DIR = resolve(
 const ALL_SLUGS = [
   'agent',
   'belief',
-  'collection',
+  'research',
   'decision',
   'log',
   'objective',
-  'principles',
+  'principle',
   'project',
   'skill',
   'voice',

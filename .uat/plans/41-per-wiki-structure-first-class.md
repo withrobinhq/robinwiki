@@ -44,7 +44,7 @@ MIGRATIONS_DIR=core/drizzle/migrations
 REGEN=core/src/lib/regen.ts
 
 # ── A. POSITIVE — default_structure field on every wiki-type yaml ───
-yamls=( agent belief collection decision log objective principles project skill voice )
+yamls=( agent belief research decision log objective principle project skill voice )
 for slug in "${yamls[@]}"; do
   if grep -qE '^default_structure:' "$YAML_DIR/$slug.yaml"; then
     pass "A1.$slug yaml has top-level default_structure: field"
@@ -118,11 +118,11 @@ done
 declare -A canonical_h2
 canonical_h2[agent]='## Purpose'
 canonical_h2[belief]='## The Position'
-canonical_h2[collection]='## Items'
+canonical_h2[research]='## Sources'
 canonical_h2[decision]='## The Decision'
 canonical_h2[log]='## Timeline'
 canonical_h2[objective]='## Key Results'
-canonical_h2[principles]='## Core Principles'
+canonical_h2[principle]='## The Principle'
 canonical_h2[project]='## Goal'
 canonical_h2[skill]='## Core Techniques'
 canonical_h2[voice]='## Tone and Style'

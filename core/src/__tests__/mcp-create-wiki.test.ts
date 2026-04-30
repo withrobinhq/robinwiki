@@ -125,17 +125,17 @@ describe('handleCreateWiki — issue #154', () => {
   it('falls through to inferWikiType when `type` is omitted (regression guard)', async () => {
     const { db, insertCaptured } = makeDb(undefined)
     const deps = makeDeps(db)
-    inferWikiTypeMock.mockReturnValueOnce('collection')
+    inferWikiTypeMock.mockReturnValueOnce('research')
     const res = await handleCreateWiki(
       deps,
-      { title: 'Foo', description: 'a curated library of related items' },
+      { title: 'Foo', description: 'a curated library of references and findings on a topic' },
       'user-1'
     )
     expect(res.isError).toBeUndefined()
     expect(inferWikiTypeMock).toHaveBeenCalledOnce()
-    expect(insertCaptured.values?.type).toBe('collection')
+    expect(insertCaptured.values?.type).toBe('research')
     const payload = JSON.parse((res.content[0] as { text: string }).text)
-    expect(payload.type).toBe('collection')
-    expect(payload.inferredType).toBe('collection')
+    expect(payload.type).toBe('research')
+    expect(payload.inferredType).toBe('research')
   })
 })
