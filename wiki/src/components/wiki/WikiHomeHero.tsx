@@ -11,7 +11,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { BookOpen, FileCode, UserRound } from "lucide-react";
 import WikiSearchBar from "@/components/wiki/WikiSearchBar";
 import { ROUTES } from "@/lib/routes";
-import { useSession } from "@/hooks/useSession";
 import { T } from "@/lib/typography";
 
 type HeroFilter = "people" | "fragments" | "wiki";
@@ -124,12 +123,12 @@ function FilterChip({
   );
 }
 
-/** Figma ROBIN 217:35527 — title + chat search + filter chips (wiki home only) */
+/** Figma ROBIN 217:35527 — chat search + filter chips (wiki home only).
+ *  The personalised greeting `<h1>` was dropped per #251: the wiki home page
+ *  jumps straight into the search affordance + filter chips with no hero. */
 export default function WikiHomeHero() {
-  const { session } = useSession();
   // Single-select filter state. Clicking the active chip deactivates it.
   const [activeFilter, setActiveFilter] = useState<HeroFilter | null>(null);
-  const greeting = session?.user?.name ?? "Welcome back";
   const toggleFilter = (id: HeroFilter) => {
     setActiveFilter((prev) => (prev === id ? null : id));
   };
@@ -139,26 +138,6 @@ export default function WikiHomeHero() {
       className="flex w-full flex-col items-center"
       style={{ gap: 30, maxWidth: 864, marginLeft: "auto", marginRight: "auto" }}
     >
-      <div
-        className="flex items-center justify-center"
-        style={{ padding: 10, boxSizing: "border-box" }}
-      >
-        <h1
-          className="wiki-home-title m-0 text-center"
-          style={{
-            ...T.hero,
-            color: "var(--wiki-title)",
-            maxWidth: "100%",
-            paddingLeft: 8,
-            paddingRight: 8,
-            boxSizing: "border-box",
-            whiteSpace: "normal",
-          }}
-        >
-          {greeting}
-        </h1>
-      </div>
-
       <div
         className="flex w-full min-w-0 flex-col items-stretch"
         style={{ gap: 8, maxWidth: 591 }}
