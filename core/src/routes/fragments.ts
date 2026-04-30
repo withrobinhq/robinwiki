@@ -247,6 +247,15 @@ fragmentsRouter.put('/:id', zValidator('json', updateFragmentBodySchema, validat
   }
   if (body.tags != null) updates.tags = body.tags
 
+  // Self-heal: if title or content changed, the embedded text is now stale.
+  // Null the embedding + reset retry bookkeeping so the embedding-retry
+  // worker (15-min cadence) refills it on the next tick (#246).
+  if (body.title != null || body.content != null) {
+    updates.embedding = null
+    updates.embeddingAttemptCount = 0
+    updates.embeddingLastAttemptAt = null
+  }
+
   const [fragment] = await db
     .update(fragments)
     .set(updates)
