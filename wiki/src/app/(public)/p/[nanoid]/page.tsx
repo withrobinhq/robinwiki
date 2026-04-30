@@ -11,8 +11,11 @@ const API_BASE =
 async function fetchPublishedWiki(
   nanoid: string,
 ): Promise<PublishedWikiData | null> {
+  // Always revalidate publish-state on every request — the API is the source
+  // of truth and sets `Cache-Control: no-store`. Caching here would let an
+  // unpublished wiki keep rendering 200 until the cache window expires.
   const res = await fetch(`${API_BASE}/published/wiki/${nanoid}`, {
-    next: { revalidate: 60 },
+    cache: "no-store",
   });
   if (!res.ok) return null;
   return res.json();
