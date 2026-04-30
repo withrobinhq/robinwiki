@@ -78,21 +78,21 @@ fragmentsRouter.get('/:id', async (c) => {
     const rows = await db
       .select({ key: wikis.lookupKey, name: wikis.name, bouncerMode: wikis.bouncerMode })
       .from(wikis)
-      .where(inArray(wikis.lookupKey, dstByType.wiki))
+      .where(and(inArray(wikis.lookupKey, dstByType.wiki), isNull(wikis.deletedAt)))
     for (const r of rows) backlinks.push({ id: r.key, name: r.name, type: 'wiki', bouncerMode: r.bouncerMode })
   }
   if (dstByType.person?.length) {
     const rows = await db
       .select({ key: people.lookupKey, name: people.name })
       .from(people)
-      .where(inArray(people.lookupKey, dstByType.person))
+      .where(and(inArray(people.lookupKey, dstByType.person), isNull(people.deletedAt)))
     for (const r of rows) backlinks.push({ id: r.key, name: r.name, type: 'person' })
   }
   if (dstByType.fragment?.length) {
     const rows = await db
       .select({ key: fragments.lookupKey, title: fragments.title })
       .from(fragments)
-      .where(inArray(fragments.lookupKey, dstByType.fragment))
+      .where(and(inArray(fragments.lookupKey, dstByType.fragment), isNull(fragments.deletedAt)))
     for (const r of rows) backlinks.push({ id: r.key, name: r.title, type: 'fragment' })
   }
 

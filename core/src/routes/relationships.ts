@@ -65,7 +65,7 @@ relationshipsRouter.get('/:type/:id', async (c) => {
     const rows = await db
       .select({ key: entries.lookupKey, title: entries.title })
       .from(entries)
-      .where(inArray(entries.lookupKey, ids))
+      .where(and(inArray(entries.lookupKey, ids), isNull(entries.deletedAt)))
     for (const r of rows) labelMap[`entry:${r.key}`] = r.title || 'Untitled Entry'
   }
   if (idsByType.fragment?.size) {
@@ -73,33 +73,37 @@ relationshipsRouter.get('/:type/:id', async (c) => {
     const rows = await db
       .select({ key: fragments.lookupKey, title: fragments.title })
       .from(fragments)
-      .where(inArray(fragments.lookupKey, ids))
+      .where(and(inArray(fragments.lookupKey, ids), isNull(fragments.deletedAt)))
     for (const r of rows) labelMap[`fragment:${r.key}`] = r.title || 'Untitled Fragment'
   }
-  if (idsByType.thread?.size) {
-    const ids = [...idsByType.thread]
+  if (idsByType.wiki?.size) {
+    const ids = [...idsByType.wiki]
     const rows = await db
       .select({ key: wikis.lookupKey, name: wikis.name })
       .from(wikis)
-      .where(inArray(wikis.lookupKey, ids))
-    for (const r of rows) labelMap[`thread:${r.key}`] = r.name
+      .where(and(inArray(wikis.lookupKey, ids), isNull(wikis.deletedAt)))
+    for (const r of rows) labelMap[`wiki:${r.key}`] = r.name
   }
   if (idsByType.person?.size) {
     const ids = [...idsByType.person]
     const rows = await db
       .select({ key: people.lookupKey, name: people.name })
       .from(people)
-      .where(inArray(people.lookupKey, ids))
+      .where(and(inArray(people.lookupKey, ids), isNull(people.deletedAt)))
     for (const r of rows) labelMap[`person:${r.key}`] = r.name
   }
 
-  // Group by edgeType
+  // Group by edgeType. Drop entries whose label resolution returned
+  // nothing — those rows point at a soft-deleted (or otherwise
+  // missing) entity and shouldn't ship as phantom relationships
+  // with bare-id labels.
   const grouped: Record<
     string,
     Array<{ id: string; type: string; label: string; edgeType: string }>
   > = {}
   for (const o of others) {
-    const label = labelMap[`${o.type}:${o.id}`] ?? o.id
+    const label = labelMap[`${o.type}:${o.id}`]
+    if (!label) continue
     if (!grouped[o.edgeType]) grouped[o.edgeType] = []
     grouped[o.edgeType].push({
       id: o.id,

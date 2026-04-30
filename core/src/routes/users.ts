@@ -99,18 +99,30 @@ usersRouter.get('/keypair', async (c) => {
 // GET /users/stats
 usersRouter.get('/stats', async (c) => {
   const [[noteCount], [wikiCount], [personCount], [unwikiedCountResult]] = await Promise.all([
-    db.select({ count: sql<number>`count(*)` }).from(fragments),
-    db.select({ count: sql<number>`count(*)` }).from(wikis),
-    db.select({ count: sql<number>`count(*)` }).from(people),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(fragments)
+      .where(isNull(fragments.deletedAt)),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(wikis)
+      .where(isNull(wikis.deletedAt)),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(people)
+      .where(isNull(people.deletedAt)),
     db
       .select({ count: sql<number>`count(*)` })
       .from(fragments)
       .where(
-        sql`${fragments.lookupKey} NOT IN (
-          SELECT src_id FROM edges
-          WHERE edge_type = 'FRAGMENT_IN_WIKI'
-          AND deleted_at IS NULL
-        )`
+        and(
+          isNull(fragments.deletedAt),
+          sql`${fragments.lookupKey} NOT IN (
+            SELECT src_id FROM edges
+            WHERE edge_type = 'FRAGMENT_IN_WIKI'
+            AND deleted_at IS NULL
+          )`
+        )
       ),
   ])
 
