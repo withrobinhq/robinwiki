@@ -218,6 +218,82 @@ sweep_binary "5b." "/favicon.ico" "image/x-icon"
 # image branch had nothing to load.
 sweep_binary "5c." "/images/transformer-architecture.svg" "image/svg+xml" "$WIKI_URL"
 
+# ── 5d. Branding — favicon + public page logo wrap ───────────
+# Covers #252 (partial). The favicon route is already handled by 5b
+# above (covers #156), but #252 also calls out the public-wiki header
+# at wiki/src/app/(public)/p/[nanoid]/PublishedWikiArticle.tsx:42 which
+# renders bare "Robin Wiki" text — no logo SVG, no link to
+# withrobin.ai/knowledge. Two checks:
+#   5d-1 favicon byte signature looks non-default (size > 1024B is a
+#         cheap proxy for "not the empty Lovable/Vercel placeholder";
+#         the repo-checked-in core/assets/favicon.ico is ~15KB).
+#   5d-2 a published wiki page rendered at /p/<nanoid> on $WIKI_URL
+#         contains BOTH (a) a link to withrobin.ai/knowledge and (b) a
+#         logo element (svg or img) inside the <header>. Bare text
+#         fails this. We need a published wiki to hit /p/<slug>; if
+#         none is seeded we publish one transiently and unpublish in
+#         cleanup so downstream plans see no residue.
+
+# 5d-1. favicon size sanity. Default empty ICOs are ≤1024B.
+FAVICON_BYTES=$(curl -s -o /tmp/uat-99-favicon.ico -w "%{size_download}" "$SERVER_URL/favicon.ico")
+if [ "${FAVICON_BYTES:-0}" -gt 1024 ]; then
+  pass "5d-1. favicon is ${FAVICON_BYTES}B (>1024B — likely Robin-branded, not default placeholder)"
+else
+  fail "5d-1. favicon is ${FAVICON_BYTES}B (≤1024B — looks like default placeholder)"
+fi
+
+# 5d-2. public page header has a logo + withrobin.ai/knowledge link.
+# Reach for a published wiki; fall back to publishing one transiently.
+PUB_SLUG=$(psql "$DATABASE_URL" -tA -c \
+  "SELECT published_slug FROM wikis WHERE published = true AND published_slug IS NOT NULL LIMIT 1" 2>/dev/null)
+PUB_TRANSIENT_KEY=""
+if [ -z "$PUB_SLUG" ]; then
+  # Publish the first available wiki so /p/<slug> exists. We'll
+  # unpublish it in cleanup. The publish endpoint is POST /wikis/:id/publish.
+  CAND_KEY=$(curl -s -b "$COOKIE_JAR" -H "Origin: http://localhost:3000" \
+    "$SERVER_URL/wikis?limit=1" | jq -r '.wikis[0].id // empty')
+  if [ -n "$CAND_KEY" ]; then
+    PUB_RES=$(curl -s -b "$COOKIE_JAR" -H "Origin: http://localhost:3000" \
+      -X POST "$SERVER_URL/wikis/$CAND_KEY/publish")
+    PUB_SLUG=$(echo "$PUB_RES" | jq -r '.publishedSlug // empty')
+    if [ -n "$PUB_SLUG" ]; then
+      PUB_TRANSIENT_KEY="$CAND_KEY"
+    fi
+  fi
+fi
+
+if [ -z "$PUB_SLUG" ]; then
+  skip "5d-2. no published wiki and could not publish one — skip header logo check"
+else
+  PAGE_HTML=$(curl -s "$WIKI_URL/p/$PUB_SLUG")
+  HAS_WITHROBIN_LINK=$(echo "$PAGE_HTML" | grep -c 'withrobin\.ai/knowledge' || true)
+  HAS_LOGO_ELEM=$(echo "$PAGE_HTML" | grep -cE '<header[^>]*>.*(<svg|<img)' || true)
+  # The header may span multiple lines after Next.js' RSC render — fall
+  # back to a presence-anywhere-on-page check that flags missing logo
+  # specifically inside any element labelled header/branding.
+  if [ "${HAS_LOGO_ELEM:-0}" -eq 0 ]; then
+    HAS_LOGO_ELEM=$(echo "$PAGE_HTML" | tr -d '\n' | grep -cE '<header[^>]*>[^<]*(<svg|<img)' || true)
+  fi
+  if [ "${HAS_WITHROBIN_LINK:-0}" -ge 1 ]; then
+    pass "5d-2a. /p/$PUB_SLUG contains withrobin.ai/knowledge link"
+  else
+    fail "5d-2a. /p/$PUB_SLUG missing withrobin.ai/knowledge link (#252 logo wrap)"
+  fi
+  if [ "${HAS_LOGO_ELEM:-0}" -ge 1 ]; then
+    pass "5d-2b. /p/$PUB_SLUG header contains a logo element (svg/img)"
+  else
+    fail "5d-2b. /p/$PUB_SLUG header has no <svg>/<img> logo — bare text only (#252)"
+  fi
+
+  # Cleanup: only unpublish if WE published this wiki. Don't touch
+  # pre-published ones; downstream plans may depend on them.
+  if [ -n "$PUB_TRANSIENT_KEY" ]; then
+    curl -s -o /dev/null -b "$COOKIE_JAR" -H "Origin: http://localhost:3000" \
+      -X POST "$SERVER_URL/wikis/$PUB_TRANSIENT_KEY/unpublish"
+  fi
+fi
+rm -f /tmp/uat-99-favicon.ico
+
 # ── 6. Cross-kind: every response referenced by the sidecar parses ───
 # Walks the wiki detail's `refs` map — every person/fragment/wiki/entry
 # reference must resolve to a live detail endpoint. Catches "seed created
@@ -284,6 +360,9 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 | 3 | `/graph` returns valid nodes + edges; every node has a schema-known type | #153 regression guard |
 | 4 | `/search` returns results shape | search endpoint |
 | 5 | `/system/status` returns 200 + `.status`; `/favicon.ico` (5b) returns 200 + `image/x-icon` on `$SERVER_URL`; `/images/transformer-architecture.svg` (5c) returns 200 + `image/svg+xml` on `$WIKI_URL` | system endpoint; #156 (favicon); #160 (SVG asset) |
+| 5d-1 | `/favicon.ico` byte size > 1024B (Robin-branded, not default placeholder) | #252 |
+| 5d-2a | `/p/<slug>` page contains a `withrobin.ai/knowledge` link | #252 (`PublishedWikiArticle.tsx:42`) |
+| 5d-2b | `/p/<slug>` `<header>` contains an `<svg>` or `<img>` logo element | #252 (`PublishedWikiArticle.tsx:42`) |
 | 6 | Every ref in the wiki sidecar resolves to a live detail endpoint | cross-kind integrity |
 | 7 | The wiki sidecar's `infobox.image.url`, when present, resolves 200 on `$WIKI_URL` (cross-asset linkage) | #160 |
 
