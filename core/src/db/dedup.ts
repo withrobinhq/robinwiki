@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { eq, or, sql } from 'drizzle-orm'
+import { and, eq, isNull, or, sql } from 'drizzle-orm'
 import { processedJobs, entries, fragments } from './schema.js'
 import type { DB } from './client.js'
 
@@ -38,12 +38,19 @@ export async function findDuplicateEntry(db: DB, dedupHash: string) {
  * @summary Check if a fragment with identical content already exists.
  *
  * @returns The existing fragment row if duplicate, or null if content is new.
+ *
+ * @remarks
+ * The `deleted_at IS NULL` predicate is required for the planner to use the
+ * partial index `fragments_dedup_hash_idx` (defined `WHERE deleted_at IS NULL`
+ * in `schema.ts`). Without it the hot-path falls back to a Seq Scan even when
+ * the index exists. Soft-deleted fragments are not eligible duplicates anyway,
+ * so the predicate also matches the intended semantics.
  */
 export async function findDuplicateFragment(db: DB, dedupHash: string) {
   const [existing] = await db
     .select()
     .from(fragments)
-    .where(eq(fragments.dedupHash, dedupHash))
+    .where(and(eq(fragments.dedupHash, dedupHash), isNull(fragments.deletedAt)))
     .limit(1)
   return existing ?? null
 }

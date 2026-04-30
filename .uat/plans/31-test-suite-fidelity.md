@@ -239,20 +239,37 @@ else
   fail "2b. regen.test.ts has zero references to the classify pre-step — fix may have patched the mock without staging responses for the new codepath"
 fi
 
-# ── 3. §3 — warn-and-continue surface (SKIP-with-log only) ───
+# ── 3. §3 — warn-and-continue surface (FAIL on masking instances) ───
 # Codebase-wide hunt for `} catch (...) { log.warn(...) }` blocks in
 # core/src/. Each is a candidate for the same false-green class as
 # #222: an exception is swallowed, a warn is logged, the test (if any)
 # sees green even though the codepath is broken.
 #
-# We DO NOT fail on count — every one of these may be intentional
-# best-effort behavior (audit emit, cleanup-on-error, etc.). The point
-# is to surface the surface for future hardening and to make any new
-# warn-and-continue addition grep-able later.
+# Issue #265 triaged each site into INTENTIONAL (best-effort by design;
+# failure is observable elsewhere) vs MASKING (failure is silent, no
+# downstream surface, and a passing test of the surrounding code does
+# NOT prove the swallowed branch works). The MASKING list FAILS this
+# plan. The INTENTIONAL list is logged as SKIP — surfaced for future
+# hardening but not load-bearing.
+#
+# When adding a new catch+log.warn, classify it explicitly here. If you
+# add a new MASKING site, the plan will go red; either re-classify with
+# justification or fix the underlying false-green vector.
+
+# Sites known MASKING (issue #265). file:approx-line — pattern grep is line-tolerant;
+# we match the warn-message substring so cosmetic line drift (imports added etc.)
+# doesn't false-fail this section.
+declare -A MASKING_SITES=(
+  ["routes/fragments.ts:enqueue regen after fragment acceptance"]="failed to enqueue regen after fragment acceptance"
+  ["routes/fragments.ts:enqueue regen after fragment rejection"]="failed to enqueue regen after fragment rejection"
+  ["queue/regen-worker.ts:batch regen enqueue"]="batch regen: failed to enqueue regen job"
+  ["lib/regen.ts:RELATED_TO edges"]="failed to create RELATED_TO edges"
+)
 
 echo ""
 echo "  ── §3 surface scan: catch + log.warn blocks in core/src/ ──"
 SURFACE_COUNT=0
+declare -A SITE_PRESENT=()
 while IFS= read -r line; do
   SURFACE_COUNT=$((SURFACE_COUNT+1))
   # Each line is "<file>-<lineno>-  } catch (<var>) {" — strip to file:line.
@@ -262,16 +279,29 @@ done < <(grep -rn -B2 'log\.warn' core/src/ --include='*.ts' 2>/dev/null | grep 
 
 echo "  ▸ surfaced $SURFACE_COUNT catch+log.warn block(s) in core/src/"
 
-# Of those, the regen.ts:381 swallow specifically — call it out by name
-# because it's the one #222 names and the one that masks the
-# classifyUnfiledFragments throw. If/when the test suite asserts on the
-# warn (or the swallow is replaced with a re-throw), this entry can move
-# from SKIP to PASS.
+# MASKING gate: each named-masking site must STILL EXIST (so we know
+# the named surface didn't quietly move) AND must be paired with an
+# observable contract elsewhere (test, retry, audit). Today none of
+# the four MASKING sites have such a contract — they FAIL this plan
+# and are tracked by per-site issues filed during #265 triage.
+echo ""
+echo "  ── §3 MASKING gate (issue #265 triage) ──"
+for label in "${!MASKING_SITES[@]}"; do
+  pat="${MASKING_SITES[$label]}"
+  HITS=$(grep -rn "$pat" core/src/ --include='*.ts' 2>/dev/null | wc -l | tr -d '[:space:]')
+  if [ "${HITS:-0}" -ge 1 ]; then
+    fail "    masking-still-present: $label — $pat (file an issue against this site)"
+  else
+    pass "    masking-cleared: $label — warn-message no longer present (site fixed or rephrased)"
+  fi
+done
+
+# regen.ts:381 historical site — kept for delta-tracking with #222.
 REGEN_SWALLOW_PRESENT=$(grep -n 'unfiled fragment classification failed' core/src/lib/regen.ts | head -1 | cut -d: -f1)
 if [ -n "$REGEN_SWALLOW_PRESENT" ]; then
-  skip "  §3-named: core/src/lib/regen.ts:$REGEN_SWALLOW_PRESENT — the #222 swallow itself; consider re-throwing or asserting on the warn in tests"
+  fail "  §3-named: core/src/lib/regen.ts:$REGEN_SWALLOW_PRESENT — the #222 swallow itself is back; re-throw or assert on the warn in tests"
 else
-  pass "  §3-named: core/src/lib/regen.ts swallow log removed (re-throw or warn-asserted)"
+  pass "  §3-named: core/src/lib/regen.ts swallow log removed (#222 fix held)"
 fi
 
 # ── Cleanup — none required ──────────────────────────────────
@@ -296,7 +326,7 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 | 1e | vitest summary reports tests passed (suite stays green under the fix) | vitest summary line |
 | 2a | `selectChain.where()` return in test file exposes a `.limit` key (mock realistic) | `core/src/lib/regen.test.ts:79-101` |
 | 2b | Test file references the classify pre-step (`classifyUnfiledFragments`, `unfiled`, etc.) — proves awareness, not just mechanical mock patch | `core/src/lib/regen.test.ts` |
-| 3 | Each `} catch { log.warn() }` block in `core/src/` is surfaced as a SKIP entry; the `regen.ts:381` swallow is named explicitly | `grep -rn -B2 'log\.warn' core/src/` |
+| 3 | Each `} catch { log.warn() }` block in `core/src/` is surfaced as a SKIP entry; the four MASKING sites named by issue #265 triage FAIL until each is fixed or its observable-contract issue closed; the `regen.ts:381` swallow is named explicitly | `grep -rn -B2 'log\.warn' core/src/`, issue #265 triage |
 | Cleanup | None — read-only plan | n/a |
 
 ---
@@ -322,14 +352,19 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
   test file is restructured (e.g. extracted into a helper), §2a may
   false-fail; the operator should re-check by hand and update the awk
   block.
-- **§3 is intentionally a SKIP list, not a pass/fail.** Most catch +
-  log.warn blocks in `core/src/` are intentional best-effort handlers
-  (audit emit at `db/audit.ts:31-33`, regen-on-accept enqueue at
-  `routes/fragments.ts:298-300`, embedding-retry at
-  `queue/embedding-retry-worker.ts:40`, etc.). Failing the plan on
-  these would punish correct code. The artifact value is the list
-  itself — when adding a new test that asserts on a codepath behind
-  one of these handlers, check this list first.
+- **§3 — INTENTIONAL list is SKIP, MASKING list is FAIL.** Issue #265
+  triaged each catch+log.warn block in `core/src/`. Most are
+  intentional best-effort handlers (audit emit at `db/audit.ts:31-33`,
+  embedding-retry config-skip at `queue/embedding-retry-worker.ts:40`,
+  bootstrap pgvector at `bootstrap/ensure-pgvector.ts:30`, etc.) — the
+  failure is either observable elsewhere or the documented contract.
+  Four sites are MASKING and FAIL this plan: regen-enqueue on accept
+  (`routes/fragments.ts:298`), regen-enqueue on reject
+  (`routes/fragments.ts:359`), batch regen enqueue
+  (`queue/regen-worker.ts:134`), and RELATED_TO edge creation
+  (`lib/regen.ts:325`). Each has a tracking issue from #265 — when
+  the underlying false-green vector is closed (re-throw, retry queue,
+  or test asserting on the warn), the MASKING line flips to PASS.
 - **Why not just run all of `pnpm -C core test`?** Two reasons. First,
   `regen.test.ts` is the file #222 names — focusing on it keeps the
   signal strong and the run fast (~1s vs ~30s for the full suite).

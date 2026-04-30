@@ -77,7 +77,11 @@ vi.mock('../db/client.js', () => {
     return {
       from: () => ({
         where: (..._args: unknown[]) => {
-          // .where() is thenable — await it or chain .orderBy()/.groupBy()
+          // .where() is thenable — await it or chain .orderBy()/.groupBy()/.limit().
+          // The terminal `.limit()` is the hot path used by classifyUnfiledFragments
+          // (regen.ts:201-211 wiki lookup) and other fixed-row reads. Without it,
+          // every classify call throws TypeError and the regen.ts catch (issue #222)
+          // silently swallowed it, hiding a real test-fidelity bug.
           let deferred: Promise<unknown[]> | null = null
           const ensureDeferred = () => {
             if (!deferred) deferred = Promise.resolve(popResponse())
@@ -88,6 +92,7 @@ vi.mock('../db/client.js', () => {
             // biome-ignore lint/suspicious/noThenProperty: Drizzle thenable mock
             then: (onFulfilled: (v: unknown[]) => unknown, onRejected?: (r: unknown) => unknown) =>
               ensureDeferred().then(onFulfilled, onRejected),
+            limit: async () => popResponse(),
             orderBy: () => ({
               limit: async () => popResponse(),
             }),
@@ -203,14 +208,20 @@ function baseWiki(overrides: Record<string, unknown> = {}) {
 
 // Query order consumed by regenerateWiki when fragmentKeys=[], no [[slug]] refs
 // in wiki.content, no wiki.prompt override:
-//   1. wikis select (by lookupKey)
-//   2. edges select (FRAGMENT_IN_WIKI dst=wikiKey)  → empty → fragmentKeys=[]
+//   1. wikis select (top-level, by lookupKey) — outer regen wiki lookup
+//   2. classifyUnfiledFragments pre-step (regen.ts:201-211)
+//      → wikis select .where().limit(1) — pop returns [] so the
+//        classify path bails at the `if (!wiki) return ...` guard.
+//        This stage is REQUIRED (#222): if you under-stage by skipping it,
+//        the next consumer pops the wrong response and the test will fail
+//        with a meaningless mismatch.
+//   3. edges select (FRAGMENT_IN_WIKI dst=wikiKey)  → empty → fragmentKeys=[]
 //      [fragments select is SKIPPED because fragmentKeys.length === 0]
-//   3. edits select (orderBy+limit)
+//   4. edits select (orderBy+limit)
 //      [shared-fragment edges SKIPPED because fragmentKeys.length === 0]
 //      [slug-ref wikis SKIPPED because content has no [[slug]] matches]
 //      [linked wikis SKIPPED because cappedKeys.length === 0]
-//   4. wikiTypes select (only when wiki.prompt is falsy/whitespace)
+//   5. wikiTypes select (only when wiki.prompt is falsy/whitespace)
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
@@ -231,10 +242,11 @@ describe('regenerateWiki — override hierarchy integration', () => {
 
   it('uses disk default when wiki.prompt is empty and no userModified wiki_type row exists', async () => {
     stageDbResponses([
-      [baseWiki()], // 1. wikis select
-      [],           // 2. fragment edges → empty
-      [],           // 3. user edits → empty
-      [],           // 4. wikiTypes select → no userModified row
+      [baseWiki()], // 1. wikis select (outer)
+      [],           // 2. classifyUnfiledFragments wiki lookup → empty (early-returns)
+      [],           // 3. fragment edges → empty
+      [],           // 4. user edits → empty
+      [],           // 5. wikiTypes select → no userModified row
     ])
 
     const result = await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
@@ -251,9 +263,10 @@ describe('regenerateWiki — override hierarchy integration', () => {
 
   it('short-circuits type-level lookup and APPENDS wiki.prompt to system_message', async () => {
     stageDbResponses([
-      [baseWiki({ prompt: 'You are a pirate poet, yarrr.' })], // 1. wikis select
-      [],                                                        // 2. fragment edges
-      [],                                                        // 3. user edits
+      [baseWiki({ prompt: 'You are a pirate poet, yarrr.' })], // 1. wikis select (outer)
+      [],                                                        // 2. classifyUnfiledFragments wiki lookup
+      [],                                                        // 3. fragment edges
+      [],                                                        // 4. user edits
       // wikiTypes select is NEVER reached because wiki.prompt short-circuits.
     ])
 
@@ -298,10 +311,11 @@ input_variables:
 `
 
     stageDbResponses([
-      [baseWiki()],              // 1. wikis select
-      [],                        // 2. fragment edges
-      [],                        // 3. user edits
-      [{ prompt: customYaml }],  // 4. wikiTypes select → userModified row
+      [baseWiki()],              // 1. wikis select (outer)
+      [],                        // 2. classifyUnfiledFragments wiki lookup
+      [],                        // 3. fragment edges
+      [],                        // 4. user edits
+      [{ prompt: customYaml }],  // 5. wikiTypes select → userModified row
     ])
 
     await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
@@ -320,10 +334,11 @@ input_variables:
     const corrupt = 'not: : : valid yaml ][['
 
     stageDbResponses([
-      [baseWiki()],           // 1. wikis select
-      [],                     // 2. fragment edges
-      [],                     // 3. user edits
-      [{ prompt: corrupt }],  // 4. wikiTypes select → corrupt blob
+      [baseWiki()],           // 1. wikis select (outer)
+      [],                     // 2. classifyUnfiledFragments wiki lookup
+      [],                     // 3. fragment edges
+      [],                     // 4. user edits
+      [{ prompt: corrupt }],  // 5. wikiTypes select → corrupt blob
     ])
 
     await expect(
@@ -348,10 +363,11 @@ temperature: 0.3
 `
 
     stageDbResponses([
-      [baseWiki()],
-      [],
-      [],
-      [{ prompt: schemaInvalid }],
+      [baseWiki()],                // 1. wikis select (outer)
+      [],                          // 2. classifyUnfiledFragments wiki lookup
+      [],                          // 3. fragment edges
+      [],                          // 4. user edits
+      [{ prompt: schemaInvalid }], // 5. wikiTypes select → schema-invalid row
     ])
 
     await expect(
@@ -364,9 +380,11 @@ temperature: 0.3
 
   it('trims surrounding whitespace from wiki.prompt before appending to system_message', async () => {
     stageDbResponses([
-      [baseWiki({ prompt: 'pirate voice\n\n' })],
-      [],
-      [],
+      [baseWiki({ prompt: 'pirate voice\n\n' })], // 1. wikis select (outer)
+      [],                                          // 2. classifyUnfiledFragments wiki lookup
+      [],                                          // 3. fragment edges
+      [],                                          // 4. user edits
+      // wikiTypes select is NEVER reached because wiki.prompt short-circuits.
     ])
 
     await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
@@ -381,10 +399,11 @@ temperature: 0.3
     // wiki.prompt is non-empty string but .trim() is empty — the regen.ts guard
     // must treat this as "no override" and consult wikiTypes instead.
     stageDbResponses([
-      [baseWiki({ prompt: '   \n\t  ' })],
-      [],
-      [],
-      [], // wikiTypes select reached because whitespace-only prompt was ignored
+      [baseWiki({ prompt: '   \n\t  ' })], // 1. wikis select (outer)
+      [],                                   // 2. classifyUnfiledFragments wiki lookup
+      [],                                   // 3. fragment edges
+      [],                                   // 4. user edits
+      [], // 5. wikiTypes select reached because whitespace-only prompt was ignored
     ])
 
     await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
@@ -429,10 +448,11 @@ describe('regenerateWiki — sidecar persistence', () => {
     }
 
     stageDbResponses([
-      [baseWiki()], // 1. wikis select
-      [],           // 2. fragment edges → empty
-      [],           // 3. user edits → empty
-      [],           // 4. wikiTypes select → no userModified row
+      [baseWiki()], // 1. wikis select (outer)
+      [],           // 2. classifyUnfiledFragments wiki lookup
+      [],           // 3. fragment edges → empty
+      [],           // 4. user edits → empty
+      [],           // 5. wikiTypes select → no userModified row
     ])
 
     const result = await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
@@ -458,10 +478,11 @@ describe('regenerateWiki — sidecar persistence', () => {
     }
 
     stageDbResponses([
-      [baseWiki()], // 1. wikis select
-      [],           // 2. fragment edges
-      [],           // 3. user edits
-      [],           // 4. wikiTypes select
+      [baseWiki()], // 1. wikis select (outer)
+      [],           // 2. classifyUnfiledFragments wiki lookup
+      [],           // 3. fragment edges
+      [],           // 4. user edits
+      [],           // 5. wikiTypes select
     ])
 
     await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
@@ -489,10 +510,11 @@ describe('regenerateWiki — sidecar persistence', () => {
     })
 
     stageDbResponses([
-      [wikiWithExtras],
-      [],
-      [],
-      [],
+      [wikiWithExtras], // 1. wikis select (outer)
+      [],               // 2. classifyUnfiledFragments wiki lookup
+      [],               // 3. fragment edges
+      [],               // 4. user edits
+      [],               // 5. wikiTypes select
     ])
 
     await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })

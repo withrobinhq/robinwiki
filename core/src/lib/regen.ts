@@ -373,14 +373,14 @@ export async function regenerateWiki(
     return { content: '', fragmentCount: 0, hasEmbedding: false, timing: { classify: 0, gatherFragments: 0, llmCall: 0, embed: 0, total: 0 } }
   }
 
-  // Classify unfiled fragments into this wiki before gathering (mechanism 1)
+  // Classify unfiled fragments into this wiki before gathering (mechanism 1).
+  // Errors here are surfaced — the previous catch+log.warn at this site (issue
+  // #222) silently masked a structural test-mock bug for months. If classify
+  // legitimately needs to be best-effort, raise it as a separate decision and
+  // assert on the warn in tests; do not reintroduce the swallow.
   const tClassify0 = performance.now()
-  try {
-    const classifyResult = await classifyUnfiledFragments(database, wikiKey)
-    log.info({ wikiKey, linked: classifyResult.linked }, 'unfiled fragment classification completed')
-  } catch (err) {
-    log.warn({ wikiKey, err }, 'unfiled fragment classification failed — continuing with existing fragments')
-  }
+  const classifyResult = await classifyUnfiledFragments(database, wikiKey)
+  log.info({ wikiKey, linked: classifyResult.linked }, 'unfiled fragment classification completed')
   const classifyMs = performance.now() - tClassify0
 
   const previousContent = wiki.content
