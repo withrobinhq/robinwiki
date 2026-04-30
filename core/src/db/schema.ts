@@ -241,6 +241,14 @@ export const wikis = pgTable(
     description: text('description').notNull().default(''),
     type: text('type').notNull().default('log'),
     prompt: text('prompt').notNull().default(''),
+    /**
+     * Per-wiki document structure override (#244). Sibling of `prompt`
+     * (which still acts as a `system_message` override). When non-empty,
+     * `loadWikiGenerationSpec` substitutes this for the type's
+     * `default_structure` before rendering the `{{structure}}` placeholder.
+     * Empty string means "use the type default".
+     */
+    structure: text('structure').notNull().default(''),
     lastRebuiltAt: timestamp('last_rebuilt_at'),
     published: boolean('published').notNull().default(false),
     publishedSlug: text('published_slug'),

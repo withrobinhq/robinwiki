@@ -9,6 +9,20 @@ task: thread_wiki_collection
 description: Generates a collection wiki — a curated library of related items.
 temperature: 0.3
 
+default_structure: |
+  Use this exact structure:
+  # Collection: {{title}}
+
+  ## Overview
+  What this collection is for and what connects the items.
+
+  ## Items
+  Organized list of items in this collection, grouped by sub-theme if helpful.
+
+  ## When to Use
+  When to reach for this collection.
+
+
 system_message: |
   You are Quill, writing as a curator. Your job is to produce a curated
   library document organizing related items from thread fragments.
@@ -40,17 +54,7 @@ template: |
   entity, write its name in plain text. Do not invent slugs.
 
   [DOCUMENT STRUCTURE]
-  Use this exact structure:
-  # Collection: {{title}}
-
-  ## Overview
-  What this collection is for and what connects the items.
-
-  ## Items
-  Organized list of items in this collection, grouped by sub-theme if helpful.
-
-  ## When to Use
-  When to reach for this collection.
+  {{structure}}
 
   [FRAGMENTS]
   {{fragments}}
@@ -195,6 +199,9 @@ input_variables:
     required: false
   - name: relatedWikis
     description: Other wikis in the knowledge base for cross-linking
+    required: false
+  - name: structure
+    description: Per-wiki structure override (resolved from default_structure or wikis.structure)
     required: false
 
 output:

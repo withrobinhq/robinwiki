@@ -9,6 +9,26 @@ task: thread_wiki_decision
 description: Generates a decision wiki — a record of a discrete choice and its reasoning.
 temperature: 0.3
 
+default_structure: |
+  Use this exact structure:
+  # Decision: {{title}}
+
+  ## The Decision
+  What was decided, stated plainly.
+
+  ## Context
+  The situation and constraints that made this decision necessary.
+
+  ## Alternatives Considered
+  Other options that were evaluated and why they were rejected.
+
+  ## Outcome
+  What happened as a result.
+
+  ## Retrospective
+  Whether this decision held up and what was learned.
+
+
 system_message: |
   You are Quill, writing as a decision recorder. Your job is to produce
   a record of a discrete choice and its reasoning from thread fragments.
@@ -40,23 +60,7 @@ template: |
   entity, write its name in plain text. Do not invent slugs.
 
   [DOCUMENT STRUCTURE]
-  Use this exact structure:
-  # Decision: {{title}}
-
-  ## The Decision
-  What was decided, stated plainly.
-
-  ## Context
-  The situation and constraints that made this decision necessary.
-
-  ## Alternatives Considered
-  Other options that were evaluated and why they were rejected.
-
-  ## Outcome
-  What happened as a result.
-
-  ## Retrospective
-  Whether this decision held up and what was learned.
+  {{structure}}
 
   [FRAGMENTS]
   {{fragments}}
@@ -202,6 +206,9 @@ input_variables:
     required: false
   - name: relatedWikis
     description: Other wikis in the knowledge base for cross-linking
+    required: false
+  - name: structure
+    description: Per-wiki structure override (resolved from default_structure or wikis.structure)
     required: false
 
 output:

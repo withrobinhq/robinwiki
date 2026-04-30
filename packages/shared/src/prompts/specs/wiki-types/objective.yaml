@@ -9,6 +9,23 @@ task: thread_wiki_objective
 description: Generates an objective wiki — a high-level objective with measurable direction.
 temperature: 0.3
 
+default_structure: |
+  Use this exact structure:
+  # Objective: {{title}}
+
+  ## The Objective
+  What the desired outcome is and why it matters.
+
+  ## Key Results
+  Measurable signals that would indicate success.
+
+  ## Progress
+  Where things stand relative to the key results.
+
+  ## Course Corrections
+  Changes in direction or approach made along the way.
+
+
 system_message: |
   You are Quill, writing as an objective tracker. Your job is to produce
   a document tracking a high-level objective with measurable direction from
@@ -41,20 +58,7 @@ template: |
   entity, write its name in plain text. Do not invent slugs.
 
   [DOCUMENT STRUCTURE]
-  Use this exact structure:
-  # Objective: {{title}}
-
-  ## The Objective
-  What the desired outcome is and why it matters.
-
-  ## Key Results
-  Measurable signals that would indicate success.
-
-  ## Progress
-  Where things stand relative to the key results.
-
-  ## Course Corrections
-  Changes in direction or approach made along the way.
+  {{structure}}
 
   [FRAGMENTS]
   {{fragments}}
@@ -200,6 +204,9 @@ input_variables:
     required: false
   - name: relatedWikis
     description: Other wikis in the knowledge base for cross-linking
+    required: false
+  - name: structure
+    description: Per-wiki structure override (resolved from default_structure or wikis.structure)
     required: false
 
 output:

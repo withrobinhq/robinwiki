@@ -27,6 +27,11 @@ export const PromptSpecSchema = z.object({
   temperature: z.number().min(0).max(2),
   system_message: z.string(),
   template: z.string(),
+  // First-class document-structure field (#244). Wiki-type YAMLs declare the
+  // canonical layout here; the template body references it as `{{structure}}`.
+  // Optional because non–wiki-type specs (fragmenter, classifier, etc.) don't
+  // use it. A per-wiki override is stored separately in `wikis.structure`.
+  default_structure: z.string().optional(),
   input_variables: z.array(InputVariableSchema),
   output: OutputSchema.optional(),
   few_shot_examples: z.array(FewShotSchema).optional(),

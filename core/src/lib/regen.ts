@@ -619,6 +619,9 @@ export async function regenerateWiki(
     existingWiki: previousContent || undefined,
     edits: editsSummary,
     relatedWikis: relatedWikisText,
+    // #244 — per-wiki structure override. Empty string means "fall back to
+    // the type's default_structure" — the loader handles the precedence.
+    structure: wiki.structure || undefined,
   }
 
   // Load prompt spec with runtime fallback on override parse/validation failure.

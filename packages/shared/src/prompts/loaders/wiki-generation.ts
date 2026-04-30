@@ -95,6 +95,9 @@ const inputSchema = z.object({
   existingWiki: z.string().optional(),
   edits: z.string().optional(),
   relatedWikis: z.string().optional(),
+  // #244 — per-wiki structure override (wikis.structure). When present this
+  // wins over the type's default_structure. Resolved before render.
+  structure: z.string().optional(),
 })
 
 const schemaMap: Record<WikiType, z.ZodType> = {
@@ -140,6 +143,11 @@ export function loadWikiGenerationSpec(
     existingWiki?: string
     edits?: string
     relatedWikis?: string
+    /**
+     * #244 — per-wiki structure override (from `wikis.structure`). When
+     * non-empty, replaces the type's `default_structure` before render.
+     */
+    structure?: string
   },
   override?: WikiGenerationOverride,
 ): PromptResult {
@@ -165,7 +173,21 @@ export function loadWikiGenerationSpec(
     }
   }
 
-  const user = renderTemplate(effective.template, validated)
+  // Resolve {{structure}} — per-wiki override beats the type's
+  // default_structure. Render the resolved structure block through
+  // Handlebars first so it can interpolate `{{title}}` etc. (the
+  // structure block is still a sub-template, not opaque text). Empty-
+  // string fallback keeps the outer render safe if a malformed yaml
+  // omits both.
+  const overrideStructure = validated.structure?.trim()
+  const rawStructure =
+    overrideStructure && overrideStructure.length > 0
+      ? overrideStructure
+      : (effective.default_structure ?? '')
+  const resolvedStructure = renderTemplate(rawStructure, validated)
+
+  const renderVars = { ...validated, structure: resolvedStructure }
+  const user = renderTemplate(effective.template, renderVars)
   return {
     system: effective.system_message,
     user,

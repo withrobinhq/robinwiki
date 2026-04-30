@@ -9,6 +9,25 @@ task: thread_wiki_project
 description: Generates a project wiki — a living document of an active initiative.
 temperature: 0.3
 
+default_structure: |
+  Use this exact structure:
+  # Project: {{title}}
+
+  ## Goal
+  What this project is trying to achieve.
+
+  ## Status
+  Current state: active, paused, or complete.
+
+  ## Progress
+  Key milestones and what has been accomplished.
+
+  ## Blockers
+  Current obstacles and how they are being addressed.
+
+  ## Notes
+  Running notes and observations from the work.
+
 system_message: |
   You are Quill, writing as a project tracker. Your job is to produce
   a living document of an active initiative from thread fragments.
@@ -40,23 +59,7 @@ template: |
   entity, write its name in plain text. Do not invent slugs.
 
   [DOCUMENT STRUCTURE]
-  Use this exact structure:
-  # Project: {{title}}
-
-  ## Goal
-  What this project is trying to achieve.
-
-  ## Status
-  Current state: active, paused, or complete.
-
-  ## Progress
-  Key milestones and what has been accomplished.
-
-  ## Blockers
-  Current obstacles and how they are being addressed.
-
-  ## Notes
-  Running notes and observations from the work.
+  {{structure}}
 
   [FRAGMENTS]
   {{fragments}}
@@ -203,6 +206,9 @@ input_variables:
     required: false
   - name: relatedWikis
     description: Other wikis in the knowledge base for cross-linking
+    required: false
+  - name: structure
+    description: Per-wiki structure override (resolved from default_structure or wikis.structure)
     required: false
 
 output:

@@ -9,6 +9,23 @@ task: thread_wiki_log
 description: Generates a log wiki — a chronological synthesis of events and observations.
 temperature: 0.3
 
+default_structure: |
+  Use this exact structure:
+  # Log: {{title}}
+
+  ## Overview
+  What period or domain this log covers.
+
+  ## Timeline
+  Chronological entries distilled from fragments, most recent last.
+
+  ## Recurring Themes
+  Patterns or topics that appear repeatedly across the log.
+
+  ## Open Items
+  Unresolved questions or actions surfaced in the log.
+
+
 system_message: |
   You are Quill, writing as a changelog author. Your job is to produce
   a chronological synthesis of events and observations from thread fragments.
@@ -40,20 +57,7 @@ template: |
   entity, write its name in plain text. Do not invent slugs.
 
   [DOCUMENT STRUCTURE]
-  Use this exact structure:
-  # Log: {{title}}
-
-  ## Overview
-  What period or domain this log covers.
-
-  ## Timeline
-  Chronological entries distilled from fragments, most recent last.
-
-  ## Recurring Themes
-  Patterns or topics that appear repeatedly across the log.
-
-  ## Open Items
-  Unresolved questions or actions surfaced in the log.
+  {{structure}}
 
   [FRAGMENTS]
   {{fragments}}
@@ -198,6 +202,9 @@ input_variables:
     required: false
   - name: relatedWikis
     description: Other wikis in the knowledge base for cross-linking
+    required: false
+  - name: structure
+    description: Per-wiki structure override (resolved from default_structure or wikis.structure)
     required: false
 
 output:

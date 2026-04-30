@@ -9,6 +9,23 @@ task: thread_wiki_voice
 description: Generates a voice wiki — a style guide for communication.
 temperature: 0.3
 
+default_structure: |
+  Use this exact structure:
+  # Voice: {{title}}
+
+  ## Tone and Style
+  How this person writes and speaks — formality, directness, register.
+
+  ## Language Patterns
+  Phrases, vocabulary, and constructions that fit this voice.
+
+  ## What to Avoid
+  Patterns and phrasings that do not fit.
+
+  ## Audience Notes
+  How the voice adapts for different contexts or audiences.
+
+
 system_message: |
   You are Quill, writing as a voice coach. Your job is to produce
   a style guide for communication from thread fragments.
@@ -40,20 +57,7 @@ template: |
   entity, write its name in plain text. Do not invent slugs.
 
   [DOCUMENT STRUCTURE]
-  Use this exact structure:
-  # Voice: {{title}}
-
-  ## Tone and Style
-  How this person writes and speaks — formality, directness, register.
-
-  ## Language Patterns
-  Phrases, vocabulary, and constructions that fit this voice.
-
-  ## What to Avoid
-  Patterns and phrasings that do not fit.
-
-  ## Audience Notes
-  How the voice adapts for different contexts or audiences.
+  {{structure}}
 
   [FRAGMENTS]
   {{fragments}}
@@ -197,6 +201,9 @@ input_variables:
     required: false
   - name: relatedWikis
     description: Other wikis in the knowledge base for cross-linking
+    required: false
+  - name: structure
+    description: Per-wiki structure override (resolved from default_structure or wikis.structure)
     required: false
 
 output:

@@ -78,6 +78,13 @@
       "when": 1778112000000,
       "tag": "0010_backfill_zombie_edges",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778198400000,
+      "tag": "0011_wikis_add_structure",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,23 @@ task: thread_wiki_belief
 description: Generates a belief wiki — a synthesis of a held position or mental model.
 temperature: 0.3
 
+default_structure: |
+  Use this exact structure:
+  # Belief: {{title}}
+
+  ## The Position
+  A clear statement of what is believed.
+
+  ## Evidence and Reasoning
+  What observations and reasoning support this belief.
+
+  ## Nuances and Exceptions
+  Where this belief breaks down or requires qualification.
+
+  ## How This Shapes Behavior
+  How this belief influences decisions or actions.
+
+
 system_message: |
   You are Quill, writing as an argument author. Your job is to produce
   a synthesis of a held position or mental model from thread fragments.
@@ -40,20 +57,7 @@ template: |
   entity, write its name in plain text. Do not invent slugs.
 
   [DOCUMENT STRUCTURE]
-  Use this exact structure:
-  # Belief: {{title}}
-
-  ## The Position
-  A clear statement of what is believed.
-
-  ## Evidence and Reasoning
-  What observations and reasoning support this belief.
-
-  ## Nuances and Exceptions
-  Where this belief breaks down or requires qualification.
-
-  ## How This Shapes Behavior
-  How this belief influences decisions or actions.
+  {{structure}}
 
   [FRAGMENTS]
   {{fragments}}
@@ -198,6 +202,9 @@ input_variables:
     required: false
   - name: relatedWikis
     description: Other wikis in the knowledge base for cross-linking
+    required: false
+  - name: structure
+    description: Per-wiki structure override (resolved from default_structure or wikis.structure)
     required: false
 
 output:

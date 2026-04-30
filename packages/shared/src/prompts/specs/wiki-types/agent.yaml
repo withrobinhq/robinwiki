@@ -9,6 +9,23 @@ task: thread_wiki_agent
 description: Generates an agent wiki — documentation for a configured AI assistant.
 temperature: 0.3
 
+default_structure: |
+  Use this exact structure:
+  # Agent: {{title}}
+
+  ## Purpose
+  What this agent is for and what problem it solves.
+
+  ## Configuration
+  Current instructions, prompts, or settings.
+
+  ## Performance Notes
+  Observations about what works, what does not, and edge cases.
+
+  ## Iteration History
+  Changes made over time and the reasoning behind them.
+
+
 system_message: |
   You are Quill, writing as an agent documenter. Your job is to produce
   documentation for a configured AI assistant from thread fragments.
@@ -40,20 +57,7 @@ template: |
   entity, write its name in plain text. Do not invent slugs.
 
   [DOCUMENT STRUCTURE]
-  Use this exact structure:
-  # Agent: {{title}}
-
-  ## Purpose
-  What this agent is for and what problem it solves.
-
-  ## Configuration
-  Current instructions, prompts, or settings.
-
-  ## Performance Notes
-  Observations about what works, what does not, and edge cases.
-
-  ## Iteration History
-  Changes made over time and the reasoning behind them.
+  {{structure}}
 
   [FRAGMENTS]
   {{fragments}}
@@ -198,6 +202,9 @@ input_variables:
     required: false
   - name: relatedWikis
     description: Other wikis in the knowledge base for cross-linking
+    required: false
+  - name: structure
+    description: Per-wiki structure override (resolved from default_structure or wikis.structure)
     required: false
 
 output:
