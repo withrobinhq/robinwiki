@@ -207,7 +207,7 @@ export async function createRelatedToEdges(
 export async function classifyUnfiledFragments(
   database: DB,
   wikiKey: string
-): Promise<{ linked: number; autoFiled: number; llmFiled: number; llmRejected: number }> {
+): Promise<{ linked: number; autoFiled: number; llmFiled: number; llmRejected: number; edgesFailed: number }> {
   const [wiki] = await database
     .select({
       lookupKey: wikis.lookupKey,
@@ -220,7 +220,7 @@ export async function classifyUnfiledFragments(
     .where(and(eq(wikis.lookupKey, wikiKey), isNull(wikis.deletedAt)))
     .limit(1)
 
-  if (!wiki) return { linked: 0, autoFiled: 0, llmFiled: 0, llmRejected: 0 }
+  if (!wiki) return { linked: 0, autoFiled: 0, llmFiled: 0, llmRejected: 0, edgesFailed: 0 }
 
   // Hybrid search: BM25 + vector (when embedding available) via RRF fusion.
   // This replaces the cosine-only approach — BM25 alone can find candidates
@@ -242,7 +242,7 @@ export async function classifyUnfiledFragments(
   )
   const unfiledResults = hybridResults.filter(r => !filedFragKeys.has(r.id)).slice(0, MAX_UNFILED_PER_REGEN)
 
-  if (unfiledResults.length === 0) return { linked: 0, autoFiled: 0, llmFiled: 0, llmRejected: 0 }
+  if (unfiledResults.length === 0) return { linked: 0, autoFiled: 0, llmFiled: 0, llmRejected: 0, edgesFailed: 0 }
 
   // Load full content for candidates
   const candidateKeys = unfiledResults.map(r => r.id)
@@ -265,6 +265,7 @@ export async function classifyUnfiledFragments(
   let autoFiled = 0
   let llmFiled = 0
   let llmRejected = 0
+  let edgesFailed = 0
 
   if (llmReviewFrags.length > 0) {
     const agents = createIngestAgents(orConfig)
@@ -353,7 +354,25 @@ export async function classifyUnfiledFragments(
             try {
               await createRelatedToEdges(database, frag.lookupKey, edge.wikiKey)
             } catch (relErr) {
+              edgesFailed++
+              const message = relErr instanceof Error ? relErr.message : String(relErr)
               log.warn({ fragmentKey: frag.lookupKey, err: relErr }, 'failed to create RELATED_TO edges')
+              // PR #261 shipped UAT plans (29 §8g, 32 recall) that depend on
+              // RELATED_TO edges materializing. Silent drops here meant the
+              // worker quietly produced incomplete graphs and tests passed.
+              // Surface via audit so plan 31 can lock the contract (#274).
+              await emitAuditEvent(database, {
+                entityType: 'fragment',
+                entityId: frag.lookupKey,
+                eventType: 'related_edge_create_failed',
+                source: 'system',
+                summary: `RELATED_TO edge creation failed: ${message}`,
+                detail: {
+                  error: message,
+                  wikiKey: edge.wikiKey,
+                  targetFragmentId: frag.lookupKey,
+                },
+              })
             }
           }
         } else {
@@ -371,11 +390,11 @@ export async function classifyUnfiledFragments(
 
   const totalLinked = autoFiled + llmFiled
   log.info(
-    { wikiKey, candidates: unfiledResults.length, autoFiled, llmFiled, llmRejected, totalLinked },
+    { wikiKey, candidates: unfiledResults.length, autoFiled, llmFiled, llmRejected, edgesFailed, totalLinked },
     'unfiled fragment classification completed (hybrid)'
   )
 
-  return { linked: totalLinked, autoFiled, llmFiled, llmRejected }
+  return { linked: totalLinked, autoFiled, llmFiled, llmRejected, edgesFailed }
 }
 
 /**

@@ -418,7 +418,9 @@ fragmentsRouter.post('/:id/accept', zValidator('json', fragmentReviewBodySchema,
   })
 
 
-    // Queue wiki regen so the accepted fragment's content is incorporated into the wiki body
+    // Queue wiki regen so the accepted fragment's content is incorporated into the wiki body.
+    // Failure here is silent to the user (the fragment is already accepted) but we must
+    // surface it via an audit row so downstream observability can detect stuck wikis (#271).
     try {
       await producer.enqueueRegen({
         type: 'regen',
@@ -429,7 +431,16 @@ fragmentsRouter.post('/:id/accept', zValidator('json', fragmentReviewBodySchema,
         enqueuedAt: new Date().toISOString(),
       })
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
       log.warn({ wikiKey: wikiId, err }, 'failed to enqueue regen after fragment acceptance')
+      await emitAuditEvent(db, {
+        entityType: 'wiki',
+        entityId: wikiId,
+        eventType: 'regen_enqueue_failed',
+        source: 'api',
+        summary: `Regen enqueue failed after fragment acceptance: ${message}`,
+        detail: { error: message, reason: 'acceptance', fragmentKey: id },
+      })
     }
 
   return c.json({ ok: true, fragmentId: id, wikiId })
@@ -479,7 +490,10 @@ fragmentsRouter.post('/:id/reject', zValidator('json', fragmentReviewBodySchema,
     detail: { fragmentKey: id, wikiKey: wikiId },
   })
 
-  // Queue wiki regen so the rejected fragment's content is removed from the wiki body
+  // Queue wiki regen so the rejected fragment's content is removed from the wiki body.
+  // Stale-content risk: if this enqueue silently fails the wiki keeps showing content
+  // sourced from the rejected fragment — surface via audit row (#272). Tagged
+  // reason=rejection in payload to distinguish from #271's acceptance path.
   try {
     await producer.enqueueRegen({
       type: 'regen',
@@ -490,7 +504,16 @@ fragmentsRouter.post('/:id/reject', zValidator('json', fragmentReviewBodySchema,
       enqueuedAt: new Date().toISOString(),
     })
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
     log.warn({ wikiKey: wikiId, err }, 'failed to enqueue regen after fragment rejection')
+    await emitAuditEvent(db, {
+      entityType: 'wiki',
+      entityId: wikiId,
+      eventType: 'regen_enqueue_failed',
+      source: 'api',
+      summary: `Regen enqueue failed after fragment rejection: ${message}`,
+      detail: { error: message, reason: 'rejection', fragmentKey: id },
+    })
   }
 
   return c.json({ ok: true, fragmentId: id, wikiId })

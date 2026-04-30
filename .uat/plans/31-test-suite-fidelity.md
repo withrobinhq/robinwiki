@@ -28,13 +28,17 @@ the suite must demonstrate awareness that `classifyUnfiledFragments`
 runs. Without this, fixing the mock alone could still leave the
 codepath unverified.
 
-**(C) Codebase-wide warn-and-continue surface is documented.** Hunt
-for `} catch (...) { log.warn(...) }` patterns elsewhere in `core/src/`
-that could mask similar false-greens (an exception is swallowed, a
-warn is logged, execution continues — and tests against that codepath
-report green). This section does not fail the plan; it emits SKIP
-entries for each instance so the surface is documented for future
-hardening. The output is the artifact.
+**(C) Codebase-wide warn-and-continue surface is documented AND the
+four MASKING sites have audit-row contracts.** Hunt for
+`} catch (...) { log.warn(...) }` patterns elsewhere in `core/src/`.
+Each is surfaced as a SKIP entry (intentional list is not load-bearing).
+On top of the surface scan, the four MASKING sites originally
+flagged by #265 triage (issues #271–#274) FAIL the plan unless their
+swallow-side catch emits an `audit_log` row with the named
+`event_type`, AND a per-site vitest unit test (mocking the throwing
+dependency) asserts that emit. This is the structural fix #271–#274
+shipped — without it, a test of the surrounding code can stay green
+while the swallowed branch is broken.
 
 ## Prerequisites
 
@@ -239,37 +243,27 @@ else
   fail "2b. regen.test.ts has zero references to the classify pre-step — fix may have patched the mock without staging responses for the new codepath"
 fi
 
-# ── 3. §3 — warn-and-continue surface (FAIL on masking instances) ───
+# ── 3. §3 — warn-and-continue surface + masking-site audit contract ───
 # Codebase-wide hunt for `} catch (...) { log.warn(...) }` blocks in
 # core/src/. Each is a candidate for the same false-green class as
 # #222: an exception is swallowed, a warn is logged, the test (if any)
 # sees green even though the codepath is broken.
 #
 # Issue #265 triaged each site into INTENTIONAL (best-effort by design;
-# failure is observable elsewhere) vs MASKING (failure is silent, no
-# downstream surface, and a passing test of the surrounding code does
-# NOT prove the swallowed branch works). The MASKING list FAILS this
-# plan. The INTENTIONAL list is logged as SKIP — surfaced for future
-# hardening but not load-bearing.
+# failure is observable elsewhere) vs MASKING (failure was silent, no
+# downstream surface). The four MASKING sites named in #265 (#271–#274)
+# are now paired with audit-row contracts — the swallow-side catch emits
+# an `audit_log` row whose event_type names the failure class. This
+# section asserts the audit contract holds at each site by running the
+# per-site vitest unit test that mocks the throwing dependency and
+# checks `emitAuditEvent` was called.
 #
-# When adding a new catch+log.warn, classify it explicitly here. If you
-# add a new MASKING site, the plan will go red; either re-classify with
-# justification or fix the underlying false-green vector.
-
-# Sites known MASKING (issue #265). file:approx-line — pattern grep is line-tolerant;
-# we match the warn-message substring so cosmetic line drift (imports added etc.)
-# doesn't false-fail this section.
-declare -A MASKING_SITES=(
-  ["routes/fragments.ts:enqueue regen after fragment acceptance"]="failed to enqueue regen after fragment acceptance"
-  ["routes/fragments.ts:enqueue regen after fragment rejection"]="failed to enqueue regen after fragment rejection"
-  ["queue/regen-worker.ts:batch regen enqueue"]="batch regen: failed to enqueue regen job"
-  ["lib/regen.ts:RELATED_TO edges"]="failed to create RELATED_TO edges"
-)
+# The INTENTIONAL list is still surfaced as SKIP entries below for
+# future hardening but is not load-bearing.
 
 echo ""
 echo "  ── §3 surface scan: catch + log.warn blocks in core/src/ ──"
 SURFACE_COUNT=0
-declare -A SITE_PRESENT=()
 while IFS= read -r line; do
   SURFACE_COUNT=$((SURFACE_COUNT+1))
   # Each line is "<file>-<lineno>-  } catch (<var>) {" — strip to file:line.
@@ -279,20 +273,66 @@ done < <(grep -rn -B2 'log\.warn' core/src/ --include='*.ts' 2>/dev/null | grep 
 
 echo "  ▸ surfaced $SURFACE_COUNT catch+log.warn block(s) in core/src/"
 
-# MASKING gate: each named-masking site must STILL EXIST (so we know
-# the named surface didn't quietly move) AND must be paired with an
-# observable contract elsewhere (test, retry, audit). Today none of
-# the four MASKING sites have such a contract — they FAIL this plan
-# and are tracked by per-site issues filed during #265 triage.
+# MASKING gate (#271–#274): each named-masking site must have a vitest
+# unit test that mocks the throwing dependency and asserts
+# `emitAuditEvent` was called with the expected event_type. The test
+# files live alongside the source — running them here closes the loop.
 echo ""
-echo "  ── §3 MASKING gate (issue #265 triage) ──"
-for label in "${!MASKING_SITES[@]}"; do
-  pat="${MASKING_SITES[$label]}"
-  HITS=$(grep -rn "$pat" core/src/ --include='*.ts' 2>/dev/null | wc -l | tr -d '[:space:]')
-  if [ "${HITS:-0}" -ge 1 ]; then
-    fail "    masking-still-present: $label — $pat (file an issue against this site)"
+echo "  ── §3 MASKING audit-contract gate (issues #271–#274) ──"
+
+# Per-site config. Each row is: <issue> <test-file>:<expected-event-type>
+declare -A MASKING_TESTS=(
+  ["#271 routes/fragments accept regen-enqueue"]="src/routes/fragments.audit.test.ts:regen_enqueue_failed"
+  ["#272 routes/fragments reject regen-enqueue"]="src/routes/fragments.audit.test.ts:regen_enqueue_failed"
+  ["#273 queue/regen-worker batch enqueue"]="src/queue/regen-worker.audit.test.ts:regen_batch_item_failed"
+  ["#274 lib/regen RELATED_TO edge"]="src/lib/regen.audit.test.ts:related_edge_create_failed"
+)
+
+# First: confirm each event_type string is present in the source. Cheap
+# gate that catches the case where the audit emit was reverted but the
+# test file still exists.
+declare -A EVENT_TYPE_FILE=(
+  ["regen_enqueue_failed"]="core/src/routes/fragments.ts"
+  ["regen_batch_item_failed"]="core/src/queue/regen-worker.ts"
+  ["related_edge_create_failed"]="core/src/lib/regen.ts"
+)
+for evt in "${!EVENT_TYPE_FILE[@]}"; do
+  src="${EVENT_TYPE_FILE[$evt]}"
+  if grep -q "eventType: '$evt'" "$src" 2>/dev/null; then
+    pass "    audit-emit-present: $evt → $src"
   else
-    pass "    masking-cleared: $label — warn-message no longer present (site fixed or rephrased)"
+    fail "    audit-emit-MISSING: $evt → $src (swallow-side catch lacks emitAuditEvent call)"
+  fi
+done
+
+# Second: run the per-site vitest audit tests in isolation. Each test
+# mocks the throwing dependency (producer.enqueueRegen or the inner
+# embedding select) and asserts emitAuditEvent was called with the
+# matching event_type. A green run proves the audit contract.
+TEST_FILES_RUN=()
+for label in "${!MASKING_TESTS[@]}"; do
+  spec="${MASKING_TESTS[$label]}"
+  test_file="${spec%%:*}"
+  expected_evt="${spec##*:}"
+  # Avoid re-running the same test file (fragments covers both #271+#272).
+  already_run=0
+  for prev in "${TEST_FILES_RUN[@]:-}"; do
+    if [ "$prev" = "$test_file" ]; then already_run=1; break; fi
+  done
+  if [ "$already_run" -eq 1 ]; then
+    pass "    audit-test-pass (shared run): $label — $test_file"
+    continue
+  fi
+  TEST_FILES_RUN+=("$test_file")
+  log_file="/tmp/uat-31-audit-$(echo "$test_file" | tr '/.' '__').log"
+  if pnpm -C core test "$test_file" > "$log_file" 2>&1; then
+    if grep -q "$expected_evt" "$log_file" || grep -q "Tests .*passed" "$log_file"; then
+      pass "    audit-test-pass: $label — $test_file"
+    else
+      fail "    audit-test-INDETERMINATE: $label — $test_file (vitest exited 0 but expected event_type '$expected_evt' not referenced; see $log_file)"
+    fi
+  else
+    fail "    audit-test-FAIL: $label — $test_file (vitest exited non-zero; see $log_file)"
   fi
 done
 
@@ -326,7 +366,10 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 | 1e | vitest summary reports tests passed (suite stays green under the fix) | vitest summary line |
 | 2a | `selectChain.where()` return in test file exposes a `.limit` key (mock realistic) | `core/src/lib/regen.test.ts:79-101` |
 | 2b | Test file references the classify pre-step (`classifyUnfiledFragments`, `unfiled`, etc.) — proves awareness, not just mechanical mock patch | `core/src/lib/regen.test.ts` |
-| 3 | Each `} catch { log.warn() }` block in `core/src/` is surfaced as a SKIP entry; the four MASKING sites named by issue #265 triage FAIL until each is fixed or its observable-contract issue closed; the `regen.ts:381` swallow is named explicitly | `grep -rn -B2 'log\.warn' core/src/`, issue #265 triage |
+| 3a | Each `} catch { log.warn() }` block in `core/src/` is surfaced as a SKIP entry (intentional list, not load-bearing) | `grep -rn -B2 'log\.warn' core/src/` |
+| 3b | Each MASKING-site (#271–#274) emits an audit row of the named `event_type` from its swallow-side catch — verified by source grep | `core/src/routes/fragments.ts`, `core/src/queue/regen-worker.ts`, `core/src/lib/regen.ts` |
+| 3c | Per-site vitest audit tests pass: `fragments.audit.test.ts` (#271 + #272), `regen-worker.audit.test.ts` (#273), `regen.audit.test.ts` (#274). Each test mocks the throwing dependency and asserts `emitAuditEvent` was called with the matching `event_type`. | `core/src/routes/fragments.audit.test.ts`, `core/src/queue/regen-worker.audit.test.ts`, `core/src/lib/regen.audit.test.ts` |
+| 3d | `regen.ts:381` swallow log is gone — the #222 fix held | `core/src/lib/regen.ts` |
 | Cleanup | None — read-only plan | n/a |
 
 ---
@@ -352,19 +395,20 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
   test file is restructured (e.g. extracted into a helper), §2a may
   false-fail; the operator should re-check by hand and update the awk
   block.
-- **§3 — INTENTIONAL list is SKIP, MASKING list is FAIL.** Issue #265
-  triaged each catch+log.warn block in `core/src/`. Most are
-  intentional best-effort handlers (audit emit at `db/audit.ts:31-33`,
-  embedding-retry config-skip at `queue/embedding-retry-worker.ts:40`,
-  bootstrap pgvector at `bootstrap/ensure-pgvector.ts:30`, etc.) — the
-  failure is either observable elsewhere or the documented contract.
-  Four sites are MASKING and FAIL this plan: regen-enqueue on accept
-  (`routes/fragments.ts:298`), regen-enqueue on reject
-  (`routes/fragments.ts:359`), batch regen enqueue
-  (`queue/regen-worker.ts:134`), and RELATED_TO edge creation
-  (`lib/regen.ts:325`). Each has a tracking issue from #265 — when
-  the underlying false-green vector is closed (re-throw, retry queue,
-  or test asserting on the warn), the MASKING line flips to PASS.
+- **§3 — INTENTIONAL list is SKIP, MASKING list now has audit
+  contracts.** Issue #265 triaged each catch+log.warn block in
+  `core/src/`. Most are intentional best-effort handlers (audit emit
+  at `db/audit.ts:31-33`, embedding-retry config-skip at
+  `queue/embedding-retry-worker.ts:40`, bootstrap pgvector at
+  `bootstrap/ensure-pgvector.ts:30`, etc.) — the failure is either
+  observable elsewhere or the documented contract. The four MASKING
+  sites originally surfaced by #265 (issues #271–#274) are now paired
+  with audit-row contracts: each swallow-side catch emits an
+  `audit_log` row whose `event_type` names the failure class. §3b
+  greps for the event_type literal in source and §3c runs the
+  per-site vitest audit test that mocks the throwing dependency and
+  asserts `emitAuditEvent` was called. Tier-3 retry/DLQ is out of
+  scope; the audit row is the surface.
 - **Why not just run all of `pnpm -C core test`?** Two reasons. First,
   `regen.test.ts` is the file #222 names — focusing on it keeps the
   signal strong and the run fast (~1s vs ~30s for the full suite).
