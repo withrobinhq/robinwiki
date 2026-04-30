@@ -4,6 +4,7 @@
   "packages": { "node": "20" },
   "steps": {
     "install": {
+      "inputs": [{ "step": "packages:mise" }, { "local": true, "include": ["."] }],
       "commands": [
         "corepack enable",
         "corepack prepare pnpm@10.15.1 --activate",
@@ -11,6 +12,7 @@
       ]
     },
     "build": {
+      "inputs": [{ "step": "install" }],
       "secrets": ["NEXT_PUBLIC_ROBIN_API"],
       "commands": ["pnpm --filter @robin/wiki... build"]
     }
@@ -18,7 +20,7 @@
   "deploy": {
     "base": { "image": "ghcr.io/railwayapp/railpack-runtime:mise-2026.3.17" },
     "inputs": [
-      { "step": "packages:mise", "include": ["/mise/shims", "/mise/installs", "/etc/mise"] },
+      { "step": "packages:mise", "include": ["/mise/shims", "/mise/installs", "/usr/local/bin/mise", "/etc/mise/config.toml", "/root/.local/state/mise"] },
       { "step": "install", "include": ["node_modules", "packages/shared/node_modules", "wiki/node_modules"] },
       { "step": "build", "include": ["."] }
     ],
