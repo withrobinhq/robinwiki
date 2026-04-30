@@ -61,6 +61,12 @@ curl -s -c "$COOKIE_JAR" -X POST \
   "$SERVER_URL/api/auth/sign-in/email" >/dev/null
 
 UAT_TAG="uat29-$(date +%s)"
+# Anchor for strict count assertions in §5g and §8g. Anything created BEFORE
+# this timestamp belongs to a previous run; anything AFTER must satisfy the
+# §5/§8 invariants. Use ISO-8601 epoch so the literal can be quoted into psql
+# without worrying about embedded spaces — `now()::text` includes a space
+# between the date and time, and any tr -d ' ' would mangle the timestamp.
+TEST_START=$(psql "$DATABASE_URL" -t -A -c "SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')" 2>/dev/null | tr -d '[:space:]')
 
 # ── 1. Issue #185 — Frontend relabel: Group → Collection ─────────
 # Backend stays at /groups (server contract). The frontend hook is renamed
@@ -467,6 +473,29 @@ else
   fail "5g. Edge attrs.method missing or wrong ($EDGE_ATTRS)"
 fi
 
+# 5g-strict. EVERY similarity edge created in the test window must carry
+# method='cosine-regen'. Catches BOTH callsites in one shot:
+#   - core/src/lib/regen.ts createRelatedToEdges (the regen-time path,
+#     which writes { score, method:'cosine-regen' })
+#   - packages/agent/src/stages/index.ts ~lines 217-234 (the linking-stage
+#     worker path, which currently writes { score } only — Issue #227).
+# Any edge in the window with NULL method or any other method value fails
+# the assertion. Live evidence: 100/100 edges currently lack method, so this
+# expected-fails today and turns green only when both insertEdge sites in
+# stages/index.ts gain `method:'cosine-regen'` in their attrs payloads.
+WINDOW_BAD_METHOD=$(psql "$DATABASE_URL" -t -A -c "
+  SELECT COUNT(*) FROM edges
+  WHERE edge_type = 'FRAGMENT_RELATED_TO_FRAGMENT'
+    AND deleted_at IS NULL
+    AND created_at > '$TEST_START'::timestamptz
+    AND (attrs->>'method') IS DISTINCT FROM 'cosine-regen'
+" 2>/dev/null | tr -d ' ')
+if [ "${WINDOW_BAD_METHOD:-1}" = "0" ]; then
+  pass "5g-strict. All test-window FRAGMENT_RELATED_TO_FRAGMENT edges carry method='cosine-regen'"
+else
+  fail "5g-strict. $WINDOW_BAD_METHOD test-window edge(s) missing method='cosine-regen' — worker path (stages/index.ts) regression"
+fi
+
 EDGE_SCORE=$(echo "$EDGE_ATTRS" | jq -r '.score // 0' 2>/dev/null)
 if awk "BEGIN{exit !($EDGE_SCORE >= 0.75)}" 2>/dev/null; then
   pass "5h. Edge attrs.score = $EDGE_SCORE (>= 0.75 threshold)"
@@ -555,6 +584,121 @@ if [ -z "$POST_HAS_B" ]; then
 else
   fail "6c. Soft-deleted fragment still surfaces in relatedFragments ($POST_HAS_B)"
 fi
+
+# ── 6.5 Issue #228 — DELETE /fragments/:id route + edge cascade ──
+# The route must:
+#   1. exist (HTTP 204 on a real key)
+#   2. soft-delete the fragment row (fragments.deleted_at NOT NULL)
+#   3. soft-delete every edge referencing the fragment in either direction:
+#      FRAGMENT_IN_WIKI, FRAGMENT_RELATED_TO_FRAGMENT (both src and dst),
+#      FRAGMENT_MENTIONS_PERSON, ENTRY_HAS_FRAGMENT.
+# Live evidence today: HTTP 404 — the handler is absent from
+# core/src/routes/fragments.ts. This whole subsection expected-fails until
+# the route lands. Pattern to match: DELETE /wikis/:id at
+# core/src/routes/wikis.ts:715-739 (lookup → 404 if missing → soft-delete
+# row + cascade related joins → audit emit → c.body(null, 204)).
+
+# 6d. Create a fresh UAT fragment to exercise the delete in isolation —
+#     do NOT reuse FRAG_A/FRAG_B/FRAG_D from earlier so cleanup paths in §11
+#     don't have to special-case it.
+FRAG_TEXT_DEL="Self-attention, the heart of transformers, lets every position attend to every other position in one parallel pass. [run=$UAT_TAG]"
+ENTRY_DEL=$(curl -s -X POST -b "$COOKIE_JAR" \
+  -H "Content-Type: application/json" \
+  -H "Origin: http://localhost:3000" \
+  -d "$(jq -n --arg c "$FRAG_TEXT_DEL" --arg t "uat29-frag-del-$UAT_TAG" '{title:$t,content:$c}')" \
+  "$SERVER_URL/entries")
+ENTRY_DEL_KEY=$(echo "$ENTRY_DEL" | jq -r '.lookupKey // .id // ""')
+
+# Wait for pipeline to land the fragment + at least one outgoing edge so the
+# cascade assertion below has something non-trivial to chew on (60s budget;
+# embeddings + classification + fragRelate must complete).
+DEADLINE=$(($(date +%s) + 60))
+FRAG_DEL_KEY=""
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+  FRAG_DEL_KEY=$(psql "$DATABASE_URL" -t -A -c "
+    SELECT lookup_key FROM fragments
+    WHERE entry_id = '$ENTRY_DEL_KEY' AND deleted_at IS NULL AND state = 'RESOLVED'
+    LIMIT 1
+  " 2>/dev/null | tr -d ' ')
+  [ -n "$FRAG_DEL_KEY" ] && break
+  sleep 3
+done
+
+if [ -n "$FRAG_DEL_KEY" ]; then
+  pass "6d. UAT delete-target fragment created and resolved ($FRAG_DEL_KEY)"
+else
+  fail "6d. delete-target fragment never resolved within 60s — pipeline regression masked the §6.5 test"
+fi
+
+# 6e. Snapshot the edge graph BEFORE the delete so the cascade assertion
+#     can compare against a known surface. Count active edges that reference
+#     FRAG_DEL_KEY in EITHER direction across all five edge types we care about.
+PRE_EDGE_COUNT=$(psql "$DATABASE_URL" -t -A -c "
+  SELECT COUNT(*) FROM edges
+  WHERE deleted_at IS NULL
+    AND edge_type IN (
+      'FRAGMENT_IN_WIKI',
+      'FRAGMENT_RELATED_TO_FRAGMENT',
+      'FRAGMENT_MENTIONS_PERSON',
+      'ENTRY_HAS_FRAGMENT'
+    )
+    AND ('$FRAG_DEL_KEY' IN (src_id, dst_id))
+" 2>/dev/null | tr -d ' ')
+echo "  (pre-delete: $PRE_EDGE_COUNT active edge(s) reference $FRAG_DEL_KEY)"
+
+# 6f. DELETE /fragments/:lookupKey returns 204.
+DEL_FRAG_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X DELETE -b "$COOKIE_JAR" \
+  -H "Origin: http://localhost:3000" \
+  "$SERVER_URL/fragments/$FRAG_DEL_KEY")
+if [ "$DEL_FRAG_HTTP" = "204" ]; then
+  pass "6f. DELETE /fragments/:lookupKey → 204"
+else
+  fail "6f. DELETE /fragments/:lookupKey → HTTP $DEL_FRAG_HTTP (expected 204) — Issue #228 route missing"
+fi
+
+# 6g. fragments.deleted_at IS NOT NULL after delete.
+DEL_AT=$(psql "$DATABASE_URL" -t -A -c "
+  SELECT deleted_at IS NOT NULL FROM fragments WHERE lookup_key = '$FRAG_DEL_KEY'
+" 2>/dev/null | tr -d ' ')
+if [ "$DEL_AT" = "t" ]; then
+  pass "6g. fragments.deleted_at IS NOT NULL after delete"
+else
+  fail "6g. fragments.deleted_at still null (got '$DEL_AT') — soft-delete didn't land"
+fi
+
+# 6h. Strict cascade: ALL edges that referenced FRAG_DEL_KEY (in either
+#     direction, across the four relevant edge types) must have
+#     deleted_at IS NOT NULL. Asserts zero rows where the fragment is
+#     referenced AND the edge is still active. Catches the case where the
+#     route soft-deletes the row but leaves dangling edges live.
+ACTIVE_REFS=$(psql "$DATABASE_URL" -t -A -c "
+  SELECT COUNT(*) FROM edges
+  WHERE deleted_at IS NULL
+    AND edge_type IN (
+      'FRAGMENT_IN_WIKI',
+      'FRAGMENT_RELATED_TO_FRAGMENT',
+      'FRAGMENT_MENTIONS_PERSON',
+      'ENTRY_HAS_FRAGMENT'
+    )
+    AND ('$FRAG_DEL_KEY' IN (src_id, dst_id))
+" 2>/dev/null | tr -d ' ')
+if [ "${ACTIVE_REFS:-1}" = "0" ]; then
+  pass "6h. All $PRE_EDGE_COUNT edges referencing $FRAG_DEL_KEY soft-deleted (cascade complete)"
+else
+  fail "6h. $ACTIVE_REFS edge(s) still active after fragment delete — cascade incomplete"
+fi
+
+# 6i. Cleanup: hard-delete the §6.5 UAT fragment + its edges + its entry +
+#     its raw_source so subsequent runs don't accumulate near-duplicate
+#     transformer corpus rows. Hard delete on this single row is safe
+#     because the §11 cleanup already covers the wider $UAT_TAG sweep.
+psql "$DATABASE_URL" -v ON_ERROR_STOP=0 <<SQL >/dev/null 2>&1
+  DELETE FROM edges
+  WHERE '$FRAG_DEL_KEY' IN (src_id, dst_id);
+  DELETE FROM fragments WHERE lookup_key = '$FRAG_DEL_KEY';
+  DELETE FROM raw_sources WHERE lookup_key = '$ENTRY_DEL_KEY';
+SQL
 
 # ── 7. Issue #164 — relatedFragments in /fragments/:id ───────────
 
@@ -776,6 +920,34 @@ else
   skip "8f. FRAG_A has no FRAGMENT_IN_WIKI edge — cannot resolve owning wiki"
 fi
 
+# 8g. Strict pairing: every test-window FRAGMENT_RELATED_TO_FRAGMENT edge
+#     must have produced exactly two related_detected audit rows (one per
+#     direction — emitAuditEvent fires once for each fragment in the pair).
+#     Catches BOTH callsites in one shot:
+#       - core/src/lib/regen.ts (already emits both directions correctly)
+#       - packages/agent/src/stages/index.ts ~lines 217-234 (worker path
+#         currently emits ZERO audit events — Issue #229)
+#     Live evidence: ~100 worker-path edges exist with 0 audit pairs and ~2
+#     regen.ts edges with 2 audit rows (1 pair). When the worker path is
+#     fixed, audit_count must equal 2 * edge_count for the test window.
+WINDOW_EDGE_COUNT=$(psql "$DATABASE_URL" -t -A -c "
+  SELECT COUNT(*) FROM edges
+  WHERE edge_type = 'FRAGMENT_RELATED_TO_FRAGMENT'
+    AND deleted_at IS NULL
+    AND created_at > '$TEST_START'::timestamptz
+" 2>/dev/null | tr -d ' ')
+WINDOW_AUDIT_COUNT=$(psql "$DATABASE_URL" -t -A -c "
+  SELECT COUNT(*) FROM audit_log
+  WHERE event_type = 'related_detected'
+    AND created_at > '$TEST_START'::timestamptz
+" 2>/dev/null | tr -d ' ')
+EXPECTED_AUDIT=$((2 * ${WINDOW_EDGE_COUNT:-0}))
+if [ "${WINDOW_AUDIT_COUNT:-0}" = "$EXPECTED_AUDIT" ] && [ "$EXPECTED_AUDIT" -gt 0 ]; then
+  pass "8g. Strict audit pairing: $WINDOW_AUDIT_COUNT audit rows = 2 * $WINDOW_EDGE_COUNT edges"
+else
+  fail "8g. Audit pairing mismatch: $WINDOW_AUDIT_COUNT audit rows vs expected $EXPECTED_AUDIT (2 × $WINDOW_EDGE_COUNT edges) — worker path missing emitAuditEvent"
+fi
+
 # ── 9. Schema invariants — RELATED edge uniqueness ───────────────
 # edges has a UNIQUE (src_type, src_id, dst_type, dst_id, edge_type) index;
 # repeating classification must not create duplicate edges (idempotency).
@@ -876,8 +1048,10 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 | 3 | `/groups` list/detail/error contracts | #45/#185 | core/routes/groups.ts |
 | 4 | Membership CRUD (add, remove, count, negatives) | #45  | groups membership routes |
 | 5 | Bidirectional FRAGMENT_RELATED_TO_FRAGMENT edges, ≥0.75 score | #163 | createRelatedToEdges in regen.ts |
+| 5g-strict | EVERY test-window similarity edge has attrs.method='cosine-regen' | #227 | both callsites must agree |
 | 5j | Below-threshold pair NOT linked | #163 | RELATED_FRAGMENT_THRESHOLD |
 | 6 | Soft-deleted partner excluded from related-fragments response | #163/#164 | fragments route filter |
+| 6.5 | DELETE /fragments/:id route + edge cascade | #228 | fragments.ts DELETE handler (currently absent) |
 | 7 | `/fragments/:id` returns relatedFragments[] with correct shape | #164 | fragmentDetailResponseSchema |
 | 7d | relatedFragments sorted by similarity desc | #164 | fragments route sort |
 | 7e | Frontend renders 'Related fragments' section with %, links | #164 | fragments/[id]/page.tsx |
@@ -885,6 +1059,7 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 | 8 | `related_detected` audit events on both fragments | #165 | emitAuditEvent in regen.ts |
 | 8c | audit detail jsonb shape (fragmentKey/relatedKey/sim/wikiKey) | #165 | audit emit payload |
 | 8f | timeline endpoint surfaces related_detected | #165 | wikis/:id/timeline |
+| 8g | Strict audit pairing: audit count = 2 × edge count in window | #229 | both callsites must emit |
 | 9 | onConflictDoNothing keeps edges unique per (src,dst) | #163 | edges_src_dst_type_uidx |
 | 9b | Edge attrs key is `score` (matches PR), not `similarity` | #163 | regen.ts attrs payload |
 | 10| Unauthenticated /groups + /fragments → 401 | all | sessionMiddleware |
@@ -907,11 +1082,24 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
   field name on the API response. The underlying edge `attrs` jsonb,
   however, uses the key `score` (not `similarity`); section 9b pins this
   so future readers don't conflate the two.
-- **Issue #163 trigger surface.** PR #192 adds `createRelatedToEdges` calls
-  inside `classifyUnfiledFragments()` only — the ticket also mentioned the
-  `worker.ts` `insertEdge` callback. This plan exercises the
-  classifier-time path; the worker path is not shipped in #192 and is
-  out of scope here.
+- **Issue #163 trigger surface — TWO callsites, both in scope.** Similarity
+  edges land via two independent paths and the `attrs.method` + audit-event
+  contract must hold on both:
+  1. `core/src/lib/regen.ts` `createRelatedToEdges()` — the regen-time path
+     used when `classifyUnfiledFragments()` files a previously-unfiled
+     fragment into a wiki. This path was patched in PR #192's follow-ups
+     and currently writes `{ score, method:'cosine-regen' }` plus emits
+     `related_detected` audit events for both fragments.
+  2. `packages/agent/src/stages/index.ts` `runLinking` orchestrator
+     (~lines 217-234) — the live worker path that runs on every fresh
+     fragment via `fragRelate`. Currently writes `{ score }` only and
+     emits zero audit events. This is the dual root cause of #227 + #229.
+  Sections **5g-strict** and **8g** assert the contract across the test
+  window without naming a callsite, so a regression in either path fails.
+- **Issue #228 — DELETE /fragments/:id is absent.** §6.5 expected-fails
+  today (HTTP 404 + cascade impossible). Pattern to mirror lives at
+  `core/src/routes/wikis.ts:715-739` (DELETE /wikis/:id soft-delete +
+  cascade + audit emit + `c.body(null, 204)`).
 - **Embedding lag.** Sections 5/7 poll up to 90s for the entry pipeline to
   produce embeddings + classification. On a slow stack increase the
   `DEADLINE` budget rather than asserting failure.

@@ -664,6 +664,152 @@ fi
 # Restore the canonical fixture body for downstream steps and plan 22.
 pnpm -C core seed-fixture >/dev/null 2>&1 || true
 
+# ── 15. Rendering polish — issue #251 ────────────────────────
+# Three small visual bugs caught in one polish pass. They share no root
+# cause but each materially degrades the rendered surface:
+#   - Hero title: the wiki home page renders `session.user.name` as a
+#     giant <h1> ("phyl"). Just visual noise on a page whose value is the
+#     search box and filter chips. Expected: no user-name hero on first
+#     paint.
+#   - Infobox width: the rich `.winfo` table (width: 100%) was rendering
+#     inside the 217px `.wiki-aside-infobox` flex aside. With no width
+#     constraint on the table the body got squeezed into a ~5-character
+#     left column. Expected: when sidecar carries a structured infobox,
+#     it renders ABOVE the body at full content width; the 217px aside is
+#     reserved for the legacy simple infoboxes only.
+#   - H1 dedup: SectionedMarkdownBody.tsx:156 already skips H1 in the
+#     section loop (fixed in #152). This sub-step is a regression guard
+#     to ensure that fix survives — only ONE H1 carrying the wiki title
+#     in the rendered DOM.
+#
+# Each sub-step is deterministic on the seeded Transformer fixture (which
+# carries a structured sidecar infobox with all four valueKinds) and the
+# authenticated wiki home route.
+
+# 15a. Hero absence — wiki home does NOT render a user-name <h1> hero.
+# Sign in fresh so session.user.name is populated, then load /wiki.
+npx agent-browser open "$WIKI_URL/login"
+npx agent-browser wait --load networkidle
+npx agent-browser fill '#email' "${INITIAL_USERNAME:-uat@robin.test}"
+npx agent-browser fill '#password' "${INITIAL_PASSWORD:-uat-password-123}"
+npx agent-browser click 'button[type="submit"]'
+npx agent-browser wait --load networkidle
+
+npx agent-browser open "$WIKI_URL/wiki"
+npx agent-browser wait --load networkidle
+# Wiki home is React-hydrated — wait long enough for the hero <h1> (if
+# any) to render. The hero check below probes the live DOM via eval.
+sleep 3
+HOME_SNAP=$(npx agent-browser snapshot)
+npx agent-browser eval "document.documentElement.outerHTML" > /tmp/uat-21-15-home-dom.html
+npx agent-browser screenshot /tmp/uat-21-15-home.png
+
+# The fork's fix removes the entire WikiHomeHero <h1>. Detection is
+# twofold: no element with class `wiki-home-title` in the live DOM, AND
+# the logged-in user's display name does not appear inside any <h1>. The
+# class check uses agent-browser eval (not grep) because eval returns
+# the JSON-escaped outerHTML where attribute quotes become \" and break
+# naive regex; querySelectorAll walks the live DOM and is reliable.
+USER_NAME=$(curl -s -b "$COOKIE_JAR" -H "Origin: http://localhost:3000" "$SERVER_URL/api/auth/get-session" \
+  | jq -r '.user.name // .user.email // ""')
+
+HOME_TITLE_COUNT=$(npx agent-browser eval \
+  "document.querySelectorAll('h1.wiki-home-title').length")
+if [ "$HOME_TITLE_COUNT" = "0" ]; then
+  pass "15a. No <h1.wiki-home-title> hero on /wiki"
+else
+  fail "15a. $HOME_TITLE_COUNT <h1.wiki-home-title> hero(es) still on /wiki"
+fi
+
+# 15b. Belt-and-suspenders: even if the class were renamed, the user
+# display name should not appear inside any <h1> on the home page. Pull
+# h1 textContents via eval and filter in shell — keeps the eval JS
+# free of bash interpolation hazards.
+H1_TEXTS=$(npx agent-browser eval \
+  "Array.from(document.querySelectorAll('h1')).map(h => h.textContent).join('|||')")
+if [ -n "$USER_NAME" ] && echo "$H1_TEXTS" | grep -qF "$USER_NAME"; then
+  fail "15b. User name '$USER_NAME' appears inside an <h1> on /wiki — hero not removed"
+else
+  pass "15b. User name does not appear inside any <h1> on /wiki"
+fi
+
+# 15c. Infobox-above-body at full content width.
+# Trigger state: the seeded Transformer wiki has a structured sidecar
+# infobox (verified at step 0d). The fork's fix renders that .winfo table
+# OUTSIDE any side-aside slot — as a block above the article body, full
+# content width.
+npx agent-browser open "$WIKI_URL/wiki/$TRANSFORMER_KEY"
+npx agent-browser wait --load networkidle
+sleep 1
+npx agent-browser eval "document.documentElement.outerHTML" > /tmp/uat-21-15-infobox-dom.html
+npx agent-browser screenshot /tmp/uat-21-15-infobox.png
+
+# 15c. The .winfo must not live in any aside slot. Two failure modes:
+# (1) descendant of .wiki-aside-infobox (legacy 217px aside class), or
+# (2) flex sibling of .wiki-article-content inside .wiki-article-layout.
+# Both squeeze the body. Render-above-body fix puts the .winfo OUTSIDE
+# .wiki-article-layout entirely.
+WINFO_IN_ASIDE_SLOT=$(npx agent-browser eval \
+  "(() => { const w = document.querySelector('.winfo'); if (!w) return 'no-winfo'; if (w.closest('.wiki-aside-infobox')) return 'in-legacy-aside'; const layout = w.closest('.wiki-article-layout'); const body = document.querySelector('.wiki-article-content'); if (layout && body && layout.contains(body)) return 'sibling-of-body'; return 'outside'; })()")
+if [ "$WINFO_IN_ASIDE_SLOT" = "outside" ]; then
+  pass "15c. Structured .winfo renders outside any aside slot"
+elif [ "$WINFO_IN_ASIDE_SLOT" = "no-winfo" ]; then
+  fail "15c. No .winfo element found on Transformer page — sidecar regression?"
+else
+  fail "15c. .winfo trapped in aside slot (got: $WINFO_IN_ASIDE_SLOT)"
+fi
+
+# 15d. The .winfo must render at content-width, not squeezed. Floor:
+# 600px on a 1280px viewport. Anything below 600 means it's still in
+# a flex slot competing with .wiki-article-content for width.
+WINFO_WIDTH=$(npx agent-browser eval \
+  "(() => { const el = document.querySelector('.winfo'); return el ? Math.round(el.getBoundingClientRect().width) : 0; })()")
+VIEWPORT_W=$(npx agent-browser eval "window.innerWidth")
+if [ -n "$WINFO_WIDTH" ] && [ "$WINFO_WIDTH" -ge 600 ] 2>/dev/null; then
+  pass "15d. Structured .winfo renders at content width (${WINFO_WIDTH}px on ${VIEWPORT_W}px viewport)"
+elif [ "$WINFO_WIDTH" = "0" ]; then
+  fail "15d. No .winfo element found"
+else
+  fail "15d. .winfo width is ${WINFO_WIDTH}px (viewport ${VIEWPORT_W}px) — still squeezed"
+fi
+
+# 15e. The .winfo renders ABOVE the article body — DOM order precedes
+# .wiki-article-content. compareDocumentPosition with the body returns
+# DOCUMENT_POSITION_FOLLOWING (bit 4 = 4) when the infobox is above.
+WINFO_BEFORE_BODY=$(npx agent-browser eval \
+  "(() => { const w = document.querySelector('.winfo'); const b = document.querySelector('.wiki-article-content'); if (!w || !b) return 'missing'; return (w.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? 'above' : 'below'; })()")
+if [ "$WINFO_BEFORE_BODY" = "above" ]; then
+  pass "15e. Structured .winfo renders above .wiki-article-content"
+elif [ "$WINFO_BEFORE_BODY" = "missing" ]; then
+  fail "15e. Could not locate .winfo or .wiki-article-content for ordering check"
+else
+  fail "15e. Structured .winfo renders below the body (got: $WINFO_BEFORE_BODY)"
+fi
+
+# 15f. H1 dedup regression guard — exactly ONE <h1> in the rendered DOM
+# carries the wiki title text. The H1 belongs to page chrome
+# (.wiki-article-h1); the markdown body must NOT also emit an <h1>. This
+# protects the SectionedMarkdownBody.tsx:156 fix (`if (section.level === 1)
+# continue`) from being re-introduced by future refactors. Use eval so
+# the count walks live DOM, immune to JSON-escaped outerHTML quirks.
+H1_TITLE_COUNT=$(npx agent-browser eval \
+  "Array.from(document.querySelectorAll('h1')).filter(h => h.textContent && h.textContent.includes('Transformer Architecture')).length")
+if [ "$H1_TITLE_COUNT" = "1" ]; then
+  pass "15f. Exactly ONE <h1> contains the wiki title (H1 dedup holds)"
+else
+  fail "15f. $H1_TITLE_COUNT <h1> elements contain the wiki title (expected 1) — H1 dedup regressed"
+fi
+
+# 15g. The single title <h1> belongs to page chrome, not the markdown
+# body. SectionedMarkdownBody must not emit any <h1> at all.
+BODY_H1_COUNT=$(npx agent-browser eval \
+  "document.querySelectorAll('.wiki-article-content h1, .wiki-richtext-rendered h1').length")
+if [ "$BODY_H1_COUNT" = "0" ]; then
+  pass "15g. Markdown body emits no <h1> (H1 only in page chrome)"
+else
+  fail "15g. Markdown body emits $BODY_H1_COUNT <h1> element(s) — should be 0"
+fi
+
 # ── Cleanup ──────────────────────────────────────────────────
 npx agent-browser close 2>/dev/null || true
 
@@ -692,6 +838,7 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 | 12 | Entry detail page resolves tokens and has no infobox | useEntry + EntryArticle |
 | 13 | Person detail page renders server-derived .winfo infobox with Relationship row | usePerson + derivePersonInfobox |
 | 14 | H1 + intro + H2 shape: intro renders exactly once, H2 bodies render exactly once, no body-level H1 — regression guard for #152 + 061c3a6 | SectionedMarkdownBody preamble + H1 skip |
+| 15 | Rendering polish (issue #251): no user-name hero on /wiki; structured .winfo renders above body at full width (not in 217px aside); H1 dedup guard — exactly one title <h1>, none from markdown body | WikiHomeHero, WikiEntityArticle infobox slot, SectionedMarkdownBody.tsx:156 |
 
 ---
 
@@ -701,3 +848,4 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 - Step 9 mutates the wiki body via `PUT /api/content/wiki/<key>` to simulate a concurrent regen. The script reseeds the fixture afterward so the overall suite leaves the DB clean.
 - Step 10 also mutates the body (to an HTML string) to force the Tiptap-saved branch, then reseeds.
 - If the `agent-browser eval document.querySelector('#notes-1 a.wedit')?.click()` selector misses because the `[edit]` link sits outside the section anchor wrapper rather than inside it, step 8 reports a deterministic fail rather than silently passing — adjust the selector to match the rendered DOM structure in `/tmp/uat-21-dom.html`.
+- Step 15 covers issue #251 (rendering polish): three fork-only fixes — drop the giant user-name hero on `/wiki`, render the rich infobox above the body at full width when sidecar carries structured data, and guard the existing H1 dedup at `SectionedMarkdownBody.tsx:156`. 15a–15b detect the hero by class and by the user name appearing inside any `<h1>`. 15c–15e use `agent-browser eval` to walk the DOM (`closest`, `getBoundingClientRect`, `compareDocumentPosition`) so the assertions don't depend on serialized markup ordering. 15f–15g count title `<h1>` elements in the source HTML and probe for body-level `<h1>` via querySelectorAll. The hero check requires `session.user.name` to be populated — sign-in happens at the top of the step.

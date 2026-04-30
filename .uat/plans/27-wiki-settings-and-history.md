@@ -562,6 +562,158 @@ else
   fail "8c. Frontend SDK missing getWikiEditHistory — codegen out of sync"
 fi
 
+# ── 9. Tiptap save scope — sidebar chrome must NOT bake into wikis.content (#241) ──
+# When the user clicks Edit, `WikiEntityArticle` captures
+# `readContentRef.current.innerHTML` and seeds the Tiptap editor with it.
+# Today that ref wraps Member Fragments + Mentioned People + section
+# editor — so a no-op edit/save round-trip rewrites `wikis.content` with
+# all that chrome. Subsequent reads then render the chrome inside the
+# body AND outside it (duplicate sections accumulate per save cycle).
+#
+# Bug present: after save, `wikis.content` contains 'Member Fragments',
+# 'Mentioned People', '/fragments/frag', and the wedit class — none of
+# which were in the markdown source body.
+#
+# Fix (fork commit 23b68a8): wrap the body in <div data-wiki-body> on the
+# shell page and scope the innerHTML capture to that subtree.
+#
+# Use a fresh UAT-only wiki so this section never mutates the shared
+# Transformer fixture. Cleanup tears it down at the end.
+
+UAT9_WIKI_NAME="UAT-27 Tiptap Chrome $(date +%s)"
+CREATE_WIKI_HTTP=$(curl -s -o /tmp/uat-27-09-create.json -w "%{http_code}" -b "$COOKIE_JAR" -X POST \
+  -H "Content-Type: application/json" \
+  -H "Origin: http://localhost:3000" \
+  -d "$(jq -n --arg n "$UAT9_WIKI_NAME" '{name:$n, type:"project", prompt:""}')" \
+  "$SERVER_URL/wikis")
+
+if [ "$CREATE_WIKI_HTTP" = "200" ] || [ "$CREATE_WIKI_HTTP" = "201" ]; then
+  pass "9a. Created UAT-only wiki for chrome-bake test (HTTP $CREATE_WIKI_HTTP)"
+else
+  fail "9a. Could not create UAT wiki (HTTP $CREATE_WIKI_HTTP) — section 9 will use Transformer fixture instead"
+fi
+UAT9_KEY=$(jq -r '.lookupKey // .id // empty' /tmp/uat-27-09-create.json)
+if [ -z "${UAT9_KEY:-}" ] || [ "$UAT9_KEY" = "null" ]; then
+  # Fall back to Transformer wiki — cleanup will re-seed.
+  UAT9_KEY="$WIKI_KEY"
+  skip "9a-fallback. Using Transformer fixture (cleanup will re-seed)"
+fi
+
+# Seed the wiki with a known markdown body via the API the same way the
+# Tiptap save does (PUT /api/content/wiki/:key). Body has NO chrome
+# strings — anything chrome-flavoured we find later came from the editor
+# capture, not our seed.
+UAT9_BODY=$'# Tiptap Chrome Bake Probe\n\nUAT-27 §9 body marker — only this text and the heading should land in wikis.content after a no-op Tiptap save.\n\n## Subsection\n\nLine for the body.\n'
+SEED_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -b "$COOKIE_JAR" -X PUT \
+  -H "Content-Type: application/json" \
+  -H "Origin: http://localhost:3000" \
+  -d "$(jq -n --arg body "$UAT9_BODY" --arg name "$UAT9_WIKI_NAME" '{frontmatter:{name:$name,type:"project",prompt:""},body:$body}')" \
+  "$SERVER_URL/api/content/wiki/$UAT9_KEY")
+if [ "$SEED_HTTP" = "200" ] || [ "$SEED_HTTP" = "204" ]; then
+  pass "9b. Seeded UAT wiki with chrome-free markdown body (HTTP $SEED_HTTP)"
+else
+  fail "9b. PUT seed failed (HTTP $SEED_HTTP) — assertions below may be unreliable"
+fi
+
+# Open the wiki, click Edit, click Save (no edits). The bug fires on
+# enterEditMode whether or not the user edits — what matters is the
+# innerHTML scope at the moment Edit is clicked.
+npx agent-browser open "$WIKI_URL/wiki/$UAT9_KEY"
+npx agent-browser wait --load networkidle
+sleep 1
+
+# 9c. Confirm baseline DOM has chrome rendered around the body — this is
+# what the buggy capture would slurp up. Skip with a warning if the
+# fixture has no fragments/people; without chrome to leak the assertion
+# becomes vacuous.
+DOM_HAS_CHROME=$(npx agent-browser eval "(() => { const t = document.body.innerText || ''; return JSON.stringify({mf: t.includes('Member Fragments'), mp: t.includes('Mentioned People')}); })()" | tr -d '"' | tr -d '\\')
+if echo "$DOM_HAS_CHROME" | grep -q "mf:true"; then
+  pass "9c. Page chrome (Member Fragments) present in DOM — bake risk realistic"
+else
+  skip "9c. No Member Fragments in DOM ($DOM_HAS_CHROME) — UAT wiki has no fragments; falling through but assertion power is reduced"
+fi
+
+# 9d. Click Edit and assert the editor body is scoped to the wiki body
+# only — Member Fragments / Mentioned People must NOT appear in the
+# Tiptap editor's innerText. This is the fix's primary contract.
+npx agent-browser find text "Edit" click
+npx agent-browser wait --load networkidle
+sleep 1
+EDITOR_BODY=$(npx agent-browser eval "document.querySelector('.tiptap')?.innerText || ''")
+if echo "$EDITOR_BODY" | grep -qE "Member Fragments|Mentioned People|/fragments/frag"; then
+  fail "9d. Tiptap editor contains chrome strings (capture not scoped to data-wiki-body) — fix not applied"
+else
+  pass "9d. Tiptap editor body has no chrome strings — capture scoped correctly"
+fi
+
+# 9e. Click Save and round-trip the body through PUT /api/content/wiki.
+npx agent-browser find text "Save" click
+npx agent-browser wait --load networkidle
+sleep 2
+
+# 9f. Read back wikis.content and assert NONE of the chrome substrings
+# leaked into the persisted body. These four are deterministic markers
+# rendered by the article shell (page.tsx:521-622) but never present in
+# a real markdown body.
+if command -v psql >/dev/null 2>&1 && [ -n "${DATABASE_URL:-}" ]; then
+  SAVED_CONTENT=$(psql "$DATABASE_URL" -t -A -c "SELECT content FROM wikis WHERE lookup_key='$UAT9_KEY'" 2>/dev/null || echo "")
+  CHROME_LEAKS=0
+  for marker in "Member Fragments" "Mentioned People" "/fragments/frag" "wedit"; do
+    if echo "$SAVED_CONTENT" | grep -qF "$marker"; then
+      fail "9f. wikis.content contains chrome substring: '$marker' (Tiptap save baked sidebar chrome — #241 still present)"
+      CHROME_LEAKS=$((CHROME_LEAKS+1))
+    fi
+  done
+  if [ "$CHROME_LEAKS" = "0" ]; then
+    pass "9f. wikis.content has no chrome substrings (Member Fragments / Mentioned People / /fragments/frag / wedit)"
+  fi
+
+  # 9g. Positive: the body marker we seeded should still be present.
+  if echo "$SAVED_CONTENT" | grep -qF "UAT-27 §9 body marker"; then
+    pass "9g. Body marker preserved after Tiptap save round-trip"
+  else
+    fail "9g. Body marker missing after save — round-trip dropped legitimate body content"
+  fi
+
+  # 9h. Length sanity: the persisted content should be on the order of
+  # the seed body (~200 bytes), not the chromed-up DOM (~5–10 KB). Use a
+  # generous ceiling so editor whitespace normalisation doesn't trip it.
+  SAVED_LEN=${#SAVED_CONTENT}
+  if [ "$SAVED_LEN" -le 2000 ] 2>/dev/null; then
+    pass "9h. Persisted content length $SAVED_LEN bytes ≤ 2000 (no chrome bloat)"
+  else
+    fail "9h. Persisted content length $SAVED_LEN bytes > 2000 (chrome bloat suspected — #241 regression)"
+  fi
+else
+  skip "9f-h. psql or DATABASE_URL unavailable — chrome-bake DB checks skipped"
+fi
+
+# 9i. Re-render the wiki in Read mode and confirm the live page does NOT
+# show duplicate Member Fragments listings. The bug surface is "two of
+# everything" — one from the article shell, one from the baked content.
+# Count <h2> nodes whose text starts with 'Member Fragments'.
+npx agent-browser open "$WIKI_URL/wiki/$UAT9_KEY"
+npx agent-browser wait --load networkidle
+sleep 1
+MF_H2_COUNT=$(npx agent-browser eval "Array.from(document.querySelectorAll('h2')).filter(h => (h.textContent || '').includes('Member Fragments')).length" | tr -d '"')
+if [ "${MF_H2_COUNT:-0}" -le 1 ] 2>/dev/null; then
+  pass "9i. ≤1 'Member Fragments' h2 on the page (no duplicate from baked chrome) — got $MF_H2_COUNT"
+else
+  fail "9i. Found $MF_H2_COUNT 'Member Fragments' h2 nodes — chrome was baked and is rendering twice"
+fi
+
+# 9j. Cleanup: delete the UAT wiki if we created one. If we fell back to
+# the Transformer fixture, the bottom-of-plan re-seed restores it.
+if [ "$UAT9_KEY" != "$WIKI_KEY" ]; then
+  DEL_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -b "$COOKIE_JAR" -X DELETE \
+    -H "Origin: http://localhost:3000" "$SERVER_URL/wikis/$UAT9_KEY")
+  if [ "$DEL_HTTP" = "200" ] || [ "$DEL_HTTP" = "204" ]; then
+    pass "9j. Cleaned up UAT wiki (HTTP $DEL_HTTP)"
+  else
+    skip "9j. UAT wiki delete returned HTTP $DEL_HTTP — bottom-of-plan re-seed will not touch it"
+  fi
+fi
+
 # ── Cleanup ──────────────────────────────────────────────────
 # Re-seed to restore a clean fixture body / description for downstream plans.
 pnpm -C core seed-fixture >/dev/null 2>&1 || true
@@ -586,8 +738,9 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 | 6 | View history tab hydrates from `useWikiEditHistory`; timeline shows server revisions on fresh load with You/Robin author labels | `useWikiEditHistory.ts`, `WikiEntityArticle.tsx:382-396` (serverRevisions seed), `useWikiEntityEditMode.ts:115-121` |
 | 7 | People page renders custom infobox after `onSettingsClick` was removed from the callback signature; gear still appears for showSettings:true | `wiki/src/app/(shell)/people/[id]/page.tsx:311-330` |
 | 8 | OpenAPI manifest registers `/wikis/{id}/history`; `editHistoryResponseSchema` component exposed; frontend SDK regenerated with `getWikiEditHistory` | `core/openapi-manifest.json`, `core/openapi.json`, `wiki/src/lib/generated/sdk.gen.ts` |
+| 9 | #241 — Tiptap save scoped to `data-wiki-body`: Tiptap editor seeded without chrome; after no-op save, `wikis.content` contains body marker but none of `Member Fragments` / `Mentioned People` / `/fragments/frag` / `wedit`; persisted length stays small; no duplicate Member Fragments h2 in Read mode | `wiki/src/components/wiki/WikiEntityArticle.tsx:671` (capture scope), `wiki/src/app/(shell)/wiki/[id]/page.tsx:294-623` (chrome render around `data-wiki-body`) |
 
-Target: ~32 numbered assertions across 9 sections (sections 0–8).
+Target: ~42 numbered assertions across 10 sections (sections 0–9).
 
 ---
 
@@ -600,3 +753,4 @@ Target: ~32 numbered assertions across 9 sections (sections 0–8).
 - Step 5c uses a JS setter cast to bypass React's controlled-input bookkeeping. If the modal uses a custom input component that ignores raw value mutations, the assertion will fail and a manual check via `/tmp/uat-27-05-settings-open.png` is the fallback.
 - Step 6c's DOM selector is heuristic — `WikiHistoryTimeline.tsx` uses ad-hoc class names. The script falls back to counting "Regenerated"/"Edited" labels in the snapshot if no `[class*="revision"]` matches.
 - The PR's `useWikiEditHistory` hook only seeds revisions on first load when `revisions.length === 0`. This UAT relies on a fresh navigation to `/wiki/:id`; do not chain it after a session that already populated revisions in-memory or step 6 will appear to pass even if the API call regressed.
+- Section 9 reproduces #241 (Tiptap save bakes sidebar chrome into `wikis.content`). The four chrome substrings — `Member Fragments`, `Mentioned People`, `/fragments/frag`, `wedit` — are all rendered by the article shell (`wiki/src/app/(shell)/wiki/[id]/page.tsx:521-622` for the lists, `wedit` by the inline `[edit]` link inside `MarkdownContent`). None of them ever appear in a freshly-seeded markdown body, so finding any of them in `wikis.content` after a no-op Tiptap save is a deterministic positive for the bug. The fix (fork commit `23b68a8`) wraps the body in `<div data-wiki-body>` and scopes the `enterEditMode` capture to that subtree. Section 9 creates and tears down its own UAT wiki so it never mutates the shared Transformer fixture; if the create call fails (older API surface) it falls back to the Transformer wiki and the bottom-of-plan `seed-fixture` re-seed restores it.
