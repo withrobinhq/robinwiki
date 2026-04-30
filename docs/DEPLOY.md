@@ -136,6 +136,14 @@ pgvector is not enabled on the database. Run `CREATE EXTENSION IF NOT EXISTS vec
 **`/admin/queues` shows 0 workers.**
 Core's worker bootstrap failed silently. Check core logs for `KEY_ENCRYPTION_SECRET` or Redis connection errors. Workers run inline with the HTTP server (separate worker service is tracked in #72).
 
+## Migration squash (single-bootstrap schema)
+
+The 14-migration chain (`0000_init` … `0013_people_is_owner`) has been collapsed into a single `0000_bootstrap.sql`. Fresh installs are unaffected — drizzle's migrator applies the bootstrap once and produces the same schema the chain did.
+
+**Existing deployments must wipe their database before pulling this version.** Drizzle's `__drizzle_migrations` tracking table records each applied migration by name + hash; with the chain replaced, the tracker sees `0000_bootstrap` as un-applied and tries to re-run it, which fails on already-existing tables. There is no in-place upgrade path because the new bootstrap is not a no-op against a populated DB.
+
+Robin is not yet GA, so no production data is affected. If a prior deploy needs to be carried forward, dump the data, drop the schema, redeploy with the squashed migrations, and reload the dump.
+
 ## Known gaps in the Railway template
 
 - `railway.template.json` follows Railway's current config-as-code shape, but Railway's template spec is evolving and some fields (e.g. per-variable `required` enforcement, post-deploy SQL hooks) are not yet first-class. Variables without a `default` are documented via `description` so Railway's UI prompts the operator; if any are skipped, deploys will fail loudly on boot.
