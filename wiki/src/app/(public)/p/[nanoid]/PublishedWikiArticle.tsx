@@ -45,6 +45,7 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
         style={{
           display: "flex",
           alignItems: "center",
+          justifyContent: "space-between",
           gap: 8,
         }}
       >
@@ -83,6 +84,49 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
             }}
           >
             Powered by Robin
+          </span>
+        </a>
+        <a
+          href="https://github.com/withrobinhq/robinwiki"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Star Robin Wiki on GitHub"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "6px 10px",
+            borderRadius: 6,
+            border: "1px solid var(--card-border)",
+            color: "var(--heading-color)",
+            textDecoration: "none",
+            background: "var(--bg)",
+          }}
+        >
+          <svg
+            className="lucide-star"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            xmlns="http://www.w3.org/2000/svg"
+            width={16}
+            height={16}
+            aria-hidden
+            style={{ flexShrink: 0 }}
+          >
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+          </svg>
+          <span
+            style={{
+              ...T.bodySmall,
+              fontWeight: 500,
+              color: "var(--heading-color)",
+            }}
+          >
+            Star on GitHub
           </span>
         </a>
       </header>

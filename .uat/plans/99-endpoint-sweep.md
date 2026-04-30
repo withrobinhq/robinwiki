@@ -285,6 +285,50 @@ else
     fail "5d-2b. /p/$PUB_SLUG header has no <svg>/<img> logo — bare text only (#252)"
   fi
 
+  # 5d-3. GitHub star button (#219). The published wiki header is a
+  # stable surface (#252) so we anchor the star CTA there. Three
+  # assertions:
+  #   5d-3a a link to github.com/withrobinhq/robinwiki exists
+  #   5d-3b that link opens in a new tab — target="_blank" AND
+  #         rel containing both "noopener" and "noreferrer" (mandatory
+  #         for external links — opening external links without
+  #         rel-noopener is a tabnabbing security smell)
+  #   5d-3c a visible star indicator: literal text "Star" or a
+  #         star-shaped SVG (presence, not aesthetics).
+  HAS_GH_LINK=$(echo "$PAGE_HTML" | grep -cE 'href="https://github\.com/withrobinhq/robinwiki' || true)
+  # Locate the anchor tag containing the github link and verify its
+  # target/rel attributes. The tag may span lines after Next.js render.
+  GH_ANCHOR=$(echo "$PAGE_HTML" | tr -d '\n' | grep -oE '<a[^>]*href="https://github\.com/withrobinhq/robinwiki[^>]*>' | head -1)
+  HAS_GH_BLANK=0
+  HAS_GH_NOOPENER=0
+  HAS_GH_NOREFERRER=0
+  if [ -n "$GH_ANCHOR" ]; then
+    echo "$GH_ANCHOR" | grep -q 'target="_blank"' && HAS_GH_BLANK=1
+    echo "$GH_ANCHOR" | grep -qE 'rel="[^"]*noopener' && HAS_GH_NOOPENER=1
+    echo "$GH_ANCHOR" | grep -qE 'rel="[^"]*noreferrer' && HAS_GH_NOREFERRER=1
+  fi
+  # Visible star indicator: text "Star" anywhere on the published page,
+  # or an svg/icon hint (lucide ships <svg class="lucide-star"...>; an
+  # inline path with the canonical 5-point star "M12 2l..." also counts).
+  HAS_STAR_TEXT=$(echo "$PAGE_HTML" | grep -cE '>[^<]*Star[^<]*<' || true)
+  HAS_STAR_ICON=$(echo "$PAGE_HTML" | grep -cE 'lucide-star|class="[^"]*star[^"]*"' || true)
+
+  if [ "${HAS_GH_LINK:-0}" -ge 1 ]; then
+    pass "5d-3a. /p/$PUB_SLUG contains github.com/withrobinhq/robinwiki link (#219)"
+  else
+    fail "5d-3a. /p/$PUB_SLUG missing github.com/withrobinhq/robinwiki link (#219)"
+  fi
+  if [ "${HAS_GH_BLANK}" = "1" ] && [ "${HAS_GH_NOOPENER}" = "1" ] && [ "${HAS_GH_NOREFERRER}" = "1" ]; then
+    pass "5d-3b. github star link opens in new tab with rel=\"noopener noreferrer\" (#219)"
+  else
+    fail "5d-3b. github star link missing target=_blank or rel=noopener/noreferrer (target=$HAS_GH_BLANK noopener=$HAS_GH_NOOPENER noreferrer=$HAS_GH_NOREFERRER) (#219)"
+  fi
+  if [ "${HAS_STAR_TEXT:-0}" -ge 1 ] || [ "${HAS_STAR_ICON:-0}" -ge 1 ]; then
+    pass "5d-3c. /p/$PUB_SLUG shows visible star indicator (text or icon) (#219)"
+  else
+    fail "5d-3c. /p/$PUB_SLUG has no visible star text or star icon (#219)"
+  fi
+
   # Cleanup: only unpublish if WE published this wiki. Don't touch
   # pre-published ones; downstream plans may depend on them.
   if [ -n "$PUB_TRANSIENT_KEY" ]; then
@@ -363,6 +407,9 @@ echo "$PASS passed, $FAIL failed, $SKIP skipped"
 | 5d-1 | `/favicon.ico` byte size > 1024B (Robin-branded, not default placeholder) | #252 |
 | 5d-2a | `/p/<slug>` page contains a `withrobin.ai/knowledge` link | #252 (`PublishedWikiArticle.tsx:42`) |
 | 5d-2b | `/p/<slug>` `<header>` contains an `<svg>` or `<img>` logo element | #252 (`PublishedWikiArticle.tsx:42`) |
+| 5d-3a | `/p/<slug>` page contains a `github.com/withrobinhq/robinwiki` link | #219 |
+| 5d-3b | The GitHub star anchor has `target="_blank"` AND `rel="noopener noreferrer"` | #219 |
+| 5d-3c | A visible star indicator (text "Star" or star icon SVG) is rendered on the page | #219 |
 | 6 | Every ref in the wiki sidecar resolves to a live detail endpoint | cross-kind integrity |
 | 7 | The wiki sidecar's `infobox.image.url`, when present, resolves 200 on `$WIKI_URL` (cross-asset linkage) | #160 |
 
