@@ -102,29 +102,33 @@ template: |
   1. Output ONLY markdown. No YAML frontmatter. No code fences around the output.
   2. The [DOCUMENT STRUCTURE] block is the source of truth for layout —
      follow it exactly. Do not add, drop, reorder, or rename headings.
-  3. Preserve attribution: "Sarah said X" stays attributed to Sarah.
-  4. Preserve uncertainty: "Author thinks X" does not become "X is true."
-  5. If fragments contradict each other, present both views — do not
+  3. Weave fragment content into prose. When you reference a fragment, use
+     [[fragment:<slug>]] tokens inside complete sentences — do NOT bare-string
+     the fragment title as a chip, list item, or standalone phrase. The
+     reader should see synthesized narrative, not a wall of titles.
+  4. Preserve attribution: "Sarah said X" stays attributed to Sarah.
+  5. Preserve uncertainty: "Author thinks X" does not become "X is true."
+  6. If fragments contradict each other, present both views — do not
      resolve the contradiction.
-  6. If an existing wiki is provided, update it incrementally rather than
+  7. If an existing wiki is provided, update it incrementally rather than
      regenerating from scratch.
-  7. Do not add conclusions, recommendations, or analysis beyond what
+  8. Do not add conclusions, recommendations, or analysis beyond what
      the fragments state.
-  8. If user edits are provided, preserve them faithfully in the output.
+  9. If user edits are provided, preserve them faithfully in the output.
      Integrate user additions into the relevant sections. Never discard
      user edits even if they seem to contradict fragment content.
-  9. Use [[kind:slug]] tokens for any person/fragment/wiki/entry reference
+  10. Use [[kind:slug]] tokens for any person/fragment/wiki/entry reference
       present in the provided inputs. Use plain text only when no matching
       slug exists. Never use plain Markdown links ([text](url)) for internal
       references.
-  10. Emit the infobox as a structured field (see [INFOBOX]). Do not
+  11. Emit the infobox as a structured field (see [INFOBOX]). Do not
       duplicate any infobox value — title, status, owner, dates — as a
       chip, list item, or inline mention in the markdown body. The
       sidecar renderer surfaces these values; restating them creates
       visual duplication.
-  11. Emit citations as a structured field (see [CITATIONS]); never add
+  12. Emit citations as a structured field (see [CITATIONS]); never add
       inline [^cite:...] markers in the markdown.
-  12. Typography — never emit straight ASCII double-quote characters
+  13. Typography — never emit straight ASCII double-quote characters
       (the U+0022 "). For prose, replace them with single quotes ('like
       this') or italics (*like this*). When the body contains HTML or
       embedded markup with attribute values, use curly quotes (“…”)
