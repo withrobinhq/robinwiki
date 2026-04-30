@@ -389,6 +389,9 @@ async function processLinkJob(job: LinkJob): Promise<JobResult> {
   const deps: LinkingOrchestratorDeps = {
     fragmentLock,
     emitEvent,
+    emitAuditEvent: async (params) => {
+      await emitAuditEvent(db as never, params)
+    },
     wikiClassifyDeps: {
       searchCandidates: async (_content, limit) => {
         const rows = await db

@@ -150,6 +150,16 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
     })
 
     if (wikiVec) {
+      // Self-heal: persist the wiki embedding at create time so backward
+      // classification (regen.ts hybridSearch + edge-vector lookups) can
+      // hit a non-null vector immediately. Without this the wiki sits
+      // embedding=null until the next regen run, which masks similarity
+      // until then. (#246)
+      await db
+        .update(wikis)
+        .set({ embedding: wikiVec })
+        .where(eq(wikis.lookupKey, lookupKey))
+
       const candidates = await db
         .select({
           lookupKey: fragments.lookupKey,
@@ -462,6 +472,17 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
     updates.prompt = body.prompt
     // Prompt change affects wiki generation — mark PENDING so regen rebuilds with new prompt
     if (body.prompt !== existing.prompt) updates.state = 'PENDING'
+  }
+
+  // Self-heal: name/description feed the embedded text used for
+  // backward classification, so a change to either invalidates the
+  // stored vector. Null the embedding; the next regen run (or any
+  // future heal pass) will refill it. (#246)
+  const nameChanged = body.name != null && body.name !== existing.name
+  const descriptionChanged =
+    body.description != null && body.description !== existing.description
+  if (nameChanged || descriptionChanged) {
+    updates.embedding = null
   }
 
   const [updated] = await db

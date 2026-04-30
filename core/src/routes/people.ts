@@ -174,6 +174,17 @@ peopleRouter.put('/:id', zValidator('json', updatePersonBodySchema, validationHo
   if (body.aliases != null) updates.aliases = body.aliases
   if (body.content != null) updates.content = body.content
 
+  // Self-heal: name + aliases feed the embedded text used for person
+  // similarity / search, so a change to either invalidates the stored
+  // vector. Null the embedding; a future heal pass refills it. (#246)
+  const nameChanged = body.name != null && body.name !== existing.name
+  const aliasesChanged =
+    body.aliases != null &&
+    JSON.stringify(body.aliases) !== JSON.stringify(existing.aliases ?? [])
+  if (nameChanged || aliasesChanged) {
+    updates.embedding = null
+  }
+
   const [person] = await db
     .update(people)
     .set(updates)

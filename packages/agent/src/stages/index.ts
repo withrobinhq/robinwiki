@@ -39,12 +39,28 @@ export interface ExtractionResult {
   personKeys: string[]
 }
 
+/**
+ * Audit emit hook for the linking orchestrator. Fires once per
+ * (entity, eventType) pair so the worker path produces the same audit
+ * surface as the regen-time path in core/src/lib/regen.ts. Optional so
+ * older callers / tests don't need to wire it.
+ */
+export type LinkingAuditEmit = (params: {
+  entityType: string
+  entityId: string
+  eventType: string
+  source?: string
+  summary: string
+  detail?: Record<string, unknown>
+}) => Promise<void>
+
 export interface LinkingOrchestratorDeps {
   wikiClassifyDeps: WikiClassifyDeps
   fragRelateDeps: FragRelateDeps
   fragmentLock: CasLock<PgTable>
   emitEvent: EmitEvent
   insertEdge: (edge: Record<string, unknown>) => Promise<void>
+  emitAuditEvent?: LinkingAuditEmit
 }
 
 export interface LinkingResult {
@@ -214,14 +230,25 @@ export async function runLinking(
         entryKey: input.entryKey,
       })
 
+      // Pick a wiki context for audit detail. Prefer the highest-scoring
+      // wikiClassify result; fall back to empty string when the fragment
+      // didn't classify into any wiki on this run.
+      const wikiKeyForAudit =
+        wikiResult.data.wikiEdges.length > 0
+          ? wikiResult.data.wikiEdges.slice().sort((a, b) => b.score - a.score)[0].wikiKey
+          : ''
+
       for (const edge of relateResult.data.relatedEdges) {
+        // attrs.method='cosine-regen' must match the regen-time path in
+        // core/src/lib/regen.ts so downstream consumers can identify the
+        // detector regardless of which path produced the edge (#227).
         await deps.insertEdge({
           srcType: 'fragment',
           srcId: input.fragmentKey,
           dstType: 'fragment',
           dstId: edge.fragmentKey,
           edgeType: 'FRAGMENT_RELATED_TO_FRAGMENT',
-          attrs: { score: edge.score },
+          attrs: { score: edge.score, method: 'cosine-regen' },
         })
         await deps.insertEdge({
           srcType: 'fragment',
@@ -229,8 +256,43 @@ export async function runLinking(
           dstType: 'fragment',
           dstId: input.fragmentKey,
           edgeType: 'FRAGMENT_RELATED_TO_FRAGMENT',
-          attrs: { score: edge.score },
+          attrs: { score: edge.score, method: 'cosine-regen' },
         })
+
+        // Bidirectional related_detected audit so timeline endpoints surface
+        // relationship detection from either side (#229). Mirrors the emit
+        // shape in core/src/lib/regen.ts createRelatedToEdges().
+        if (deps.emitAuditEvent) {
+          const pct = Math.round(edge.score * 100)
+          await deps.emitAuditEvent({
+            entityType: 'fragment',
+            entityId: input.fragmentKey,
+            eventType: 'related_detected',
+            source: 'system',
+            summary: `Related fragment detected: ${edge.fragmentKey} (${pct}%)`,
+            detail: {
+              fragmentKey: input.fragmentKey,
+              relatedKey: edge.fragmentKey,
+              similarity: edge.score,
+              wikiKey: wikiKeyForAudit,
+              method: 'cosine-regen',
+            },
+          })
+          await deps.emitAuditEvent({
+            entityType: 'fragment',
+            entityId: edge.fragmentKey,
+            eventType: 'related_detected',
+            source: 'system',
+            summary: `Related fragment detected: ${input.fragmentKey} (${pct}%)`,
+            detail: {
+              fragmentKey: edge.fragmentKey,
+              relatedKey: input.fragmentKey,
+              similarity: edge.score,
+              wikiKey: wikiKeyForAudit,
+              method: 'cosine-regen',
+            },
+          })
+        }
       }
 
       await deps.emitEvent({

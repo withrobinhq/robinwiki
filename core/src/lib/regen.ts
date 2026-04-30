@@ -131,7 +131,7 @@ export async function createRelatedToEdges(
   let created = 0
   for (const neighbor of neighbors) {
     const similarity = 1 - neighbor.distance
-    await database
+    const insertedFwd = await database
       .insert(edges)
       .values({
         id: crypto.randomUUID(),
@@ -143,7 +143,8 @@ export async function createRelatedToEdges(
         attrs: { score: similarity, method: 'cosine-regen' },
       })
       .onConflictDoNothing()
-    await database
+      .returning({ id: edges.id })
+    const insertedRev = await database
       .insert(edges)
       .values({
         id: crypto.randomUUID(),
@@ -155,6 +156,15 @@ export async function createRelatedToEdges(
         attrs: { score: similarity, method: 'cosine-regen' },
       })
       .onConflictDoNothing()
+      .returning({ id: edges.id })
+
+    // If both directions were conflicts (edges already existed), the
+    // worker path or a prior regen pass already emitted the related_detected
+    // audit pair — skip re-emitting to keep the audit count = 2 × edge count
+    // invariant from plan 29 §8g intact.
+    const isNewEdge = insertedFwd.length > 0 || insertedRev.length > 0
+    if (!isNewEdge) continue
+
     created++
 
     // Emit audit events for both fragments so the timeline endpoint
