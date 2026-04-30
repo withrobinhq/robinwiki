@@ -72,7 +72,7 @@ npx agent-browser open "$WIKI_URL/login" 2>/dev/null
 npx agent-browser wait --load networkidle
 npx agent-browser fill '#email' "${INITIAL_USERNAME:-uat@robin.test}"
 npx agent-browser fill '#password' "${INITIAL_PASSWORD:-uat-password-123}"
-npx agent-browser click 'button[type="submit"]' 2>/dev/null
+npx agent-browser click 'button[type="submit"]'
 npx agent-browser wait --load networkidle
 
 # 1a. Explorer page renders with "Collection" labels.
@@ -307,6 +307,53 @@ RM_404=$(curl -s -o /dev/null -w "%{http_code}" \
 # same wiki and confirm a FRAGMENT_RELATED_TO_FRAGMENT edge is created
 # bidirectionally with similarity ≥ 0.75.
 
+# Pre-cleanup: prior UAT runs accumulate near-duplicate self-attention /
+# transformer fragments that crowd out THIS run's pair in fragRelate's top-5
+# vector search. The pipeline rewrites both fragment.title and
+# raw_sources.title with LLM output, so we can't filter on 'uat29-' there.
+#
+# IMPORTANT: vectorSearch in core/src/queue/worker.ts intentionally does NOT
+# filter on fragments.deleted_at — soft-deleted fragments still surface as
+# candidates. The only way to keep them out of fragRelate's top-5 is a hard
+# DELETE. We hard-delete every fragment derived from a raw_source whose
+# content matches our UAT corpus signature (the '[run=uat29-' marker we add
+# below or the unmarked twin content shapes from previous plan revisions).
+# We also drop the matching raw_sources rows so dedup doesn't reuse stale
+# entry titles on the next run.
+psql "$DATABASE_URL" -v ON_ERROR_STOP=0 <<'SQL' >/dev/null 2>&1
+  DELETE FROM edges
+  WHERE edge_type = 'FRAGMENT_RELATED_TO_FRAGMENT'
+    AND (
+      src_id IN (
+        SELECT f.lookup_key FROM fragments f
+        JOIN raw_sources rs ON rs.lookup_key = f.entry_id
+        WHERE rs.content LIKE '%[run=uat29-%'
+           OR rs.content LIKE 'Self-attention lets the transformer relate every token%'
+           OR rs.content LIKE 'Transformers use self-attention to connect each token%'
+           OR rs.content LIKE 'Self-attention is what allows transformers to relate tokens%'
+           OR rs.content LIKE 'Self-attention, the heart of transformers%'
+           OR rs.content LIKE 'The Mariana Trench in the Pacific%'
+      )
+      OR dst_id IN (
+        SELECT f.lookup_key FROM fragments f
+        JOIN raw_sources rs ON rs.lookup_key = f.entry_id
+        WHERE rs.content LIKE '%[run=uat29-%'
+           OR rs.content LIKE 'Self-attention lets the transformer relate every token%'
+           OR rs.content LIKE 'Transformers use self-attention to connect each token%'
+           OR rs.content LIKE 'Self-attention is what allows transformers to relate tokens%'
+           OR rs.content LIKE 'Self-attention, the heart of transformers%'
+           OR rs.content LIKE 'The Mariana Trench in the Pacific%'
+      )
+    );
+  DELETE FROM raw_sources
+  WHERE content LIKE '%[run=uat29-%'
+     OR content LIKE 'Self-attention lets the transformer relate every token%'
+     OR content LIKE 'Transformers use self-attention to connect each token%'
+     OR content LIKE 'Self-attention is what allows transformers to relate tokens%'
+     OR content LIKE 'Self-attention, the heart of transformers%'
+     OR content LIKE 'The Mariana Trench in the Pacific%';
+SQL
+
 # 5a. Create a wiki to host the related fragments.
 SIM_WIKI=$(curl -s -X POST -b "$COOKIE_JAR" \
   -H "Content-Type: application/json" \
@@ -318,8 +365,11 @@ SIM_WIKI_KEY=$(echo "$SIM_WIKI" | jq -r '.lookupKey // .id // ""')
 
 # 5b. Create two related fragments via /entries (entry pipeline turns
 #     entries into fragments + embeddings + classification).
-FRAG_TEXT_A="Self-attention lets the transformer relate every token to every other token, replacing recurrence in sequence modeling."
-FRAG_TEXT_B="Transformers use self-attention to connect each token with every other token; this replaces the recurrent step in sequence models."
+# Append UAT_TAG to content so dedup (computeContentHash) treats each run as a
+# fresh submission — without this, a second run hits the existing row and
+# reuses its old (non-uat29) title, breaking entry-id lookups downstream.
+FRAG_TEXT_A="Self-attention lets the transformer relate every token to every other token, replacing recurrence in sequence modeling. [run=$UAT_TAG]"
+FRAG_TEXT_B="Transformers use self-attention to connect each token with every other token; this replaces the recurrent step in sequence models. [run=$UAT_TAG]"
 
 ENTRY_A=$(curl -s -X POST -b "$COOKIE_JAR" \
   -H "Content-Type: application/json" \
@@ -337,29 +387,39 @@ ENTRY_B=$(curl -s -X POST -b "$COOKIE_JAR" \
 ENTRY_B_KEY=$(echo "$ENTRY_B" | jq -r '.lookupKey // .id // ""')
 [ -n "$ENTRY_B_KEY" ] && pass "5c. Entry B submitted ($ENTRY_B_KEY)" || fail "5c. entry B submit failed"
 
-# 5d. Poll until both fragments have embeddings AND a FRAGMENT_IN_WIKI edge
-#     into our SIM_WIKI_KEY (classifier needs the FRAGMENT_IN_WIKI edge to
-#     trigger createRelatedToEdges).
+# 5d. Poll until both fragments are embedded AND fragRelate has finished
+#     (state='RESOLVED' marks completion of the linking stage).
+#
+#     - Filter via entry_id (the lookupKey we got back from POST /entries) —
+#       neither fragment.title (LLM-generated from content) nor
+#       raw_sources.title (overwritten by the persist stage with the LLM
+#       primaryTopic) preserves the title we submitted, so the only stable
+#       handle on a UAT fragment is its owning entry's lookup_key.
+#     - createRelatedToEdges runs unconditionally inside the linking stage
+#       (packages/agent/src/stages/index.ts ~line 209), independent of
+#       whether wikiClassify produced a FRAGMENT_IN_WIKI edge. The fragment
+#       transitions PENDING → LINKING → RESOLVED across that stage, so
+#       waiting for state='RESOLVED' is the correct precondition for the
+#       RELATED_TO assertions below — embedding alone is set during persist
+#       (an earlier stage) and fires before fragRelate runs.
 DEADLINE=$(($(date +%s) + 90))
-EMBEDDED=0
+RESOLVED=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-  EMBEDDED=$(psql "$DATABASE_URL" -t -A -c "
+  RESOLVED=$(psql "$DATABASE_URL" -t -A -c "
     SELECT COUNT(*) FROM fragments f
-    JOIN edges e ON e.src_id = f.lookup_key
-       AND e.edge_type = 'FRAGMENT_IN_WIKI'
-       AND e.deleted_at IS NULL
     WHERE f.embedding IS NOT NULL
       AND f.deleted_at IS NULL
-      AND f.title LIKE 'uat29-frag-%-$UAT_TAG'
+      AND f.state = 'RESOLVED'
+      AND f.entry_id IN ('$ENTRY_A_KEY', '$ENTRY_B_KEY')
   " 2>/dev/null | tr -d ' ')
-  if [ "${EMBEDDED:-0}" -ge 2 ] 2>/dev/null; then break; fi
+  if [ "${RESOLVED:-0}" -ge 2 ] 2>/dev/null; then break; fi
   sleep 3
 done
 
-if [ "${EMBEDDED:-0}" -ge 2 ] 2>/dev/null; then
-  pass "5d. Both UAT fragments embedded + filed (count=$EMBEDDED)"
+if [ "${RESOLVED:-0}" -ge 2 ] 2>/dev/null; then
+  pass "5d. Both UAT fragments embedded + linking complete (count=$RESOLVED)"
 else
-  fail "5d. Fragments not classified within 90s (embedded+filed=$EMBEDDED) — pipeline regression"
+  fail "5d. Fragments did not finish linking within 90s (RESOLVED=$RESOLVED) — pipeline regression"
 fi
 
 # 5e. RELATED_TO edges exist between our two UAT fragments.
@@ -369,8 +429,8 @@ SIM_EDGES=$(psql "$DATABASE_URL" -t -A -c "
   JOIN fragments fb ON fb.lookup_key = e.dst_id
   WHERE e.edge_type = 'FRAGMENT_RELATED_TO_FRAGMENT'
     AND e.deleted_at IS NULL
-    AND fa.title LIKE 'uat29-frag-%-$UAT_TAG'
-    AND fb.title LIKE 'uat29-frag-%-$UAT_TAG'
+    AND fa.entry_id IN ('$ENTRY_A_KEY', '$ENTRY_B_KEY')
+    AND fb.entry_id IN ('$ENTRY_A_KEY', '$ENTRY_B_KEY')
 " 2>/dev/null | tr -d ' ')
 if [ "${SIM_EDGES:-0}" -ge 2 ] 2>/dev/null; then
   pass "5e. Bidirectional FRAGMENT_RELATED_TO_FRAGMENT edges present (count=$SIM_EDGES)"
@@ -397,8 +457,8 @@ EDGE_ATTRS=$(psql "$DATABASE_URL" -t -A -c "
   JOIN fragments fb ON fb.lookup_key = e.dst_id
   WHERE e.edge_type = 'FRAGMENT_RELATED_TO_FRAGMENT'
     AND e.deleted_at IS NULL
-    AND fa.title LIKE 'uat29-frag-%-$UAT_TAG'
-    AND fb.title LIKE 'uat29-frag-%-$UAT_TAG'
+    AND fa.entry_id IN ('$ENTRY_A_KEY', '$ENTRY_B_KEY')
+    AND fb.entry_id IN ('$ENTRY_A_KEY', '$ENTRY_B_KEY')
   LIMIT 1
 " 2>/dev/null)
 if echo "$EDGE_ATTRS" | grep -q '"method":"cosine-regen"'; then
@@ -419,17 +479,18 @@ TYPE_PAIR=$(psql "$DATABASE_URL" -t -A -c "
   SELECT DISTINCT src_type || '|' || dst_type FROM edges e
   JOIN fragments fa ON fa.lookup_key = e.src_id
   WHERE e.edge_type = 'FRAGMENT_RELATED_TO_FRAGMENT'
-    AND fa.title LIKE 'uat29-frag-%-$UAT_TAG'
+    AND fa.entry_id IN ('$ENTRY_A_KEY', '$ENTRY_B_KEY')
 " 2>/dev/null | tr -d ' ')
 [ "$TYPE_PAIR" = "fragment|fragment" ] && pass "5i. src_type=fragment, dst_type=fragment" || fail "5i. type pair = '$TYPE_PAIR' (expected fragment|fragment)"
 
 # 5j. Negative — drop a totally unrelated fragment, no RELATED_TO edge to A.
-FRAG_TEXT_C="The Mariana Trench in the Pacific Ocean is the deepest part of the world's oceans."
+FRAG_TEXT_C="The Mariana Trench in the Pacific Ocean is the deepest part of the world's oceans. [run=$UAT_TAG]"
 ENTRY_C=$(curl -s -X POST -b "$COOKIE_JAR" \
   -H "Content-Type: application/json" \
   -H "Origin: http://localhost:3000" \
   -d "$(jq -n --arg c "$FRAG_TEXT_C" --arg t "uat29-noise-$UAT_TAG" '{title:$t,content:$c}')" \
   "$SERVER_URL/entries")
+ENTRY_C_KEY=$(echo "$ENTRY_C" | jq -r '.lookupKey // .id // ""')
 
 # Wait briefly for noise fragment to embed (it may classify into a different
 # wiki or stay unfiled — either way it must NOT relate to our cluster).
@@ -441,20 +502,23 @@ NOISE_EDGES=$(psql "$DATABASE_URL" -t -A -c "
   JOIN fragments fb ON fb.lookup_key = e.dst_id
   WHERE e.edge_type = 'FRAGMENT_RELATED_TO_FRAGMENT'
     AND e.deleted_at IS NULL
-    AND ((fa.title = 'uat29-noise-$UAT_TAG' AND fb.title LIKE 'uat29-frag-%-$UAT_TAG')
-      OR (fb.title = 'uat29-noise-$UAT_TAG' AND fa.title LIKE 'uat29-frag-%-$UAT_TAG'))
+    AND ((fa.entry_id = '$ENTRY_C_KEY' AND fb.entry_id IN ('$ENTRY_A_KEY', '$ENTRY_B_KEY'))
+      OR (fb.entry_id = '$ENTRY_C_KEY' AND fa.entry_id IN ('$ENTRY_A_KEY', '$ENTRY_B_KEY')))
 " 2>/dev/null | tr -d ' ')
 [ "${NOISE_EDGES:-1}" = "0" ] && pass "5j. Below-threshold pair: no RELATED_TO edge created" || fail "5j. unrelated fragment got $NOISE_EDGES RELATED_TO edges to UAT cluster (false positive)"
 
 # Resolve the actual lookup_keys for the two UAT fragments — used by
-# subsequent sections.
+# subsequent sections. Fragment+entry titles are both LLM-generated, so
+# look up by the entry lookupKey returned from POST /entries.
 FRAG_A_KEY=$(psql "$DATABASE_URL" -t -A -c "
   SELECT lookup_key FROM fragments
-  WHERE title = 'uat29-frag-a-$UAT_TAG' AND deleted_at IS NULL LIMIT 1
+  WHERE entry_id = '$ENTRY_A_KEY' AND deleted_at IS NULL
+  LIMIT 1
 " 2>/dev/null | tr -d ' ')
 FRAG_B_KEY=$(psql "$DATABASE_URL" -t -A -c "
   SELECT lookup_key FROM fragments
-  WHERE title = 'uat29-frag-b-$UAT_TAG' AND deleted_at IS NULL LIMIT 1
+  WHERE entry_id = '$ENTRY_B_KEY' AND deleted_at IS NULL
+  LIMIT 1
 " 2>/dev/null | tr -d ' ')
 
 # ── 6. Soft-delete respect on similarity edges ───────────────────
@@ -531,12 +595,13 @@ SORT_OK=$(echo "$FRAG_API" | jq -e '
 # Use a still-live fragment (FRAG_A) with at least one related edge — but
 # B was soft-deleted in section 6, so we re-create a related fragment now
 # to keep this assertion reachable.
-FRAG_TEXT_D="Self-attention is what allows transformers to relate tokens across the whole sequence in parallel."
+FRAG_TEXT_D="Self-attention is what allows transformers to relate tokens across the whole sequence in parallel. [run=$UAT_TAG]"
 ENTRY_D=$(curl -s -X POST -b "$COOKIE_JAR" \
   -H "Content-Type: application/json" \
   -H "Origin: http://localhost:3000" \
   -d "$(jq -n --arg c "$FRAG_TEXT_D" --arg t "uat29-frag-d-$UAT_TAG" '{title:$t,content:$c}')" \
   "$SERVER_URL/entries")
+ENTRY_D_KEY=$(echo "$ENTRY_D" | jq -r '.lookupKey // .id // ""')
 
 # Re-poll until D embeds + classifies + relates back to A.
 DEADLINE=$(($(date +%s) + 90))
@@ -545,7 +610,7 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   D_LINK=$(psql "$DATABASE_URL" -t -A -c "
     SELECT COUNT(*) FROM edges e
     JOIN fragments fa ON fa.lookup_key = e.src_id AND fa.lookup_key = '$FRAG_A_KEY'
-    JOIN fragments fd ON fd.lookup_key = e.dst_id AND fd.title = 'uat29-frag-d-$UAT_TAG'
+    JOIN fragments fd ON fd.lookup_key = e.dst_id AND fd.entry_id = '$ENTRY_D_KEY'
     WHERE e.edge_type = 'FRAGMENT_RELATED_TO_FRAGMENT'
       AND e.deleted_at IS NULL
   " 2>/dev/null | tr -d ' ')
@@ -594,10 +659,12 @@ LONELY=$(curl -s -X POST -b "$COOKIE_JAR" \
   -H "Origin: http://localhost:3000" \
   -d "$(jq -n --arg c "Lonely UAT fragment with nothing to relate to: ${UAT_TAG}-${RANDOM}" --arg t "uat29-lonely-$UAT_TAG" '{title:$t,content:$c}')" \
   "$SERVER_URL/entries")
+LONELY_ENTRY_KEY=$(echo "$LONELY" | jq -r '.lookupKey // .id // ""')
 sleep 6
 LONELY_FK=$(psql "$DATABASE_URL" -t -A -c "
   SELECT lookup_key FROM fragments
-  WHERE title = 'uat29-lonely-$UAT_TAG' AND deleted_at IS NULL LIMIT 1
+  WHERE entry_id = '$LONELY_ENTRY_KEY' AND deleted_at IS NULL
+  LIMIT 1
 " 2>/dev/null | tr -d ' ')
 if [ -n "$LONELY_FK" ]; then
   LONELY_API=$(curl -s -b "$COOKIE_JAR" -H "Origin: http://localhost:3000" \
@@ -627,7 +694,8 @@ fi
 #     (bidirectional emit, the partner of FRAG_A in section 7).
 FRAG_D_KEY=$(psql "$DATABASE_URL" -t -A -c "
   SELECT lookup_key FROM fragments
-  WHERE title = 'uat29-frag-d-$UAT_TAG' AND deleted_at IS NULL LIMIT 1
+  WHERE entry_id = '$ENTRY_D_KEY' AND deleted_at IS NULL
+  LIMIT 1
 " 2>/dev/null | tr -d ' ')
 D_AUDIT=$(psql "$DATABASE_URL" -t -A -c "
   SELECT COUNT(*) FROM audit_log
@@ -751,18 +819,24 @@ UNAUTH_FRAG=$(curl -s -o /dev/null -w "%{http_code}" "$SERVER_URL/fragments/$FRA
 # start clean. Hard-delete the membership rows (no soft-delete column on
 # group_wikis). Drop the seed group last.
 
-# 11a. Soft-delete UAT fragments
+# 11a. Soft-delete UAT fragments (filter by entry_id since both fragment.title
+#      and raw_sources.title are LLM-overwritten by the persist stage).
+UAT_ENTRY_KEYS="'$ENTRY_A_KEY','$ENTRY_B_KEY','$ENTRY_C_KEY','$ENTRY_D_KEY','$LONELY_ENTRY_KEY'"
 psql "$DATABASE_URL" -c "
   UPDATE fragments SET deleted_at = NOW()
-  WHERE title LIKE 'uat29-%-$UAT_TAG' AND deleted_at IS NULL
+  WHERE entry_id IN ($UAT_ENTRY_KEYS)
+    AND deleted_at IS NULL
 " >/dev/null 2>&1
 
-# 11b. Soft-delete UAT similarity edges
+# 11b. Soft-delete UAT similarity edges in BOTH directions (src_id OR dst_id)
+#      so a UAT fragment never lingers as a vector-search neighbor on the
+#      next run.
 psql "$DATABASE_URL" -c "
   UPDATE edges SET deleted_at = NOW()
   WHERE edge_type = 'FRAGMENT_RELATED_TO_FRAGMENT'
-    AND src_id IN (SELECT lookup_key FROM fragments WHERE title LIKE 'uat29-%-$UAT_TAG')
     AND deleted_at IS NULL
+    AND (src_id IN (SELECT lookup_key FROM fragments WHERE entry_id IN ($UAT_ENTRY_KEYS))
+      OR dst_id IN (SELECT lookup_key FROM fragments WHERE entry_id IN ($UAT_ENTRY_KEYS)))
 " >/dev/null 2>&1
 
 # 11c. Drop UAT wikis (soft-delete)
