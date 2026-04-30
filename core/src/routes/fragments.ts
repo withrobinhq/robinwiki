@@ -78,21 +78,21 @@ fragmentsRouter.get('/:id', async (c) => {
     const rows = await db
       .select({ key: wikis.lookupKey, name: wikis.name, bouncerMode: wikis.bouncerMode })
       .from(wikis)
-      .where(inArray(wikis.lookupKey, dstByType.wiki))
+      .where(and(inArray(wikis.lookupKey, dstByType.wiki), isNull(wikis.deletedAt)))
     for (const r of rows) backlinks.push({ id: r.key, name: r.name, type: 'wiki', bouncerMode: r.bouncerMode })
   }
   if (dstByType.person?.length) {
     const rows = await db
       .select({ key: people.lookupKey, name: people.name })
       .from(people)
-      .where(inArray(people.lookupKey, dstByType.person))
+      .where(and(inArray(people.lookupKey, dstByType.person), isNull(people.deletedAt)))
     for (const r of rows) backlinks.push({ id: r.key, name: r.name, type: 'person' })
   }
   if (dstByType.fragment?.length) {
     const rows = await db
       .select({ key: fragments.lookupKey, title: fragments.title })
       .from(fragments)
-      .where(inArray(fragments.lookupKey, dstByType.fragment))
+      .where(and(inArray(fragments.lookupKey, dstByType.fragment), isNull(fragments.deletedAt)))
     for (const r of rows) backlinks.push({ id: r.key, name: r.title, type: 'fragment' })
   }
 
@@ -121,11 +121,33 @@ fragmentsRouter.get('/:id', async (c) => {
 
   const relatedFragments: { id: string; slug: string; title: string; similarity: number }[] = []
   if (relatedKeySet.size > 0) {
+    const relatedKeys = [...relatedKeySet]
     const relatedRows = await db
       .select({ lookupKey: fragments.lookupKey, slug: fragments.slug, title: fragments.title })
       .from(fragments)
-      .where(and(inArray(fragments.lookupKey, [...relatedKeySet]), isNull(fragments.deletedAt)))
+      .where(and(inArray(fragments.lookupKey, relatedKeys), isNull(fragments.deletedAt)))
+
+    // #262 — terminal-wiki check. A related fragment may itself be live
+    // but only sit inside a soft-deleted wiki; surfacing it lets the
+    // user navigate from a live fragment into ghost content. Keep
+    // only fragments with at least one live FRAGMENT_IN_WIKI edge
+    // pointing at a live (non-soft-deleted) wiki.
+    const liveTerminalRows = await db
+      .select({ srcId: edges.srcId })
+      .from(edges)
+      .innerJoin(wikis, eq(wikis.lookupKey, edges.dstId))
+      .where(
+        and(
+          eq(edges.edgeType, 'FRAGMENT_IN_WIKI'),
+          isNull(edges.deletedAt),
+          isNull(wikis.deletedAt),
+          inArray(edges.srcId, relatedKeys),
+        ),
+      )
+    const liveTerminal = new Set(liveTerminalRows.map((r) => r.srcId))
+
     for (const r of relatedRows) {
+      if (!liveTerminal.has(r.lookupKey)) continue
       relatedFragments.push({
         id: r.lookupKey,
         slug: r.slug,

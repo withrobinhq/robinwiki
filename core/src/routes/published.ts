@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import { wikis } from '../db/schema.js'
 import { publicWikiResponseSchema } from '../schemas/wikis.schema.js'
@@ -23,7 +23,13 @@ publishedRoutes.get('/wiki/:nanoid', async (c) => {
       citationDeclarations: wikis.citationDeclarations,
     })
     .from(wikis)
-    .where(and(eq(wikis.publishedSlug, nanoid), eq(wikis.published, true)))
+    .where(
+      and(
+        eq(wikis.publishedSlug, nanoid),
+        eq(wikis.published, true),
+        isNull(wikis.deletedAt),
+      ),
+    )
     .limit(1)
 
   if (!wiki || !wiki.content) {

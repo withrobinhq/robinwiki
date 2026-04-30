@@ -36,7 +36,7 @@ import {
   wikiClassificationSchema,
   fragmentRelevanceSchema,
 } from '@robin/shared'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import {
   fragments,
@@ -78,6 +78,21 @@ function emitEvent(event: {
 }
 
 async function insertEdgeRow(edge: Record<string, unknown>): Promise<void> {
+  // TOCTOU guard for FRAGMENT_IN_WIKI edges: the LLM classifier may
+  // have decided to file a fragment into a wiki that got soft-
+  // deleted while it was thinking. Re-check the dst wiki right
+  // before the insert and drop the row if it's a tombstone.
+  if (edge.edgeType === 'FRAGMENT_IN_WIKI' && typeof edge.dstId === 'string') {
+    const [stillLive] = await db
+      .select({ key: wikis.lookupKey })
+      .from(wikis)
+      .where(and(eq(wikis.lookupKey, edge.dstId), isNull(wikis.deletedAt)))
+      .limit(1)
+    if (!stillLive) {
+      log.warn({ wikiKey: edge.dstId, srcId: edge.srcId }, 'skipping FRAGMENT_IN_WIKI insert: target wiki was soft-deleted')
+      return
+    }
+  }
   await db
     .insert(edges)
     .values({
@@ -379,6 +394,7 @@ async function processLinkJob(job: LinkJob): Promise<JobResult> {
         const rows = await db
           .select({ lookupKey: wikis.lookupKey })
           .from(wikis)
+          .where(isNull(wikis.deletedAt))
           .limit(limit)
         return rows.map((r) => ({ wikiKey: r.lookupKey, score: 0 }))
       },
@@ -394,10 +410,13 @@ async function processLinkJob(job: LinkJob): Promise<JobResult> {
           })
           .from(wikis)
           .where(
-            sql`${wikis.lookupKey} = ANY(ARRAY[${sql.join(
-              wikiKeys.map((k) => sql`${k}`),
-              sql`, `
-            )}])`
+            and(
+              isNull(wikis.deletedAt),
+              sql`${wikis.lookupKey} = ANY(ARRAY[${sql.join(
+                wikiKeys.map((k) => sql`${k}`),
+                sql`, `
+              )}])`,
+            ),
           )
         return rows
       },

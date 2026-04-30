@@ -207,7 +207,7 @@ export async function classifyUnfiledFragments(
       description: wikis.description,
     })
     .from(wikis)
-    .where(eq(wikis.lookupKey, wikiKey))
+    .where(and(eq(wikis.lookupKey, wikiKey), isNull(wikis.deletedAt)))
     .limit(1)
 
   if (!wiki) return { linked: 0, autoFiled: 0, llmFiled: 0, llmRejected: 0 }
@@ -273,10 +273,13 @@ export async function classifyUnfiledFragments(
           })
           .from(wikis)
           .where(
-            sql`${wikis.lookupKey} = ANY(ARRAY[${sql.join(
-              wikiKeys.map((k) => sql`${k}`),
-              sql`, `
-            )}])`
+            and(
+              isNull(wikis.deletedAt),
+              sql`${wikis.lookupKey} = ANY(ARRAY[${sql.join(
+                wikiKeys.map((k) => sql`${k}`),
+                sql`, `
+              )}])`,
+            ),
           )
         return rows
       },
@@ -302,6 +305,20 @@ export async function classifyUnfiledFragments(
 
         if (result.data.wikiEdges.length > 0) {
           for (const edge of result.data.wikiEdges) {
+            // Re-check the destination wiki right before the insert.
+            // The LLM call is slow; the wiki may have been soft-
+            // deleted while we were waiting. Without this, we close
+            // a TOCTOU window that the regen-entry deletedAt check
+            // can't (10c surfaced ~1 of these per UAT run).
+            const [stillLive] = await database
+              .select({ key: wikis.lookupKey })
+              .from(wikis)
+              .where(and(eq(wikis.lookupKey, edge.wikiKey), isNull(wikis.deletedAt)))
+              .limit(1)
+            if (!stillLive) {
+              log.warn({ fragmentKey: frag.lookupKey, wikiKey: edge.wikiKey }, 'skipping FRAGMENT_IN_WIKI insert: wiki was soft-deleted during LLM call')
+              continue
+            }
             await database
               .insert(edges)
               .values({
@@ -360,6 +377,15 @@ export async function regenerateWiki(
   const t0 = performance.now()
   const [wiki] = await database.select().from(wikis).where(eq(wikis.lookupKey, wikiKey))
   if (!wiki) throw new Error(`Wiki not found: ${wikiKey}`)
+  // #236 — a regen job may still be in the queue when the wiki is
+  // soft-deleted (DELETE handler doesn't drain BullMQ). Bail out
+  // here so the LLM classifier doesn't insert FRAGMENT_IN_WIKI
+  // edges into a tombstone, which is exactly the zombie-edge
+  // production path 10c was catching.
+  if (wiki.deletedAt) {
+    log.warn({ wikiKey }, 'regen target is soft-deleted; skipping')
+    return { content: '', fragmentCount: 0, hasEmbedding: false, timing: { classify: 0, gatherFragments: 0, llmCall: 0, embed: 0, total: 0 } }
+  }
 
   // Optimistic lock: transition to LINKING to prevent concurrent regen runs.
   // If the wiki is already LINKING, another worker owns it — bail out.

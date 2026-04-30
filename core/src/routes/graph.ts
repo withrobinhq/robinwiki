@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { isNull, inArray } from 'drizzle-orm'
+import { and, isNull, inArray } from 'drizzle-orm'
 import { sessionMiddleware } from '../middleware/session.js'
 import { db } from '../db/client.js'
 import { edges, entries, fragments, wikis, people } from '../db/schema.js'
@@ -87,7 +87,7 @@ graphRouter.get('/', async (c) => {
         content: entries.content,
       })
       .from(entries)
-      .where(inArray(entries.lookupKey, idsByType.entry))
+      .where(and(inArray(entries.lookupKey, idsByType.entry), isNull(entries.deletedAt)))
     for (const r of rows)
       labelMap[`entry:${r.key}`] = {
         label: r.title || 'Untitled Entry',
@@ -102,7 +102,7 @@ graphRouter.get('/', async (c) => {
         content: fragments.content,
       })
       .from(fragments)
-      .where(inArray(fragments.lookupKey, idsByType.fragment))
+      .where(and(inArray(fragments.lookupKey, idsByType.fragment), isNull(fragments.deletedAt)))
     for (const r of rows)
       labelMap[`fragment:${r.key}`] = {
         label: r.title || 'Untitled Fragment',
@@ -113,7 +113,7 @@ graphRouter.get('/', async (c) => {
     const rows = await db
       .select({ key: wikis.lookupKey, name: wikis.name, content: wikis.content })
       .from(wikis)
-      .where(inArray(wikis.lookupKey, idsByType.thread))
+      .where(and(inArray(wikis.lookupKey, idsByType.thread), isNull(wikis.deletedAt)))
     for (const r of rows)
       labelMap[`thread:${r.key}`] = {
         label: r.name,
@@ -124,7 +124,7 @@ graphRouter.get('/', async (c) => {
     const rows = await db
       .select({ key: wikis.lookupKey, name: wikis.name, content: wikis.content })
       .from(wikis)
-      .where(inArray(wikis.lookupKey, idsByType.wiki))
+      .where(and(inArray(wikis.lookupKey, idsByType.wiki), isNull(wikis.deletedAt)))
     for (const r of rows)
       labelMap[`wiki:${r.key}`] = {
         label: r.name,
@@ -135,7 +135,7 @@ graphRouter.get('/', async (c) => {
     const rows = await db
       .select({ key: people.lookupKey, name: people.name, content: people.content })
       .from(people)
-      .where(inArray(people.lookupKey, idsByType.person))
+      .where(and(inArray(people.lookupKey, idsByType.person), isNull(people.deletedAt)))
     for (const r of rows)
       labelMap[`person:${r.key}`] = {
         label: r.name,
