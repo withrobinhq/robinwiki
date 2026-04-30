@@ -54,6 +54,7 @@ import { eq, and, isNull } from 'drizzle-orm'
 import { nanoid } from '../lib/id.js'
 import { logger } from '../lib/logger.js'
 import { emitAuditEvent } from '../db/audit.js'
+import { applyFragmentTitleDatePrefix } from '../lib/fragmentTitlePrefix.js'
 
 const log = logger.child({ component: 'mcp' })
 
@@ -289,7 +290,10 @@ export async function handleLogFragment(
     // relying on a 6-char ULID-prefix suffix that is only unique within
     // a millisecond.
     const fragKey = makeLookupKey('frag')
-    const title = input.title?.trim() || trimmed.slice(0, 80)
+    const rawTitle = input.title?.trim() || trimmed.slice(0, 80)
+    // #239 — prepend UTC YYMMDD to the title before slug generation so the
+    // slug picks up the date prefix too (chronological ordering in lists).
+    const title = applyFragmentTitleDatePrefix(rawTitle)
     const fragSlug = await resolveFragmentSlug(deps.db, generateSlug(title))
     const now = new Date()
 

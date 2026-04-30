@@ -1,4 +1,8 @@
-import { makeLookupKey, generateSlug } from '@robin/shared'
+import {
+  makeLookupKey,
+  generateSlug,
+  applyFragmentTitleDatePrefix,
+} from '@robin/shared'
 import type { StageResult, PersistDeps, PersistResult, FragmentResult } from './types.js'
 import { embedText } from '../embeddings.js'
 
@@ -79,13 +83,17 @@ export async function persist(
   })
 
   // -- Fragment inserts --
+  // #239 — every fragment created by the worker pipeline gets a UTC
+  // YYMMDD prefix on its title. The helper is a no-op when the LLM
+  // already emitted a date-shaped prefix.
   const fragmentKeys: string[] = input.fragments.map(() => makeLookupKey('frag'))
   for (let i = 0; i < input.fragments.length; i++) {
     const frag = input.fragments[i]
+    const prefixedTitle = applyFragmentTitleDatePrefix(frag.title)
     await deps.insertFragment({
       lookupKey: fragmentKeys[i],
-      slug: frag.suggestedSlug || generateSlug(frag.title),
-      title: frag.title,
+      slug: frag.suggestedSlug || generateSlug(prefixedTitle),
+      title: prefixedTitle,
       content: frag.content,
       type: frag.type,
       entryId: input.entryKey,

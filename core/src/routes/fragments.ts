@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator'
 import { makeLookupKey, generateSlug } from '@robin/shared'
 import { resolveFragmentSlug } from '../db/slug.js'
 import { computeContentHash, findDuplicateFragment } from '../db/dedup.js'
+import { applyFragmentTitleDatePrefix } from '../lib/fragmentTitlePrefix.js'
 import { sessionMiddleware } from '../middleware/session.js'
 import { db } from '../db/client.js'
 import { fragments, entries, edges, wikis, people } from '../db/schema.js'
@@ -246,7 +247,11 @@ fragmentsRouter.post('/', zValidator('json', createFragmentBodySchema, validatio
   }
 
   const fragKey = makeLookupKey('frag')
-  const slug = await resolveFragmentSlug(db, generateSlug(title))
+  // #239 — prepend UTC YYMMDD to the title at the only fragment-create
+  // site that lives in this route. No-op when the title already opens
+  // with a date-shaped prefix.
+  const prefixedTitle = applyFragmentTitleDatePrefix(title)
+  const slug = await resolveFragmentSlug(db, generateSlug(prefixedTitle))
 
   const [fragment] = await db
     .insert(fragments)
@@ -254,7 +259,7 @@ fragmentsRouter.post('/', zValidator('json', createFragmentBodySchema, validatio
       lookupKey: fragKey,
       slug,
       entryId,
-      title,
+      title: prefixedTitle,
       content: content ?? '',
       dedupHash: content ? computeContentHash(content) : null,
       tags,
