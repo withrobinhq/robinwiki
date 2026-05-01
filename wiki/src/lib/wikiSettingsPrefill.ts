@@ -15,6 +15,8 @@ export type WikiSettingsPrefill = {
   published?: boolean;
   /** Public published-wiki nanoid slug (when published) */
   publishedSlug?: string | null;
+  /** Current collection memberships — feeds the Collections section in the modal. */
+  collections?: Array<{ id: string; name: string; slug: string; color: string }>;
 };
 
 /** Placeholder — callers may supply a real description in the future. */

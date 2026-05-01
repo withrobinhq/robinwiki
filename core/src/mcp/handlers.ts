@@ -47,8 +47,9 @@ import {
 } from '../db/schema.js'
 import { resolveWikiBySlug } from './resolvers.js'
 import type { McpResolverDeps } from './resolvers.js'
-import { resolvePerson, DEFAULT_RESOLUTION_CONFIG } from '@robin/agent'
+import { resolvePerson, DEFAULT_RESOLUTION_CONFIG, embedText } from '@robin/agent'
 import type { KnownPerson } from '@robin/agent'
+import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
 import { eq, and, isNull } from 'drizzle-orm'
 import { nanoid } from '../lib/id.js'
 import { logger } from '../lib/logger.js'
@@ -584,6 +585,30 @@ export async function handleCreateWiki(
       state: 'PENDING',
       prompt: '',
     })
+
+    // Embed the wiki at create time. Without this, freshly-created wikis are
+    // invisible to vector search until their first regen — which can be hours
+    // away. Mirrors the HTTP POST /wikis path. Falls through silently on
+    // failure; the row is still created.
+    try {
+      const orConfig = await loadOpenRouterConfig()
+      const textToEmbed = `${input.title.trim()} ${input.description.trim()}`.trim()
+      const wikiVec = await embedText(textToEmbed, {
+        apiKey: orConfig.apiKey,
+        model: orConfig.models.embedding,
+      })
+      if (wikiVec) {
+        await deps.db
+          .update(wikisTable)
+          .set({ embedding: wikiVec })
+          .where(eq(wikisTable.lookupKey, lookupKey))
+      }
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err), wikiKey: lookupKey },
+        'mcp create_wiki embedding failed — wiki created without embedding'
+      )
+    }
 
     await emitAuditEvent(deps.db, {
       entityType: 'wiki',

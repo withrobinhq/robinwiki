@@ -94,8 +94,11 @@ template: |
 
   [RULES — READ CAREFULLY]
   1. Output ONLY markdown. No YAML frontmatter. No code fences around the output.
-  2. The [DOCUMENT STRUCTURE] block is the source of truth for layout —
-     follow it exactly. Do not add, drop, reorder, or rename headings.
+  2. The [DOCUMENT STRUCTURE] block is the source of truth for layout,
+     ordering (chronological direction, grouping), and any per-section
+     formatting prose — follow it exactly. Do not add, drop, reorder, or
+     rename headings. Do not impose a default ordering or layout that
+     contradicts the structure.
   3. Weave fragment content into prose. When you reference a fragment, use
      [[fragment:<slug>]] tokens inside complete sentences — do NOT bare-string
      the fragment title as a chip, list item, or standalone phrase. The

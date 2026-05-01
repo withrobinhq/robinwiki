@@ -49,6 +49,37 @@ const sectionHeadingStyle: Record<2 | 3 | 4, CSSProperties> = {
   },
 };
 
+/**
+ * Compute where a section's "own" body ends — i.e. the last line that
+ * isn't covered by a nested child section.
+ *
+ * The parser returns endLine = the line before the next same-or-higher
+ * heading. For an H2 with H3 children, that means the H2's range
+ * encompasses every H3 child too. If we render the H2's body as-is, the
+ * child H3 markdown is rendered nested inside the H2's `<MarkdownContent>`,
+ * AND each H3 then also renders as its own React block — every nested
+ * section is double-rendered. Triggered first by the Log default_structure
+ * (H2 "Entries" with H3 "[YYYY-MM-DD]" sub-entries) once a Log wiki has
+ * more than one date.
+ *
+ * Trim the parent's body to end just before its first nested child; the
+ * children then render as their own blocks below. Applies recursively —
+ * an H3 with H4 children gets the same trim.
+ */
+function effectiveBodyEndLine(
+  section: SectionInfo,
+  allSections: SectionInfo[],
+): number {
+  const firstChild = allSections.find(
+    (s) =>
+      s !== section &&
+      s.level > section.level &&
+      s.startLine > section.startLine &&
+      s.startLine <= section.endLine,
+  );
+  return firstChild ? firstChild.startLine - 1 : section.endLine;
+}
+
 function SectionHeadingWithEdit({
   section,
   onEdit,
@@ -170,8 +201,9 @@ export function SectionedMarkdownBody({
       section.level >= 2 && section.level <= 4 && onEditSection !== undefined;
 
     if (canExtractHeading) {
+      const bodyEnd = effectiveBodyEndLine(section, parsed);
       const bodyOnly = lines
-        .slice(section.startLine + 1, section.endLine + 1)
+        .slice(section.startLine + 1, bodyEnd + 1)
         .join("\n");
       blocks.push(
         <div key={section.anchor} id={section.anchor}>
@@ -191,9 +223,8 @@ export function SectionedMarkdownBody({
       continue;
     }
 
-    const body = lines
-      .slice(section.startLine, section.endLine + 1)
-      .join("\n");
+    const bodyEnd = effectiveBodyEndLine(section, parsed);
+    const body = lines.slice(section.startLine, bodyEnd + 1).join("\n");
     blocks.push(
       <div key={section.anchor} id={section.anchor}>
         <MarkdownContent content={body} refs={refs} style={style} />

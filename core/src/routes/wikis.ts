@@ -5,7 +5,7 @@ import { generateSlug, makeLookupKey } from '@robin/shared'
 import { NoOpenRouterKeyError, embedText } from '@robin/agent'
 import { sessionMiddleware } from '../middleware/session.js'
 import { db } from '../db/client.js'
-import { wikis, edges, wikiTypes, fragments, people, auditLog, edits, groupWikis } from '../db/schema.js'
+import { wikis, edges, wikiTypes, fragments, people, auditLog, edits, groupWikis, groups } from '../db/schema.js'
 import { resolveWikiSlug } from '../db/slug.js'
 import { inferWikiType } from '../mcp/wiki-type-inference.js'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
@@ -40,6 +40,40 @@ import { timelineQuerySchema } from '../schemas/audit.schema.js'
 
 const log = logger.child({ component: 'wikis' })
 
+type WikiCollectionRow = { id: string; name: string; slug: string; color: string }
+
+/**
+ * Batched collection-membership lookup. Joined into the GET /wikis response
+ * so the Explorer collection filter (and any other consumer) can render
+ * which collection(s) a wiki belongs to without N+1 calls. Returns an
+ * empty map for empty input.
+ */
+async function loadWikiCollections(
+  wikiIds: string[]
+): Promise<Map<string, WikiCollectionRow[]>> {
+  const result = new Map<string, WikiCollectionRow[]>()
+  if (wikiIds.length === 0) return result
+
+  const rows = await db
+    .select({
+      wikiId: groupWikis.wikiId,
+      id: groups.id,
+      name: groups.name,
+      slug: groups.slug,
+      color: groups.color,
+    })
+    .from(groupWikis)
+    .innerJoin(groups, eq(groups.id, groupWikis.groupId))
+    .where(inArray(groupWikis.wikiId, wikiIds))
+
+  for (const row of rows) {
+    const arr = result.get(row.wikiId) ?? []
+    arr.push({ id: row.id, name: row.name, slug: row.slug, color: row.color })
+    result.set(row.wikiId, arr)
+  }
+  return result
+}
+
 /** Prepare a wiki row for schema parsing (add id alias + computed defaults) */
 function prepareWiki(
   t: typeof wikis.$inferSelect & {
@@ -47,6 +81,7 @@ function prepareWiki(
     lastUpdated?: string
     shortDescriptor?: string
     descriptor?: string
+    collections?: WikiCollectionRow[]
   }
 ) {
   return {
@@ -57,6 +92,7 @@ function prepareWiki(
     shortDescriptor: t.shortDescriptor ?? '',
     descriptor: t.descriptor ?? '',
     progress: t.progress ?? null,
+    collections: t.collections ?? [],
   }
 }
 
@@ -93,6 +129,8 @@ wikisRouter.get('/', zValidator('query', wikiListQuerySchema, validationHook), a
     .limit(limit)
     .offset(offset)
 
+  const collectionsByWiki = await loadWikiCollections(rows.map((r) => r.wiki.lookupKey))
+
   return c.json(
     wikiListResponseSchema.parse({
       wikis: rows.map((r) =>
@@ -102,6 +140,7 @@ wikisRouter.get('/', zValidator('query', wikiListQuerySchema, validationHook), a
             noteCount: r.fragmentCount,
             shortDescriptor: r.shortDescriptor ?? '',
             descriptor: r.descriptor ?? '',
+            collections: collectionsByWiki.get(r.wiki.lookupKey) ?? [],
           })
         )
       ),
@@ -316,12 +355,15 @@ wikisRouter.get('/:id', async (c) => {
     })
   }
 
+  const collectionsByWiki = await loadWikiCollections([wiki.lookupKey])
+
   return c.json(
     wikiDetailResponseSchema.parse({
       ...prepareWiki({
         ...wiki,
         shortDescriptor: row.shortDescriptor ?? '',
         descriptor: row.descriptor ?? '',
+        collections: collectionsByWiki.get(wiki.lookupKey) ?? [],
       }),
       wikiContent: wiki.content ?? '',
       fragments: frags.map((f) => ({

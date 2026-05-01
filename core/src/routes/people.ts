@@ -10,6 +10,8 @@ import { logger } from '../lib/logger.js'
 import { validationHook } from '../lib/validation.js'
 import { buildSidecar } from '../lib/wikiSidecar.js'
 import { makeSidecarDeps } from '../lib/wikiSidecarDeps.js'
+import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
+import { embedText } from '@robin/agent'
 import type { WikiInfobox } from '@robin/shared/schemas/sidecar'
 import {
   personDetailResponseSchema,
@@ -108,6 +110,32 @@ peopleRouter.post('/', zValidator('json', createPersonBodySchema, validationHook
       state: 'RESOLVED',
     })
     .returning()
+
+  // Embed the person at create time. Without this, manually-created people
+  // sit unembedded until the retry worker heals them. Embed text combines
+  // the canonical name + aliases + relationship — the same dimensions vector
+  // search would compare against. Falls through silently on failure.
+  try {
+    const embedSource = [trimmedName, ...(body.aliases ?? []), body.relationship ?? '']
+      .filter((s) => s && s.length > 0)
+      .join(' ')
+    const orConfig = await loadOpenRouterConfig()
+    const vec = await embedText(embedSource, {
+      apiKey: orConfig.apiKey,
+      model: orConfig.models.embedding,
+    })
+    if (vec) {
+      await db
+        .update(people)
+        .set({ embedding: vec })
+        .where(eq(people.lookupKey, lookupKey))
+    }
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : String(err), personKey: lookupKey },
+      'create-person embedding failed — row inserted without embedding'
+    )
+  }
 
   await emitAuditEvent(db, {
     entityType: 'person',

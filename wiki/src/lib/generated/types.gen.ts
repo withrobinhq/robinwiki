@@ -261,6 +261,12 @@ export type ThreadResponseSchema = {
     };
     published?: boolean;
     publishedSlug?: string;
+    collections?: Array<{
+        id: string;
+        name: string;
+        slug: string;
+        color: string;
+    }>;
 };
 
 export type ThreadWithWikiResponseSchema = {
@@ -311,6 +317,12 @@ export type ThreadListResponseSchema = {
             }>;
             percentage: number;
         };
+        collections?: Array<{
+            id: string;
+            name: string;
+            slug: string;
+            color: string;
+        }>;
     }>;
 };
 
@@ -338,6 +350,12 @@ export type WikiDetailResponseSchema = {
     };
     published?: boolean;
     publishedSlug?: string;
+    collections?: Array<{
+        id: string;
+        name: string;
+        slug: string;
+        color: string;
+    }>;
     wikiContent: string;
     fragments: Array<{
         id: string;
@@ -564,6 +582,15 @@ export type UserProfileResponseSchema = {
     mcpEndpointUrl: string;
     apiKeyHint: string;
     onboardedAt: string;
+    /**
+     * The Person row that represents the knowledge-base owner. Hand-patched
+     * here in the codegen-output until the OpenAPI spec re-generates;
+     * kept in sync with userProfileResponseSchema in core/src/schemas/users.schema.ts.
+     */
+    ownerPerson: {
+        lookupKey: string;
+        name: string;
+    } | null;
 };
 
 export type UserStatsResponseSchema = {

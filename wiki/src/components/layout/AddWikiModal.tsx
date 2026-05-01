@@ -23,6 +23,7 @@ import {
   type WikiTypeListItem,
 } from "@/hooks/useWikiTypesList";
 import { useToggleBouncerMode } from "@/hooks/useToggleBouncerMode";
+import { useCollections } from "@/hooks/useCollections";
 import { publishWiki, unpublishWiki, updateWiki } from "@/lib/generated";
 
 export type { WikiSettingsPrefill } from "@/lib/wikiSettingsPrefill";
@@ -106,11 +107,19 @@ export default function AddWikiModal({
   const [publishedSlug, setPublishedSlug] = useState<string | null>(null);
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  /** Collection membership — settings mode persists immediately via API; create
+   *  mode stages locally and applies after POST /wikis returns the new id. */
+  const [localCollections, setLocalCollections] = useState<
+    Array<{ id: string; name: string; slug: string; color: string }>
+  >([]);
+  const [collectionPendingId, setCollectionPendingId] = useState<string | null>(null);
+  const [collectionError, setCollectionError] = useState<string | null>(null);
 
   const isSettingsView = Boolean(prefill);
 
   const queryClient = useQueryClient();
   const toggleBouncer = useToggleBouncerMode();
+  const { data: allCollections } = useCollections();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -153,6 +162,9 @@ export default function AddWikiModal({
           setPublished(Boolean(prefill.published));
           setPublishedSlug(prefill.publishedSlug ?? null);
           setPublishError(null);
+          setLocalCollections(prefill.collections ?? []);
+          setCollectionPendingId(null);
+          setCollectionError(null);
           setFieldsEditable(false);
         } else {
           setName("");
@@ -167,6 +179,9 @@ export default function AddWikiModal({
           setPublished(false);
           setPublishedSlug(null);
           setPublishError(null);
+          setLocalCollections([]);
+          setCollectionPendingId(null);
+          setCollectionError(null);
           setFieldsEditable(true);
         }
       }
@@ -199,6 +214,80 @@ export default function AddWikiModal({
   }, [wikiType]);
 
   const locked = isSettingsView && !fieldsEditable;
+
+  const handleAddToCollection = async (groupId: string) => {
+    if (!groupId || collectionPendingId) return;
+    if (localCollections.some((c) => c.id === groupId)) return;
+    const added = (allCollections ?? []).find((c) => c.id === groupId);
+    if (!added) return;
+    const entry = { id: added.id, name: added.name, slug: added.slug, color: added.color };
+
+    // Create mode (or prototype sentinel) — stage locally; POST happens after
+    // the wiki itself is created in handleConfirm.
+    const isSentinel = !wikiId || wikiId === "preview";
+    if (isSentinel) {
+      setCollectionError(null);
+      setLocalCollections((prev) => [...prev, entry]);
+      return;
+    }
+
+    setCollectionPendingId(groupId);
+    setCollectionError(null);
+    try {
+      const res = await fetch(`/api/groups/${groupId}/wikis`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wikiId }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        setCollectionError(body || `Failed to add to collection (${res.status})`);
+        return;
+      }
+      setLocalCollections((prev) => [...prev, entry]);
+      await queryClient.invalidateQueries({ queryKey: ["wikis"] });
+      await queryClient.invalidateQueries({ queryKey: ["wiki", wikiId] });
+      await queryClient.invalidateQueries({ queryKey: ["collections"] });
+    } catch {
+      setCollectionError("Network error. Check your connection and retry.");
+    } finally {
+      setCollectionPendingId(null);
+    }
+  };
+
+  const handleRemoveFromCollection = async (groupId: string) => {
+    if (collectionPendingId) return;
+
+    const isSentinel = !wikiId || wikiId === "preview";
+    if (isSentinel) {
+      setCollectionError(null);
+      setLocalCollections((prev) => prev.filter((c) => c.id !== groupId));
+      return;
+    }
+
+    setCollectionPendingId(groupId);
+    setCollectionError(null);
+    try {
+      const res = await fetch(`/api/groups/${groupId}/wikis/${wikiId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok && res.status !== 204) {
+        const body = await res.text().catch(() => "");
+        setCollectionError(body || `Failed to remove from collection (${res.status})`);
+        return;
+      }
+      setLocalCollections((prev) => prev.filter((c) => c.id !== groupId));
+      await queryClient.invalidateQueries({ queryKey: ["wikis"] });
+      await queryClient.invalidateQueries({ queryKey: ["wiki", wikiId] });
+      await queryClient.invalidateQueries({ queryKey: ["collections"] });
+    } catch {
+      setCollectionError("Network error. Check your connection and retry.");
+    } finally {
+      setCollectionPendingId(null);
+    }
+  };
 
   const handleConfirm = async () => {
     if (locked) {
@@ -326,9 +415,47 @@ export default function AddWikiModal({
         setSubmitError(message);
         return;
       }
+
+      // Apply staged collection memberships against the new wiki id. Best-effort
+      // and parallel: a partial failure does not roll back the wiki create — the
+      // user can re-add from settings.
+      let createdWikiId: string | undefined;
+      try {
+        const created = (await res.clone().json()) as { lookupKey?: string };
+        createdWikiId = created.lookupKey;
+      } catch {
+        /* response wasn't JSON — proceed without applying collections */
+      }
+      let collectionFailures: string[] = [];
+      if (createdWikiId && localCollections.length > 0) {
+        const results = await Promise.all(
+          localCollections.map(async (c) => {
+            try {
+              const r = await fetch(`/api/groups/${c.id}/wikis`, {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ wikiId: createdWikiId }),
+              });
+              return r.ok ? null : c.name;
+            } catch {
+              return c.name;
+            }
+          }),
+        );
+        collectionFailures = results.filter((x): x is string => x !== null);
+        if (localCollections.length > collectionFailures.length) {
+          await queryClient.invalidateQueries({ queryKey: ["collections"] });
+        }
+      }
+
       await queryClient.invalidateQueries({ queryKey: ["wikis"] });
       onClose();
-      setToastMessage("Wiki created");
+      setToastMessage(
+        collectionFailures.length > 0
+          ? `Wiki created. Failed to file in ${collectionFailures.length} collection${collectionFailures.length === 1 ? "" : "s"}.`
+          : "Wiki created",
+      );
       setShowSavedToast(true);
       if (saveCloseTimerRef.current) {
         clearTimeout(saveCloseTimerRef.current);
@@ -452,6 +579,100 @@ export default function AddWikiModal({
               disabled={locked}
               className="min-h-[96px] resize-none"
             />
+          </div>
+
+          {/* Collections — visible in both create and settings mode. In create
+              mode, selections are staged locally and applied after POST /wikis
+              succeeds (see handleConfirm). In settings mode, add/remove fire
+              direct API calls immediately. */}
+          <div className="px-5 pt-4 flex flex-col gap-2">
+            <FieldLabel>Collections</FieldLabel>
+            {localCollections.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {localCollections.map((c) => {
+                  const removing = collectionPendingId === c.id;
+                  return (
+                    <span
+                      key={c.id}
+                      className="inline-flex items-center gap-1.5 px-2 py-1 text-[12px] border rounded-none"
+                      style={{
+                        borderColor: "var(--wiki-card-border)",
+                        opacity: removing ? 0.5 : 1,
+                      }}
+                    >
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{ backgroundColor: c.color || "var(--wiki-count)" }}
+                        aria-hidden
+                      />
+                      <span style={{ color: "var(--wiki-article-text)" }}>{c.name}</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove from ${c.name}`}
+                        onClick={() => handleRemoveFromCollection(c.id)}
+                        disabled={removing || collectionPendingId !== null}
+                        className="ml-1 inline-flex items-center justify-center w-4 h-4 text-[14px] leading-none disabled:opacity-30 disabled:cursor-not-allowed"
+                        style={{ color: "var(--wiki-count)" }}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <span className="text-[11px] leading-4" style={{ color: "#676d76" }}>
+                Not in any collection.
+              </span>
+            )}
+            {(() => {
+              const available = (allCollections ?? []).filter(
+                (c) => !localCollections.some((lc) => lc.id === c.id),
+              );
+              if (available.length === 0) {
+                return (
+                  <span className="text-[11px] leading-4" style={{ color: "#676d76" }}>
+                    {(allCollections ?? []).length === 0
+                      ? "No collections yet — create one from + Add → Collection."
+                      : "Already in every collection."}
+                  </span>
+                );
+              }
+              return (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (id) {
+                      void handleAddToCollection(id);
+                      e.target.value = "";
+                    }
+                  }}
+                  disabled={collectionPendingId !== null}
+                  className="border rounded-none px-2 py-1.5 text-[12px] bg-white"
+                  style={{
+                    borderColor: "var(--wiki-card-border)",
+                    color: "var(--wiki-article-text)",
+                  }}
+                >
+                  <option value="">Add to collection…</option>
+                  {available.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              );
+            })()}
+            {collectionError ? (
+              <span
+                role="alert"
+                className="text-[11px] leading-4"
+                style={{ color: "#c0392b" }}
+              >
+                {collectionError}
+              </span>
+            ) : null}
           </div>
 
           {/* Wiki Structure (#240) — inline textarea matching the

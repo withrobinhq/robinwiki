@@ -302,6 +302,7 @@ export default function WikiDetailPage() {
       bouncerMode={wiki.bouncerMode as 'auto' | 'review' | undefined}
       published={wiki.published === true}
       publishedSlug={wiki.publishedSlug ?? null}
+      collections={wiki.collections ?? []}
       infobox={{ kind: "simple", typeLabel, lastUpdated: wiki.updatedAt, showSettings: true }}
       renderCustomInfobox={
         sidecarInfobox

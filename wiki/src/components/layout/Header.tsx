@@ -9,6 +9,7 @@ import { useLogout } from "@/hooks/useLogout";
 import AddWikiModal from "@/components/layout/AddWikiModal";
 import AddEntryModal from "@/components/layout/AddEntryModal";
 import AddPersonModal from "@/components/layout/AddPersonModal";
+import AddCollectionModal from "@/components/layout/AddCollectionModal";
 import WikiHeaderSearch from "@/components/layout/WikiHeaderSearch";
 
 interface HeaderProps {
@@ -21,6 +22,7 @@ export default function Header({ onMenuToggle }: HeaderProps) {
   const [addWikiOpen, setAddWikiOpen] = useState(false);
   const [addEntryOpen, setAddEntryOpen] = useState(false);
   const [addPersonOpen, setAddPersonOpen] = useState(false);
+  const [addCollectionOpen, setAddCollectionOpen] = useState(false);
   const { session } = useSession();
   const router = useRouter();
   const pathname = usePathname();
@@ -234,6 +236,32 @@ export default function Header({ onMenuToggle }: HeaderProps) {
                 >
                   Person
                 </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    setAddCollectionOpen(true);
+                  }}
+                  className="flex w-full cursor-pointer items-center"
+                  style={{
+                    gap: 10,
+                    padding: "8px 14px",
+                    background: "none",
+                    border: "none",
+                    ...T.caption,
+                    color: "var(--heading-color)",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.backgroundColor = "var(--card-border)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.backgroundColor = "transparent")
+                  }
+                >
+                  Collection
+                </button>
               </div>
             </>
           )}
@@ -385,6 +413,7 @@ export default function Header({ onMenuToggle }: HeaderProps) {
       <AddWikiModal open={addWikiOpen} onClose={() => setAddWikiOpen(false)} />
       <AddEntryModal open={addEntryOpen} onClose={() => setAddEntryOpen(false)} />
       <AddPersonModal open={addPersonOpen} onClose={() => setAddPersonOpen(false)} />
+      <AddCollectionModal open={addCollectionOpen} onClose={() => setAddCollectionOpen(false)} />
     </header>
   );
 }

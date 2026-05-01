@@ -256,6 +256,10 @@ export const wikis = pgTable(
     regenerate: boolean('regenerate').notNull().default(true),
     bouncerMode: text('bouncer_mode').notNull().default('auto'), // 'auto' | 'review'
     embedding: vector('embedding', { dimensions: 1536 }),
+    // Embedding retry bookkeeping — same shape as fragments. The retry
+    // worker scans rows where embedding IS NULL and self-heals.
+    embeddingAttemptCount: integer('embedding_attempt_count').notNull().default(0),
+    embeddingLastAttemptAt: timestamp('embedding_last_attempt_at'),
     searchVector: tsvector('search_vector'),
     progress: jsonb('progress').$type<{
       milestones: { label: string; completed: boolean }[]
@@ -310,6 +314,9 @@ export const people = pgTable(
     isOwner: boolean('is_owner').notNull().default(false),
     lastRebuiltAt: timestamp('last_rebuilt_at'),
     embedding: vector('embedding', { dimensions: 1536 }),
+    // Embedding retry bookkeeping — same shape as fragments and wikis.
+    embeddingAttemptCount: integer('embedding_attempt_count').notNull().default(0),
+    embeddingLastAttemptAt: timestamp('embedding_last_attempt_at'),
     searchVector: tsvector('search_vector'),
   },
   (t) => [

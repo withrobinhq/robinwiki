@@ -24,6 +24,13 @@ export const updateProgressResponseSchema = z.object({
 
 // ── Response schemas ────────────────────────────────────────────────────────
 
+export const wikiCollectionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  color: z.string(),
+})
+
 export const wikiResponseSchema = z.object({
   id: lookupKeySchema,
   lookupKey: lookupKeySchema,
@@ -44,6 +51,7 @@ export const wikiResponseSchema = z.object({
   bouncerMode: z.enum(['auto', 'review']).default('auto'),
   published: z.boolean().default(false),
   publishedSlug: z.string().nullable().default(null),
+  collections: z.array(wikiCollectionSchema).default([]),
 })
 
 export const wikiWithContentResponseSchema = wikiResponseSchema.extend({
