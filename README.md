@@ -2,7 +2,7 @@
 
 Robin is an AI-powered second brain that captures raw thoughts through conversation (MCP or web UI) and automatically structures them into a searchable knowledge base. Behind the scenes, a 6-stage AI pipeline extracts atomic ideas (fragments), classifies them into topic clusters (wikis), resolves people mentions, and stores everything in Postgres with vector embeddings for hybrid search.
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/1hBtzC?referralCode=55-uGO&utm_medium=integration&utm_source=template&utm_campaign=generic)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/1hBtzC?referralCode=55-uGO&utm_medium=integration&utm_source=template&utm_campaign=github)
 
 ## Architecture
 
@@ -166,7 +166,7 @@ pnpm --filter @robin/wiki openapi:generate
 
 ## Deployment
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/1hBtzC?referralCode=55-uGO&utm_medium=integration&utm_source=template&utm_campaign=generic)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/1hBtzC?referralCode=55-uGO&utm_medium=integration&utm_source=template&utm_campaign=github)
 
 Robin is deployed on [Railway](https://railway.app). Staging is available at `*.tensorkit.net`.
 
