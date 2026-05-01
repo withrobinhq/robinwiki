@@ -4,10 +4,9 @@
 
 Verify that Railway deploy of `withrobinhq/robinwiki` is unblocked by:
 
-1. Existence of all railpack configs referenced from `railway.template.json`
-2. Correct GitHub repo URL (`withrobinhq/robinwiki`, not the broken `withrobinhq/robin`)
-3. Structural shape of railpack configs matches what Railway expects (provider, node major, deploy startCommand)
-4. Pinned package manager + node engine in `package.json` still match what railpack hard-codes
+1. Existence of `railpack.core.json` + `railpack.wiki.json` (the per-service build configs Railway pulls from the repo)
+2. Structural shape of railpack configs matches what Railway expects (provider, node major, deploy startCommand)
+3. Pinned package manager + node engine in `package.json` still match what railpack hard-codes
 
 ## Pre-conditions
 
@@ -16,6 +15,7 @@ Verify that Railway deploy of `withrobinhq/robinwiki` is unblocked by:
 
 ## Notes (pragmatism)
 
+- `railway.template.json` is no longer in the repo — the template has been **published directly on Railway** (operators use the `Deploy on Railway` README button, which links to the published template registry). The per-service railpack configs still need to live in the repo because Railway clones the repo and uses them as the build manifest. If the published template is ever migrated back to file-based, this plan should be amended to re-assert template shape in §0.
 - We do NOT assert on the EXACT runtime image tag (`mise-2026.3.17`) or the EXACT shim paths (`/mise/shims/node`) beyond the binary suffix — those upstream values may evolve.
   - If Railway upstream changes the runtime base image, the §3 schema URL or §5 startCommand binary check may need tightening or loosening — update those assertions.
 - Caslock is loaded at runtime by `core/src/db/locks.ts` — its `node_modules` MUST be in the deploy include list for core, otherwise the runtime crashes on import. This is the one drift from builder-25/robinwiki's working config.
@@ -32,12 +32,12 @@ pass() { PASS=$((PASS+1)); echo "P: $1"; }
 fail() { FAIL=$((FAIL+1)); echo "F: $1"; }
 
 # §1 — Files exist at repo root
-for f in railway.template.json railpack.core.json railpack.wiki.json; do
+for f in railpack.core.json railpack.wiki.json; do
   if [ -f "$f" ]; then pass "$f exists"; else fail "$f missing"; fi
 done
 
 # §2 — Each is valid JSON
-for f in railway.template.json railpack.core.json railpack.wiki.json; do
+for f in railpack.core.json railpack.wiki.json; do
   if [ -f "$f" ] && jq . "$f" >/dev/null 2>&1; then
     pass "$f is valid JSON"
   else
@@ -57,56 +57,7 @@ for f in railpack.core.json railpack.wiki.json; do
   fi
 done
 
-if [ -f railway.template.json ]; then
-  rwschema=$(jq -r '."$schema" // empty' railway.template.json)
-  if echo "$rwschema" | grep -Eq 'railway\.com/schema'; then
-    pass "railway.template.json schema URL is railway schema ($rwschema)"
-  else
-    fail "railway.template.json schema URL is not railway schema (got: $rwschema)"
-  fi
-fi
-
-# §4 — railway.template.json structural shape
-if [ -f railway.template.json ]; then
-  svc_count=$(jq -r '.services | length' railway.template.json)
-  if [ "$svc_count" = "4" ]; then
-    pass "railway.template.json has 4 services"
-  else
-    fail "railway.template.json has $svc_count services (expected 4)"
-  fi
-
-  for name in postgres redis core wiki; do
-    if jq -e --arg n "$name" '.services[] | select(.name == $n)' railway.template.json >/dev/null 2>&1; then
-      pass "railway.template.json has service '$name'"
-    else
-      fail "railway.template.json missing service '$name'"
-    fi
-  done
-
-  # repo URL must be withrobinhq/robinwiki for core + wiki
-  for name in core wiki; do
-    repo=$(jq -r --arg n "$name" '.services[] | select(.name == $n) | .source.repo // empty' railway.template.json)
-    if [ "$repo" = "withrobinhq/robinwiki" ]; then
-      pass "service '$name' source.repo == withrobinhq/robinwiki"
-    else
-      fail "service '$name' source.repo is '$repo' (expected withrobinhq/robinwiki)"
-    fi
-  done
-
-  # railpack config paths
-  core_cfg=$(jq -r '.services[] | select(.name == "core") | .build.railpackConfigPath // empty' railway.template.json)
-  wiki_cfg=$(jq -r '.services[] | select(.name == "wiki") | .build.railpackConfigPath // empty' railway.template.json)
-  if [ "$core_cfg" = "railpack.core.json" ]; then
-    pass "service 'core' build.railpackConfigPath == railpack.core.json"
-  else
-    fail "service 'core' build.railpackConfigPath is '$core_cfg'"
-  fi
-  if [ "$wiki_cfg" = "railpack.wiki.json" ]; then
-    pass "service 'wiki' build.railpackConfigPath == railpack.wiki.json"
-  else
-    fail "service 'wiki' build.railpackConfigPath is '$wiki_cfg'"
-  fi
-fi
+# §4 — (removed) railway.template.json shape — template now published on Railway directly
 
 # §5 — railpack config structural shape
 if [ -f railpack.core.json ]; then
