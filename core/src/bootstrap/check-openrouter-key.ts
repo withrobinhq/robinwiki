@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm'
 import { NoOpenRouterKeyError, probeEmbeddingReachable } from '@robin/agent'
 import { db } from '../db/client.js'
-import { configs } from '../db/schema.js'
+import { configs, users } from '../db/schema.js'
+import { setConfig } from '../lib/config.js'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
 import { logger } from '../lib/logger.js'
 
@@ -9,8 +10,9 @@ const log = logger.child({ component: 'bootstrap' })
 
 /**
  * Boot-time check for the OpenRouter API key. Does not throw — the server
- * can still serve non-ingest traffic without it. Logs an actionable warning
- * when the key is missing so the operator knows to run the seed script.
+ * can still serve non-ingest traffic without it. When the key is missing
+ * but `OPENROUTER_API_KEY` is set in the env and a user exists, auto-seeds
+ * the configs row so a fresh Railway deploy doesn't need a manual seed step.
  */
 export async function checkOpenRouterKey(): Promise<void> {
   const rows = await db
@@ -20,11 +22,41 @@ export async function checkOpenRouterKey(): Promise<void> {
     .limit(1)
 
   if (rows.length === 0) {
-    log.warn(
-      'No OpenRouter API key found in configs. ' +
-        'Ingest jobs will fail with "no_openrouter_key" until seeded. ' +
-        'Run: OPENROUTER_API_KEY=sk-or-v1-... pnpm seed-openrouter-key'
-    )
+    const apiKey = process.env.OPENROUTER_API_KEY
+    if (!apiKey) {
+      log.warn(
+        'No OpenRouter API key found in configs and OPENROUTER_API_KEY env var unset — ingest jobs will fail until seeded.'
+      )
+      return
+    }
+
+    const [firstUser] = await db.select({ id: users.id }).from(users).limit(1)
+    if (!firstUser) {
+      log.warn(
+        'OPENROUTER_API_KEY is set but no users exist yet — skipping auto-seed; will retry on next boot after first user is provisioned.'
+      )
+      return
+    }
+
+    try {
+      await setConfig({
+        scope: 'user',
+        userId: firstUser.id,
+        kind: 'llm_key',
+        key: 'openrouter',
+        value: apiKey,
+        encrypted: true,
+      })
+      log.info(
+        { userId: firstUser.id },
+        'openrouter key auto-seeded from OPENROUTER_API_KEY env var'
+      )
+    } catch (err) {
+      log.error(
+        { err },
+        'auto-seed of openrouter key failed — ingest jobs will fail until manually seeded'
+      )
+    }
     return
   }
 
