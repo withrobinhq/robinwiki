@@ -210,9 +210,7 @@ All variables live in `core/.env`. See `core/.env.example` for the canonical tem
 Robin is single-user. Your password is set from `INITIAL_PASSWORD` on first boot — the env validator requires it to be at least 6 characters. Two ways to change it later:
 
 - **Logged in:** open `/profile` → **Change password**. Uses better-auth's standard flow; you'll need your current password.
-- **Locked out:** open `/recover` (public page). Paste the value of `BETTER_AUTH_SECRET` from your server env. The endpoint resets the account password to whatever `INITIAL_PASSWORD` is currently set to on the server — so to choose a new password this way: update `INITIAL_PASSWORD` on Railway, redeploy, then hit `/recover`. Rate-limited to 5 attempts per minute.
-
-There's no email-based reset. Robin assumes the operator owns the env vars; that's the recovery surface.
+- **Locked out:** open `/recover` (public page). Paste the value of `BETTER_AUTH_SECRET` from your server env. The endpoint resets the account password to whatever `INITIAL_PASSWORD` is currently set to on the server — so to choose a new password this way: update `INITIAL_PASSWORD` on Railway, redeploy, then hit `/recover`.
 
 ## MCP Tools
 
