@@ -299,4 +299,4 @@ The workspace packages (`@robin/agent`, `@robin/queue`, `@robin/shared`, `@robin
 
 ## License
 
-Private. All rights reserved.
+[MIT](LICENSE) © 2026 withrobinhq
