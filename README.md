@@ -2,8 +2,6 @@
 
 Robin is an AI-powered second brain that captures raw thoughts through conversation (MCP or web UI) and automatically structures them into a searchable knowledge base. Behind the scenes, a 6-stage AI pipeline extracts atomic ideas (fragments), classifies them into topic clusters (wikis), resolves people mentions, and stores everything in Postgres with vector embeddings for hybrid search.
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/1hBtzC?referralCode=55-uGO&utm_medium=integration&utm_source=template&utm_campaign=github)
-
 ## Architecture
 
 Monorepo managed by pnpm workspaces + Turborepo.
@@ -164,15 +162,33 @@ Generate the TypeScript client for the wiki frontend:
 pnpm --filter @robin/wiki openapi:generate
 ```
 
-## Deployment
+## Deploy
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/1hBtzC?referralCode=55-uGO&utm_medium=integration&utm_source=template&utm_campaign=github)
+### Path A: Quick deploy (recommended for trying it out)
 
-Robin is deployed on [Railway](https://railway.app). Staging is available at `*.tensorkit.net`.
+[Deploy on Railway →](https://railway.com/deploy/1hBtzC?referralCode=55-uGO&utm_medium=integration&utm_source=template&utm_campaign=github)
 
-The production topology runs four services: `core` (Hono API + workers), `wiki` (Next.js frontend), `postgres` (with pgvector), and `redis` (BullMQ). Wiki proxies all `/api/*` requests to core over Railway's private network.
+Connects directly to this repo. Auto-updates whenever we push to `main`.
+**You can't customize the code, and your instance redeploys when we update upstream — including breaking changes.**
+Best for trying Robin out or running a hosted demo.
 
-For full deployment instructions, environment variable reference, and troubleshooting, see [`docs/DEPLOY.md`](docs/DEPLOY.md).
+### Path B: Fork & deploy (recommended for personal use)
+
+1. [Fork this repo →](https://github.com/withrobinhq/robinwiki/fork)
+2. Click "Deploy on Railway" from your fork's README
+
+Connects to your fork. **You decide when to pull upstream updates, and you can edit the code.**
+Best if you want stability or want to customize prompts, models, UI, etc.
+Trade-off: you have to occasionally `git pull upstream main` to get new features.
+
+#### Keeping your fork in sync
+
+```bash
+git remote add upstream https://github.com/withrobinhq/robinwiki.git
+git fetch upstream
+git merge upstream/main
+git push
+```
 
 ## Contributing
 
@@ -188,23 +204,6 @@ The workspace packages (`@robin/agent`, `@robin/queue`, `@robin/shared`, `@robin
 ### Branch workflow
 
 Work on feature branches. Create a GitHub issue before starting work, then open a PR that references the issue.
-
-## Milestones
-
-| # | Milestone | Status |
-|---|-----------|--------|
-| M1 | Foundation — repo scaffold, schema, single-user auth | Done |
-| M2 | Ingest Pipeline — 6-stage pipeline with inline-async | Done |
-| M3 | Wiki Composition — 10 wiki types with quality gates | Done |
-| M4 | Search — hybrid two-layer retrieval with RRF fusion | Done |
-| M5 | MCP Server — 15 tools for AI client integration | Done |
-| M6 | API Routes — REST API with wiki governance | Done |
-| M7 | Frontend Integration — Wikipedia-style web UI | Done |
-| M8 | Deploy & Ship — one-click deployment | Open |
-| M9 | Audit Log — append-only event store with timeline views | Done |
-| M10 | Interconnectivity & Trust Gates — wiki linking, source quality | Done |
-
-Track progress: [GitHub Issues](https://github.com/withrobinhq/robin/issues)
 
 ## License
 
