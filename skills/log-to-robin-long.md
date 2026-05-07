@@ -19,9 +19,9 @@ What that means in practice:
 
 - A 10,000-word document MUST NOT be sent as a single `log_entry` call. The fragmenter is sized for atomic ideas; handing it 10,000 words wastes compute, produces sloppy fragments, and pushes the cost line.
 - This skill's job is to convert "one big document" into "N atomic `log_entry` calls", one per compelling fragment the user approves.
-- Each call carries one self-contained idea, quote, observation, decision, or claim — small enough that Robin's downstream fragmenter sees a single unit and produces a single fragment from it.
+- Each call carries one self-contained idea, quote, observation, decision, or claim. Small enough that Robin's downstream fragmenter sees a single unit and produces a single fragment from it.
 
-The cap to keep in mind: roughly **~2,000 words per `log_entry` call**, and ideally far less. If an approved fragment is longer than that, split it further along the natural seam — paragraph break, topic shift, speaker change.
+The cap to keep in mind: roughly **~2,000 words per `log_entry` call**, and ideally far less. If an approved fragment is longer than that, split it further along the natural seam: paragraph break, topic shift, speaker change.
 
 ## When this skill activates
 
@@ -118,13 +118,13 @@ Don't ask about every fragment if most have obvious attribution. Only flag the a
 - Multiple speakers at entry level: "Phyl Georgiou, Karen Kimami" — Robin handles per-fragment attribution downstream.
 - User relaying someone else: attribute to the original source, not the user.
 
-## Step 6: Structure and log — one atomic call per approved fragment
+## Step 6: Structure and log: one atomic call per approved fragment
 
 This is where the pre-chunking contract lands.
 
 **Default: one `log_entry` call per approved fragment.**
 
-For each fragment the user approved in Step 4 (with attribution resolved in Step 5), make a separate `Robin:log_entry` call. Each call is one self-contained idea Robin can fragment cleanly. Do NOT bundle ten fragments into one call to "save round-trips" — that defeats the whole point of mining.
+For each fragment the user approved in Step 4 (with attribution resolved in Step 5), make a separate `Robin:log_entry` call. Each call is one self-contained idea Robin can fragment cleanly. Do NOT bundle ten fragments into one call to "save round-trips"; that defeats the whole point of mining.
 
 Per-call content format:
 
@@ -137,7 +137,7 @@ Per-call content format:
 {the fragment, preserved in its original form}
 ```
 
-If a single approved fragment is itself longer than ~2,000 words (rare — usually means Step 3 didn't narrow enough), split it along the natural seam (paragraph, topic shift, speaker change) and make multiple calls, each with the same context tag so Robin can reconnect them.
+If a single approved fragment is itself longer than ~2,000 words (rare; usually means Step 3 didn't narrow enough), split it along the natural seam (paragraph, topic shift, speaker change) and make multiple calls, each with the same context tag so Robin can reconnect them.
 
 **Alternative: log fragment by fragment to specific wikis.**
 If during curation the user said "that one goes in my monitoring differentiation wiki, that one goes in the Gatsby wiki", use `Robin:log_fragment` with the appropriate `threadSlug` for those, and `Robin:log_entry` for any fragment that needs Robin to route. Same one-call-per-fragment rule applies.
@@ -147,7 +147,7 @@ If during curation the user said "that one goes in my monitoring differentiation
 **Rules for each call's content body:**
 - **Preserve raw language.** Do not polish, summarise, or rephrase. Log exactly what the document says.
 - **Convert double quotes to single quotes when transcribing.** Robin's downstream wiki-writing pipeline has a known issue where literal double-quote characters (`"`) in source content can cause truncated wiki output mid-sentence. Whenever you would write a quoted phrase, name, or direct quotation, use single quotes (`'…'`) instead. Apply this as you transcribe — preserve the wording inside the quotes verbatim, only swap the punctuation. Example: source says *Tom said "we should ship by Friday"* → log as *Tom said 'we should ship by Friday'*.
-- **Include conversational context** in each call's `[Context:]` tag. Each fragment should carry enough context to be meaningful on its own. Don't just log 'the bottleneck is belief systems' — wrap it: 'In a discussion of why AI-powered communications tools underperform, the author argues that the bottleneck isn't model quality but that organisations don't know what they believe.'
+- **Include conversational context** in each call's `[Context:]` tag. Each fragment should carry enough context to be meaningful on its own. Don't just log 'the bottleneck is belief systems'; wrap it: 'In a discussion of why AI-powered communications tools underperform, the author argues that the bottleneck isn't model quality but that organisations don't know what they believe.'
 - **Content in languages other than English** — log as-is. Robin handles multilingual content. Do not translate.
 
 ## Step 7: Confirm what was logged
@@ -187,7 +187,7 @@ If a user shares a URL and says "log this" and the fetched content exceeds ~2,00
 
 ## Edge cases
 
-**Document is long but has one clear through-line.** If a 3,000-word article makes one argument and the whole thing is worth keeping, don't force the mining workflow. Ask: "This is a longer piece but it's focused on one core idea. Want me to log the whole thing as a single entry, or extract the key points?" If the user picks "whole thing", split the article along its own paragraph/section breaks into ~2,000-word atomic calls — never one giant call.
+**Document is long but has one clear through-line.** If a 3,000-word article makes one argument and the whole thing is worth keeping, don't force the mining workflow. Ask: "This is a longer piece but it's focused on one core idea. Want me to log the whole thing as a single entry, or extract the key points?" If the user picks "whole thing", split the article along its own paragraph/section breaks into ~2,000-word atomic calls; never one giant call.
 
 **User says "log this" but there's nothing compelling in the document.** Be honest: "I've read through this and I'm not finding much that's new relative to what Robin already holds. Want me to look again with different criteria, or skip this one?"
 

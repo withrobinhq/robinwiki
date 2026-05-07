@@ -559,7 +559,7 @@ Robin exposes 16 MCP tools, grouped here by purpose. Default to the **Capture** 
 | `Robin:get_fragment` | Reads a specific fragment | To examine or discuss a particular piece of knowledge |
 | `Robin:find_person` | Looks up a person by name, alias, or key | When discussing people and relationships, or checking if someone is already tracked |
 | `Robin:brief_person` | Returns the full structured summary of a tracked person | Once a person is identified, to pull what Robin knows about them — their role, how the user knows them, what they care about |
-| `Robin:list_skills` | Lists the skills available in the Robin knowledge base (skills stored as wiki rows under the `skill` wiki type) | To enumerate which skill wikis exist for the user — useful when picking a skill to read or extend. The metadata only — fetch full body via `get_wiki`. |
+| `Robin:list_skills` | Lists the skills available in the Robin knowledge base (skills stored as wiki rows under the `skill` wiki type) | To enumerate which skill wikis exist for the user; useful when picking a skill to read or extend. Metadata only; fetch full body via `get_wiki`. |
 
 ### Manage wikis
 
@@ -596,7 +596,7 @@ These skills work together to support Robin's knowledge system. Each one leans o
 |---|---|---|
 | **Robin Knowledge System Guide** (this skill) | Onboarding + reference layer | New user setup, or when other skills need architectural context |
 | **Log to Robin (Short)** | Capture short-form content — chat insights, meeting notes, articles under ~2,000 words with clear attribution | User says "log this to Robin" and content is short with clear speakers |
-| **Log to Robin (Long)** | Mine long documents and attribution-unclear content for the best fragments. Pre-chunks long input into atomic `log_entry` calls before sending — the server stays naive on entry size by design. | Content over ~2,000 words, or attribution is unclear regardless of length |
+| **Log to Robin (Long)** | Mine long documents and attribution-unclear content for the best fragments. Pre-chunks long input into atomic `log_entry` calls before sending; the server stays naive on entry size by design. | Content over ~2,000 words, or attribution is unclear regardless of length |
 
 ---
 
@@ -660,7 +660,7 @@ If the user is unsure: "Could this be a chapter in any of your existing wikis?" 
 
 Don't dump the whole thing into a single entry. Long documents (>~2,000 words) and messy multi-source content (transcripts with unclear speakers, decks covering many topics) work much better when *mined* first.
 
-Use the **`log-to-robin-long`** skill — it reads the document, surfaces the most compelling fragments (novel claims, well-articulated ideas, things that complicate or reinforce what Robin already knows), and asks the user which to keep before logging. The result is a curated set of fragments rather than 10,000 words of raw text for Robin to process. The skill also pre-chunks the approved fragments into one atomic `log_entry` call each — the server is deliberately naive on entry size, so chunking happens client-side in the skill.
+Use the **`log-to-robin-long`** skill — it reads the document, surfaces the most compelling fragments (novel claims, well-articulated ideas, things that complicate or reinforce what Robin already knows), and asks the user which to keep before logging. The result is a curated set of fragments rather than 10,000 words of raw text for Robin to process. The skill also pre-chunks the approved fragments into one atomic `log_entry` call each; the server is deliberately naive on entry size, so chunking happens client-side in the skill.
 
 This matters because Robin's pipeline is sized for atomic ideas, not full documents. Logging a raw 50-page deck means Robin spends compute fragmenting things the user wouldn't have kept anyway, and the wiki bodies that get synthesized include noise. Mining-first means quality fragments land cleanly and the wikis stay sharp.
 
