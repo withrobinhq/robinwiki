@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { validEnvStub } from '../../__tests__/helpers/validEnvStub.js'
 
 /**
  * SEC-H2 boot gate. assertProdEnv() must:
@@ -40,21 +41,7 @@ describe('assertProdEnv — SEC-H2 cookie gate', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await expect(
-      loadAssert({
-        NODE_ENV: 'production',
-        DATABASE_URL: 'postgres://localhost/robin',
-        REDIS_URL: 'redis://localhost:6379',
-        BETTER_AUTH_SECRET: 'a'.repeat(40),
-        RECOVERY_SECRET: 'b'.repeat(40),
-        MASTER_KEY: 'a'.repeat(64),
-        KEY_ENCRYPTION_SECRET: 'c'.repeat(40),
-        JOB_SIGNING_SECRET: 'd'.repeat(40),
-        INITIAL_USERNAME: 'admin@example.com',
-        INITIAL_PASSWORD: 'password123',
-        OPENROUTER_API_KEY: 'sk-test',
-        SERVER_PUBLIC_URL: 'http://api.example.com',
-        WIKI_ORIGIN: 'https://wiki.example.com',
-      }),
+      loadAssert(validEnvStub({ SERVER_PUBLIC_URL: 'http://api.example.com' })),
     ).rejects.toThrow('process.exit called')
 
     const calls = errorSpy.mock.calls.map((args) => args.join(' '))
@@ -69,23 +56,7 @@ describe('assertProdEnv — SEC-H2 cookie gate', () => {
       throw new Error('process.exit called')
     }) as never)
 
-    await expect(
-      loadAssert({
-        NODE_ENV: 'production',
-        DATABASE_URL: 'postgres://localhost/robin',
-        REDIS_URL: 'redis://localhost:6379',
-        BETTER_AUTH_SECRET: 'a'.repeat(40),
-        RECOVERY_SECRET: 'b'.repeat(40),
-        MASTER_KEY: 'a'.repeat(64),
-        KEY_ENCRYPTION_SECRET: 'c'.repeat(40),
-        JOB_SIGNING_SECRET: 'd'.repeat(40),
-        INITIAL_USERNAME: 'admin@example.com',
-        INITIAL_PASSWORD: 'password123',
-        OPENROUTER_API_KEY: 'sk-test',
-        SERVER_PUBLIC_URL: 'https://api.example.com',
-        WIKI_ORIGIN: 'https://wiki.example.com',
-      }),
-    ).resolves.toBeTruthy()
+    await expect(loadAssert(validEnvStub())).resolves.toBeTruthy()
 
     expect(exitSpy).not.toHaveBeenCalled()
     exitSpy.mockRestore()
@@ -97,19 +68,18 @@ describe('assertProdEnv — SEC-H2 cookie gate', () => {
     }) as never)
 
     await expect(
-      loadAssert({
-        NODE_ENV: 'development',
-        DATABASE_URL: 'postgres://localhost/robin',
-        REDIS_URL: 'redis://localhost:6379',
-        BETTER_AUTH_SECRET: 'a'.repeat(40),
-        MASTER_KEY: 'a'.repeat(64),
-        KEY_ENCRYPTION_SECRET: 'c'.repeat(40),
-        INITIAL_USERNAME: 'admin@example.com',
-        INITIAL_PASSWORD: 'password123',
-        OPENROUTER_API_KEY: 'sk-test',
-        SERVER_PUBLIC_URL: 'http://localhost:3000',
-        WIKI_ORIGIN: 'http://localhost:8080',
-      }),
+      loadAssert(
+        validEnvStub({
+          NODE_ENV: 'development',
+          SERVER_PUBLIC_URL: 'http://localhost:3000',
+          WIKI_ORIGIN: 'http://localhost:8080',
+          // assertProdEnv is a no-op outside production; RECOVERY_SECRET and
+          // JOB_SIGNING_SECRET are optional in the Zod schema, so drop them
+          // here to mirror the original dev-mode env shape.
+          RECOVERY_SECRET: undefined,
+          JOB_SIGNING_SECRET: undefined,
+        }),
+      ),
     ).resolves.toBeTruthy()
 
     expect(exitSpy).not.toHaveBeenCalled()
