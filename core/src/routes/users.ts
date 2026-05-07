@@ -1,10 +1,13 @@
 import { Hono } from 'hono'
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import { zValidator } from '@hono/zod-validator'
+import { createHash } from 'node:crypto'
+import { verifyPassword } from 'better-auth/crypto'
 import { sessionMiddleware } from '../middleware/session.js'
 import { db } from '../db/client.js'
 import {
   users,
+  accounts,
   apiKeys,
   fragments,
   wikis,
@@ -17,12 +20,15 @@ import { decryptPrivateKey } from '../keypair.js'
 import { signMcpToken } from '../mcp/jwt.js'
 import { validationHook } from '../lib/validation.js'
 import { getConfig, setConfig } from '../lib/config.js'
+import { logger } from '../lib/logger.js'
 import { emitAuditEvent } from '../db/audit.js'
 import {
   userProfileResponseSchema,
   userStatsResponseSchema,
   userActivityResponseSchema,
   keypairResponseSchema,
+  keypairRevealRequestSchema,
+  keypairRevealResponseSchema,
   mcpEndpointResponseSchema,
   exportDataResponseSchema,
   userSettingsSchema,
@@ -30,6 +36,50 @@ import {
   USER_SETTINGS_DEFAULTS,
 } from '../schemas/users.schema.js'
 import { okResponseSchema } from '../schemas/base.schema.js'
+
+// ── Keypair reveal: in-process failed-verify lockout ───────────────────────
+// 5 failed verifies inside a 30 minute rolling window triggers a 30-minute
+// lockout for that userId. A successful verify clears the counter so a
+// fat-fingered user doesn't lock themselves out by eventually getting it
+// right. Per-process only — multi-instance deploys don't coordinate.
+// Acceptable for the single-tenant deployment.
+const REVEAL_WINDOW_MS = 30 * 60 * 1000
+const REVEAL_LOCKOUT_MS = 30 * 60 * 1000
+const REVEAL_MAX_FAILURES = 5
+
+interface RevealAttemptState {
+  failures: number[] // ms timestamps of failed verifies inside the window
+  lockedUntil?: number // ms epoch
+}
+const revealAttempts = new Map<string, RevealAttemptState>()
+
+function isLockedOut(
+  userId: string,
+): { locked: true; retryAfterMs: number } | { locked: false } {
+  const now = Date.now()
+  const state = revealAttempts.get(userId)
+  if (!state) return { locked: false }
+  if (state.lockedUntil && state.lockedUntil > now) {
+    return { locked: true, retryAfterMs: state.lockedUntil - now }
+  }
+  return { locked: false }
+}
+
+function recordFailure(userId: string): void {
+  const now = Date.now()
+  const state = revealAttempts.get(userId) ?? { failures: [] }
+  state.failures = state.failures.filter((t) => now - t < REVEAL_WINDOW_MS)
+  state.failures.push(now)
+  if (state.failures.length >= REVEAL_MAX_FAILURES) {
+    state.lockedUntil = now + REVEAL_LOCKOUT_MS
+  }
+  revealAttempts.set(userId, state)
+}
+
+function recordSuccess(userId: string): void {
+  // Locked decision: a single correct verify clears the failure history.
+  revealAttempts.delete(userId)
+}
 
 const usersRouter = new Hono()
 usersRouter.use('*', sessionMiddleware)
@@ -69,32 +119,112 @@ usersRouter.patch('/onboard', async (c) => {
   return c.json(okResponseSchema.parse({ ok: true }))
 })
 
-// GET /users/keypair
+// GET /users/keypair — metadata only (no privateKey). The decrypted key is
+// only ever returned via POST /users/keypair/reveal after a password proof.
 usersRouter.get('/keypair', async (c) => {
   const userId = c.get('userId') as string
   const [user] = await db
-    .select({
-      publicKey: users.publicKey,
-      encryptedPrivateKey: users.encryptedPrivateKey,
-    })
+    .select({ publicKey: users.publicKey })
     .from(users)
     .where(eq(users.id, userId))
 
-  if (!user || !user.publicKey || !user.encryptedPrivateKey) {
+  if (!user || !user.publicKey) {
     return c.json({ error: 'No keypair found' }, 404)
   }
 
-  const encryptionSecret = process.env.KEY_ENCRYPTION_SECRET ?? ''
-  const privateKeyDer = decryptPrivateKey(user.encryptedPrivateKey, encryptionSecret)
+  const fingerprint = createHash('sha256')
+    .update(Buffer.from(user.publicKey, 'hex'))
+    .digest('hex')
 
   return c.json(
     keypairResponseSchema.parse({
       algorithm: 'Ed25519',
       publicKey: user.publicKey,
-      privateKey: privateKeyDer.toString('hex'),
-    })
+      fingerprint,
+    }),
   )
 })
+
+// POST /users/keypair/reveal — return the decrypted private key after a
+// constant-time password verify against the credential-account hash. No
+// new session is issued. Rate limited per userId via the in-process
+// failed-verify lockout above.
+usersRouter.post(
+  '/keypair/reveal',
+  zValidator('json', keypairRevealRequestSchema, validationHook),
+  async (c) => {
+    const userId = c.get('userId') as string
+    const log = logger.child({ component: 'users', userId, op: 'keypair-reveal' })
+
+    const lock = isLockedOut(userId)
+    if (lock.locked) {
+      log.warn({ retryAfterMs: lock.retryAfterMs }, 'reveal locked out')
+      return c.json(
+        { error: 'Too many failed reveal attempts. Try again later.' },
+        429,
+      )
+    }
+
+    const { password } = c.req.valid('json')
+
+    const [account] = await db
+      .select({ password: accounts.password })
+      .from(accounts)
+      .where(
+        and(eq(accounts.userId, userId), eq(accounts.providerId, 'credential')),
+      )
+
+    const [user] = await db
+      .select({
+        publicKey: users.publicKey,
+        encryptedPrivateKey: users.encryptedPrivateKey,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+
+    if (!account?.password || !user?.publicKey || !user.encryptedPrivateKey) {
+      // Treat missing-keypair / missing-credential-account as a failure so
+      // the lockout still gates an attacker probing for users without keys.
+      recordFailure(userId)
+      log.warn('reveal: no keypair / credential account')
+      return c.json({ error: 'No keypair found' }, 404)
+    }
+
+    const ok = await verifyPassword({ hash: account.password, password })
+    if (!ok) {
+      recordFailure(userId)
+      // Failed-verify attempts are logged through pino (component='users');
+      // emitAuditEvent fires only on the success path so the audit log
+      // doesn't fill up with attacker noise on a leaked session cookie.
+      log.warn('reveal: bad password')
+      return c.json({ error: 'Invalid credentials' }, 401)
+    }
+    recordSuccess(userId)
+
+    const encryptionSecret = process.env.KEY_ENCRYPTION_SECRET ?? ''
+    const privateKeyDer = decryptPrivateKey(user.encryptedPrivateKey, encryptionSecret)
+    const fingerprint = createHash('sha256')
+      .update(Buffer.from(user.publicKey, 'hex'))
+      .digest('hex')
+
+    await emitAuditEvent(db, {
+      entityType: 'user_keypair',
+      entityId: userId,
+      eventType: 'revealed',
+      source: 'api',
+      summary: 'Keypair revealed via password',
+    })
+
+    return c.json(
+      keypairRevealResponseSchema.parse({
+        algorithm: 'Ed25519',
+        publicKey: user.publicKey,
+        privateKey: privateKeyDer.toString('hex'),
+        fingerprint,
+      }),
+    )
+  },
+)
 
 // GET /users/stats
 usersRouter.get('/stats', async (c) => {
