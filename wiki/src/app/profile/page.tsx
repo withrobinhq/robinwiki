@@ -13,6 +13,7 @@ import {
   LogOut,
   Pencil,
   RefreshCw,
+  Network,
 } from "lucide-react";
 import { T, FONT } from "@/lib/typography";
 import { ModelSelector } from "@/components/ModelSelector";
@@ -587,6 +588,12 @@ export default function ProfilePage() {
                 description="Download your Ed25519 public and private key as JSON"
                 icon={<KeyRound className="size-4" strokeWidth={1.5} />}
                 onClick={handleExportKeypair}
+              />
+              <ActionRow
+                title="Data flow and providers"
+                description="See which external endpoints Robin's pipeline calls"
+                icon={<Network className="size-4" strokeWidth={1.5} />}
+                onClick={() => router.push("/settings/providers")}
               />
               {keypairError && (
                 <p style={{ ...T.micro, color: "var(--destructive)", margin: 0 }}>

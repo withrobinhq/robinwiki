@@ -9,6 +9,7 @@ import {
   users,
   accounts,
   apiKeys,
+  configs,
   fragments,
   wikis,
   people,
@@ -338,6 +339,53 @@ usersRouter.post('/export', async (c) => {
       people: userPeople,
     })
   )
+})
+
+// GET /users/providers - read-only listing of configured external providers
+//
+// Surfaces the OpenRouter-configured models per pipeline stage plus a
+// last-4-chars hint of the API key so the user can confirm "is this the
+// key I think it is" without ever exposing the full secret. Editing
+// happens via env vars; there is no mutation surface here by design
+// (per project memory: ports/URLs/runtime config live in env vars).
+usersRouter.get('/providers', async (c) => {
+  const apiKey = process.env.OPENROUTER_API_KEY ?? ''
+  // Last 4 chars only. Defensive: keys shorter than 4 chars get an empty
+  // hint so we can't accidentally surface the whole secret on a stub key.
+  const apiKeyHint = apiKey.length >= 8 ? `...${apiKey.slice(-4)}` : ''
+
+  const rows = await db
+    .select({ key: configs.key, value: configs.value, updatedAt: configs.updatedAt })
+    .from(configs)
+    .where(
+      and(
+        eq(configs.scope, 'system'),
+        eq(configs.kind, 'model_preference'),
+      ),
+    )
+
+  const stages: Record<string, { model: string; updatedAt: string | null }> = {}
+  for (const row of rows) {
+    if (typeof row.value === 'string') {
+      stages[row.key] = {
+        model: row.value,
+        updatedAt: row.updatedAt?.toISOString() ?? null,
+      }
+    }
+  }
+
+  return c.json({
+    provider: 'openrouter',
+    endpoint: 'https://openrouter.ai/api/v1',
+    apiKeyConfigured: !!apiKey,
+    apiKeyHint,
+    stages: {
+      extraction: stages.extraction ?? null,
+      classification: stages.classification ?? null,
+      wikiGeneration: stages.wiki_generation ?? null,
+      embedding: stages.embedding ?? null,
+    },
+  })
 })
 
 // DELETE /users/data — delete all content (keeps account intact)
