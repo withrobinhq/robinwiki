@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
+import { safeRefToHref } from "@robin/shared";
 import { T, FONT } from "@/lib/typography";
-import { ROUTES } from "@/lib/routes";
 import type { GraphData, GraphNode, GraphNodeType } from "./graphSampleData";
 
 const TYPE_LABEL: Record<GraphNodeType, string> = {
@@ -192,17 +192,22 @@ export function GraphDetailPanel({
   if (connByType.fragment > 0) connParts.push(`${connByType.fragment} fragment${connByType.fragment !== 1 ? "s" : ""}`);
   if (connByType.person > 0) connParts.push(`${connByType.person} ${connByType.person !== 1 ? "people" : "person"}`);
 
-  // Navigation URL
-  const getNodeUrl = (node: GraphNode): string => {
-    const id = node.lookupKey ?? node.id;
-    switch (node.type) {
-      case "wiki":
-        return ROUTES.wiki(id);
-      case "fragment":
-        return ROUTES.fragment(id);
-      case "person":
-        return ROUTES.person(id);
+  // Navigation URL — guarded by safeRefToHref (#audit-M9). Treat
+  // node.lookupKey as untrusted at the navigation boundary; reject
+  // anything that does not match the canonical {prefix}[0-9A-Z]{26}
+  // shape so a forged node can't drive router.push to an arbitrary
+  // path or absolute URL.
+  const handleOpen = (node: GraphNode) => {
+    const ref = node.lookupKey ?? node.id;
+    const href = safeRefToHref(ref);
+    if (!href) {
+      console.warn(
+        "graph: refusing to navigate — invalid ref",
+        { lookupKey: node.lookupKey, id: node.id },
+      );
+      return;
     }
+    router.push(href);
   };
 
   return (
@@ -340,7 +345,7 @@ export function GraphDetailPanel({
       {/* Open button */}
       <button
         type="button"
-        onClick={() => router.push(getNodeUrl(selectedNode))}
+        onClick={() => handleOpen(selectedNode)}
         style={{
           width: "100%",
           padding: "8px 12px",
