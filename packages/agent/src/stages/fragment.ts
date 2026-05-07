@@ -15,8 +15,30 @@ export async function fragment(
 ): Promise<StageResult<{ fragments: FragmentResult[]; primaryTopic: string }>> {
   const start = performance.now()
 
+  await deps.emitEvent({
+    entryKey: input.entryKey,
+    jobId: input.jobId,
+    stage: 'fragment',
+    status: 'started',
+  })
+
   const spec = loadFragmentationSpec({ content: input.content })
-  const parsed = await deps.llmCall(spec.system, spec.user)
+  let parsed: Awaited<ReturnType<typeof deps.llmCall>>
+  try {
+    parsed = await deps.llmCall(spec.system, spec.user)
+  } catch (err) {
+    await deps.emitEvent({
+      entryKey: input.entryKey,
+      jobId: input.jobId,
+      stage: 'fragment',
+      status: 'failed',
+      metadata: {
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Math.round(performance.now() - start),
+      },
+    })
+    throw err
+  }
 
   // Intra-batch Jaccard dedup
   const deduped = dedupBatch(parsed.fragments, DEDUP_THRESHOLD)
@@ -29,7 +51,8 @@ export async function fragment(
       ? deduped.sort((a, b) => b.confidence - a.confidence).slice(0, ceiling)
       : deduped
 
-  // Soft size validation -- warn but accept all fragments
+  // Soft size validation -- warn but accept all fragments. Surfaced as a
+  // separate completed row so operators can grep for the warning marker.
   for (const frag of capped) {
     const wordCount = frag.content.split(/\s+/).length
     if (wordCount > 200) {
@@ -47,6 +70,18 @@ export async function fragment(
       })
     }
   }
+
+  await deps.emitEvent({
+    entryKey: input.entryKey,
+    jobId: input.jobId,
+    stage: 'fragment',
+    status: 'completed',
+    metadata: {
+      fragmentCount: capped.length,
+      primaryTopic: parsed.primaryTopic,
+      durationMs: Math.round(performance.now() - start),
+    },
+  })
 
   return {
     data: { fragments: capped, primaryTopic: parsed.primaryTopic },
