@@ -1991,13 +1991,13 @@
     "/users/keypair": {
       "get": {
         "operationId": "getUserKeypair",
-        "summary": "Get user's Ed25519 keypair",
+        "summary": "Get user's Ed25519 keypair metadata (no privateKey)",
         "tags": [
           "Users"
         ],
         "responses": {
           "200": {
-            "description": "Keypair details",
+            "description": "Keypair metadata (algorithm, publicKey, fingerprint)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2008,6 +2008,67 @@
           },
           "404": {
             "description": "No keypair",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/keypair/reveal": {
+      "post": {
+        "operationId": "revealUserKeypair",
+        "summary": "Reveal Ed25519 private key after password verify",
+        "tags": [
+          "Users"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/keypairRevealRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Keypair with decrypted privateKey",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/keypairRevealResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errorResponseSchema"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No keypair",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errorResponseSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many failed reveal attempts",
             "content": {
               "application/json": {
                 "schema": {
@@ -4744,14 +4805,51 @@
           "publicKey": {
             "type": "string"
           },
-          "privateKey": {
+          "fingerprint": {
             "type": "string"
           }
         },
         "required": [
           "algorithm",
           "publicKey",
-          "privateKey"
+          "fingerprint"
+        ],
+        "additionalProperties": false
+      },
+      "keypairRevealRequestSchema": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "additionalProperties": false
+      },
+      "keypairRevealResponseSchema": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string"
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "privateKey": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "algorithm",
+          "publicKey",
+          "privateKey",
+          "fingerprint"
         ],
         "additionalProperties": false
       },
