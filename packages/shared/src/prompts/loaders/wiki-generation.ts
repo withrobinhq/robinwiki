@@ -199,10 +199,31 @@ export function loadWikiGenerationSpec(
     overrideStructure && overrideStructure.length > 0
       ? overrideStructure
       : (effective.default_structure ?? '')
-  const resolvedStructure = renderTemplate(rawStructure, validated)
+  // SEC-H5: every variable from `validated` that carries user content gets
+  // its delimiters escaped before substitution. `count` and `date` are
+  // server-derived (Number / ISO date) — pass through verbatim.
+  const userControlledVars = [
+    'fragments',
+    'title',
+    'people',
+    'existingWiki',
+    'edits',
+    'relatedWikis',
+    'structure',
+    'timeline',
+  ] as const
+  const resolvedStructure = renderTemplate(rawStructure, validated, {
+    userControlled: userControlledVars,
+  })
 
   const renderVars = { ...validated, structure: resolvedStructure }
-  const user = renderTemplate(effective.template, renderVars)
+  // The compiled template here can be partially user-controlled (the
+  // user_message_template field of a wiki-type override). Handlebars does not
+  // re-evaluate variable values, so the per-key escape is the load-bearing
+  // mitigation — see template-injection.test.ts.
+  const user = renderTemplate(effective.template, renderVars, {
+    userControlled: userControlledVars,
+  })
   return {
     system: effective.system_message,
     user,

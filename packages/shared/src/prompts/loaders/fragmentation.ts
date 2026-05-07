@@ -34,7 +34,10 @@ export function loadFragmentationSpec(vars: {
   const validated = inputSchema.parse(vars)
   const spec = loadSpec('fragmentation.yaml')
 
-  const user = renderTemplate(spec.template, validated)
+  // SEC-H5: `content` and `context` are user-authored fragment text.
+  const user = renderTemplate(spec.template, validated, {
+    userControlled: ['content', 'context'],
+  })
   return {
     system: spec.system_message,
     user,

@@ -26,7 +26,13 @@ export function loadWikiClassificationSpec(vars: {
       ? validated.ownerName
       : 'the owner'
   const spec = loadSpec('wiki-classification.yaml')
-  const user = renderTemplate(spec.template, { ...validated, ownerName })
+  // SEC-H5: every variable carries user-authored text — fragment content,
+  // wiki list, owner name, and any inline fragment context.
+  const user = renderTemplate(
+    spec.template,
+    { ...validated, ownerName },
+    { userControlled: ['content', 'wikis', 'ownerName', 'fragmentContext'] }
+  )
   return {
     system: spec.system_message,
     user,

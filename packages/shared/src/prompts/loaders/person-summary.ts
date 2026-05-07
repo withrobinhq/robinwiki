@@ -10,7 +10,11 @@ export function loadPersonSummarySpec(vars: {
 }): PromptResult {
   const validated = personSummaryInputSchema.parse(vars)
   const spec = loadSpec('person-summary.yaml', 'person-summary')
-  const user = renderTemplate(spec.template, validated)
+  // SEC-H5: every key originates from user-authored text (person names, body,
+  // fragment block).
+  const user = renderTemplate(spec.template, validated, {
+    userControlled: ['canonicalName', 'aliases', 'existingBody', 'fragments'],
+  })
   return {
     system: spec.system_message,
     user,
