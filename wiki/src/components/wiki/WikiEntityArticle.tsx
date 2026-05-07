@@ -574,6 +574,29 @@ export function WikiEntityArticle({
                     {displayTitle}
                   </h1>
                 )}
+                {/* Private badge — visible whenever the wiki is unpublished.
+                    Tells the operator at a glance that nobody else can read
+                    this surface. Suppressed in edit mode to keep the editor
+                    chrome calm. Caller wires `published` from the wiki row
+                    (defaults to false at the schema layer per #277). */}
+                {!isEditing && published === false && (
+                  <span
+                    data-testid="wiki-private-badge"
+                    aria-label="Private"
+                    style={{
+                      ...T.micro,
+                      color: "var(--wiki-infobox-text)",
+                      opacity: 0.7,
+                      fontFamily: FONT.SANS,
+                      paddingBottom: 10,
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                      marginRight: 12,
+                    }}
+                  >
+                    Private
+                  </span>
+                )}
                 <div
                   className="wiki-article-tabs"
                   style={{
