@@ -394,7 +394,9 @@ export const pipelineEvents = pgTable(
   'pipeline_events',
   {
     id: text('id').primaryKey(),
-    entryKey: text('entry_key').notNull(),
+    // Nullable because regen and embedding-retry batch jobs are not entry-scoped
+    // (regen keys on wikiKey, embed-retry batches across all unembedded rows).
+    entryKey: text('entry_key'),
     jobId: text('job_id').notNull(),
     stage: text('stage').notNull(),
     status: text('status').notNull(),
@@ -406,8 +408,22 @@ export const pipelineEvents = pgTable(
     index('pipeline_events_entry_key_idx').on(t.entryKey),
     index('pipeline_events_status_stage_idx').on(t.status, t.stage),
     index('pipeline_events_created_at_idx').on(t.createdAt),
+    // Used by /admin/diagnose and the regen/embed audit join paths.
+    index('pipeline_events_job_id_idx').on(t.jobId),
   ]
 )
+
+/**
+ * Boot-time drift detection (#12). One-row-per-key store for migration
+ * metadata. The boot path writes the SHA of `drizzle/migrations/meta/_journal.json`
+ * here on successful apply; subsequent boots compare disk SHA to DB SHA and
+ * refuse to start in production if they diverge.
+ */
+export const migrationsMeta = pgTable('migrations_meta', {
+  id: text('id').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
 
 // ─── Operational Tables ───
 
