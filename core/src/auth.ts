@@ -51,7 +51,20 @@ export const auth = betterAuth({
       if (ctx.path === '/sign-in/email') {
         await ensureFirstUser()
       }
-      // Single-user gate: block sign-up if any user exists
+      // Single-user gate: block sign-up if any user exists.
+      //
+      // This JS pre-check is the FAST PATH for the common case (sequential
+      // sign-ups against an already-populated DB get a clean 403). The
+      // authoritative gate is the DB unique partial index
+      // `users_singleton_uidx` (see migration 0002), which closes the TOCTOU
+      // window between this count and better-auth's INSERT.
+      //
+      // Locked decision (#audit-M1): two concurrent /sign-up/email requests
+      // may both pass this check; the loser's INSERT raises SQLSTATE 23505
+      // and surfaces as a 500. Acceptable — single-tenant deployments hit
+      // this only during onboarding. Engineering an after-hook interceptor
+      // for provider-layer DB errors adds maintenance cost not justified by
+      // the corner case.
       if (ctx.path === '/sign-up/email') {
         const [row] = await db.execute<{ count: number }>(sql`SELECT count(*)::int AS count FROM users`)
         if (row && row.count > 0) {
