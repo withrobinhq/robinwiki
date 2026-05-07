@@ -197,9 +197,20 @@ fragmentsRouter.post(
     // Body is validated by Zod above (content + threadSlug both `min(1)`),
     // but core's tsconfig has `strict: false` which weakens Zod's narrowing
     // on optional vs required. Cast to the handler's signature explicitly.
+    // Stream C / C2 — HTTP path is the web UI route; tag clientInfo as
+    // `{name: 'web'}` so the fragment audit_log detail mirrors the
+    // entries.source_client shape.
     const result = await handleLogFragment(
       deps,
-      body as { content: string; threadSlug: string; title?: string; tags?: string[] },
+      {
+        ...(body as {
+          content: string
+          threadSlug: string
+          title?: string
+          tags?: string[]
+        }),
+        sourceClient: { name: 'web' },
+      },
       userId
     )
     if (result.isError) {

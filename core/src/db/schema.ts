@@ -194,6 +194,16 @@ export const entries = pgTable(
       channel?: string
       sessionId?: string
     }>(),
+    // Stream C / C2 — MCP `clientInfo` payload (`{name, version, ...}`)
+    // for MCP captures, `{name: 'web'}` for web-UI captures, NULL for
+    // legacy rows or any caller that doesn't supply client identity.
+    // Migration 0007. Decision 2026-05-07: jsonb (carries optional
+    // `version` and any future MCP-spec fields without re-migrating).
+    sourceClient: jsonb('source_client').$type<{
+      name: string
+      version?: string
+      [key: string]: unknown
+    } | null>(),
     ingestStatus: text('ingest_status').notNull().default('pending'),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at'),

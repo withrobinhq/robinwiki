@@ -96,7 +96,16 @@ export interface McpServerDeps {
  */
 export async function handleLogEntry(
   deps: McpServerDeps,
-  input: { content: string; source?: 'mcp' | 'api' | 'web' },
+  input: {
+    content: string
+    source?: 'mcp' | 'api' | 'web'
+    /**
+     * MCP `clientInfo` payload (Stream C / C2). Persisted to
+     * `entries.source_client` jsonb. NULL when the caller is the legacy
+     * pre-clientInfo path or a non-MCP route that didn't supply it.
+     */
+    sourceClient?: { name: string; version?: string; [key: string]: unknown } | null
+  },
   userId: string | undefined
 ) {
   if (!userId) {
@@ -138,6 +147,7 @@ export async function handleLogEntry(
       dedupHash: hash,
       type: 'thought',
       source: entrySource,
+      sourceClient: input.sourceClient ?? null,
     })
 
     const job: ExtractionJob = {
@@ -194,6 +204,14 @@ export async function handleLogFragment(
     threadSlug: string
     title?: string
     tags?: string[]
+    /**
+     * MCP `clientInfo` payload (Stream C / C2). The fragments table has
+     * no `source_client` column (migration 0007 only added it to
+     * `raw_sources`), so the value is recorded in the fragment's
+     * audit_log `detail` jsonb instead. Keeps the per-event traceability
+     * without expanding the schema beyond C2 scope.
+     */
+    sourceClient?: { name: string; version?: string; [key: string]: unknown } | null
   },
   userId: string | undefined
 ) {
@@ -366,7 +384,14 @@ export async function handleLogFragment(
       eventType: 'created',
       source: 'mcp',
       summary: `Fragment created: ${title}`,
-      detail: { fragmentKey: fragKey, wikiKey: threadResult.lookupKey, threadSlug: threadResult.slug },
+      detail: {
+        fragmentKey: fragKey,
+        wikiKey: threadResult.lookupKey,
+        threadSlug: threadResult.slug,
+        // C2 — fragments table has no source_client column; the audit
+        // detail carries the MCP clientInfo for parity with entries.
+        sourceClient: input.sourceClient ?? null,
+      },
     })
 
     const result = {

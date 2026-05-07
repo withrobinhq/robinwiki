@@ -48,6 +48,12 @@ entries.post('/', zValidator('json', createEntryBodySchema, validationHook), asy
   const { ulid: entryUlid } = parseLookupKey(entryKey)
   const slug = await resolveEntrySlug(db, generateSlug(title ?? content.slice(0, 80)))
 
+  // Stream C / C2 — web-UI captures get `{name: 'web'}`; other HTTP
+  // captures (`source: 'api'` or anything else) leave `source_client`
+  // NULL. MCP-originated rows are populated by handleLogEntry from the
+  // protocol-level clientInfo handshake.
+  const sourceClient = source === 'web' ? { name: 'web' } : null
+
   // Persist entry row — pure DB, no git write-through
   const [entry] = await db
     .insert(entriesTable)
@@ -59,6 +65,7 @@ entries.post('/', zValidator('json', createEntryBodySchema, validationHook), asy
       dedupHash: hash,
       type,
       source,
+      sourceClient,
       ingestStatus: 'pending',
     })
     .returning()

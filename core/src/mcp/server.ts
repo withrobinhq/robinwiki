@@ -52,6 +52,26 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     db: deps.db,
   }
 
+  /**
+   * Stream C / C2 — read MCP `clientInfo` (Implementation: `{name, version}`)
+   * from the underlying SDK Server. Returns null until the client has
+   * completed the `initialize` handshake. Persisted by the write
+   * handlers to `entries.source_client` (raw_sources) and to the
+   * fragment audit_log detail.
+   */
+  const readClientInfo = (): {
+    name: string
+    version?: string
+    [key: string]: unknown
+  } | null => {
+    const impl = server.server.getClientVersion()
+    if (!impl) return null
+    return {
+      name: impl.name,
+      ...(impl.version ? { version: impl.version } : {}),
+    }
+  }
+
   /***********************************************************************
    * ## Tools — Write operations
    ***********************************************************************/
@@ -66,7 +86,11 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
       },
     },
     async ({ content, source }, extra) => {
-      return handleLogEntry(deps, { content, source }, extra.authInfo?.clientId as string)
+      return handleLogEntry(
+        deps,
+        { content, source, sourceClient: readClientInfo() },
+        extra.authInfo?.clientId as string
+      )
     }
   )
 
@@ -89,7 +113,7 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     async ({ content, threadSlug, title, tags }, extra) => {
       return handleLogFragment(
         deps,
-        { content, threadSlug, title, tags },
+        { content, threadSlug, title, tags, sourceClient: readClientInfo() },
         extra.authInfo?.clientId as string
       )
     }
