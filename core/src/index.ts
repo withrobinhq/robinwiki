@@ -76,19 +76,35 @@ process.once('SIGTERM', () => process.exit(0))
 const app = new Hono()
 
 app.use('*', httpLogger())
+
+// CORS policy:
+//   - In production, lock to a strict allowlist built from WIKI_ORIGIN
+//     (comma-separated) plus SERVER_PUBLIC_URL. Misses return null so
+//     Hono omits Access-Control-Allow-Origin entirely (browser rejects).
+//   - In any non-production env, reflect any caller's Origin so dev,
+//     UAT, and Vercel previews can hit the API without manifest churn.
+//   - assertProdEnv() above already refuses to boot in production when
+//     WIKI_ORIGIN is unset, so the localhost default below is only ever
+//     used in non-prod where reflect mode supersedes the allowlist anyway.
+const isProd = process.env.NODE_ENV === 'production'
 const allowedOrigins = new Set(
   (process.env.WIKI_ORIGIN ?? 'http://localhost:8080,http://localhost:3001')
     .split(',')
     .map((s) => s.trim())
+    .filter(Boolean),
 )
 allowedOrigins.add(process.env.SERVER_PUBLIC_URL ?? 'http://localhost:3000')
 
 app.use(
   '*',
   cors({
-    origin: (origin) => (allowedOrigins.has(origin) ? origin : ''),
+    origin: (origin) => {
+      if (!origin) return null
+      if (!isProd) return origin
+      return allowedOrigins.has(origin) ? origin : null
+    },
     credentials: true,
-  })
+  }),
 )
 
 /** @step — Global error handler: catch JSON parse failures and return 400 */
