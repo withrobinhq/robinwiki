@@ -801,17 +801,36 @@ export default function AddWikiModal({
                   >
                     {`/p/${publishedSlug}`}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const url = `${window.location.origin}/p/${publishedSlug}`;
-                      void navigator.clipboard.writeText(url).catch(() => {});
-                    }}
-                    className="rounded px-2 text-[11px]"
-                    style={{ background: "transparent", border: "1px solid var(--btn-disabled-bg)", color: "var(--wiki-link)" }}
-                  >
-                    Copy link
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = `${window.location.origin}/p/${publishedSlug}`;
+                        void navigator.clipboard.writeText(url).catch(() => {});
+                      }}
+                      className="rounded px-2 text-[11px]"
+                      style={{ background: "transparent", border: "1px solid var(--btn-disabled-bg)", color: "var(--wiki-link)" }}
+                    >
+                      Copy link
+                    </button>
+                    {/*
+                      H2: A-game line 441 requires a copy AND open affordance
+                      on publish-success. Open opens /p/<slug> in a new tab
+                      so the user can verify the published surface without
+                      losing their settings-modal context.
+                    */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = `${window.location.origin}/p/${publishedSlug}`;
+                        window.open(url, "_blank", "noopener,noreferrer");
+                      }}
+                      className="rounded px-2 text-[11px]"
+                      style={{ background: "transparent", border: "1px solid var(--btn-disabled-bg)", color: "var(--wiki-link)" }}
+                    >
+                      Open
+                    </button>
+                  </div>
                 </div>
               ) : null}
               {publishError ? (
