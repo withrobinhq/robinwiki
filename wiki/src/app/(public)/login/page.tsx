@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
 import { useSession } from '@/hooks/useSession'
@@ -183,6 +184,15 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
+
+        <p style={{ ...T.bodySmall, textAlign: 'center', marginTop: 16 }}>
+          <Link
+            href="/recover"
+            style={{ color: 'var(--wiki-link)', textDecoration: 'none' }}
+          >
+            Forgot password?
+          </Link>
+        </p>
       </div>
     </div>
   )
