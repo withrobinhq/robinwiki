@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
 import { useSession } from '@/hooks/useSession'
@@ -185,14 +184,10 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p style={{ ...T.bodySmall, textAlign: 'center', marginTop: 16 }}>
-          <Link
-            href="/recover"
-            style={{ color: 'var(--wiki-link)', textDecoration: 'none' }}
-          >
-            Forgot password?
-          </Link>
-        </p>
+        {/* No /recover affordance here by design. Recovery is a documentation
+            primitive: operators reach `/recover` directly with the deploy-side
+            RECOVERY_SECRET. Surfacing a "Forgot password?" link in a single-
+            tenant tool would imply a self-serve flow we don't run. */}
       </div>
     </div>
   )

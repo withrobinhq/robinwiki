@@ -3,7 +3,7 @@ import { APIError } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { db } from './db/client.js'
 import * as schema from './db/schema.js'
-import { eq, sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 import { producer } from './queue/producer.js'
 import { logger } from './lib/logger.js'
 import { ensureFirstUser } from './bootstrap/jit-provision.js'
@@ -28,29 +28,6 @@ export const auth = betterAuth({
   }),
 
   emailAndPassword: { enabled: true },
-
-  // Force-reset flag (#71). The boolean lives on users.password_reset_required
-  // and is JIT-set to true the first time a user is provisioned. Exposing it
-  // here as `mustResetPassword` makes it flow through every getSession call
-  // (including the one useSession() polls), so the wiki AuthGuard can gate
-  // protected routes on a single read. Cleared by POST /users/clear-reset-flag
-  // and re-set by /auth/recover.
-  user: {
-    additionalFields: {
-      mustResetPassword: {
-        type: 'boolean',
-        // The drizzle schema's JS property is `passwordResetRequired` and the
-        // adapter looks up schema[model][fieldName] to find the column. Setting
-        // fieldName to the drizzle key (not the snake_case DB column) is what
-        // the better-auth drizzle adapter expects — see node_modules/@better-
-        // auth/drizzle-adapter/dist/index.mjs `getFieldName`.
-        fieldName: 'passwordResetRequired',
-        required: false,
-        defaultValue: false,
-        input: false,
-      },
-    },
-  },
 
   // Single-user mode: no social providers. Use INITIAL_USERNAME/INITIAL_PASSWORD
   // env vars + the boot seed script to create the one-and-only user.
@@ -106,30 +83,6 @@ export const auth = betterAuth({
 
     after: async (rawCtx) => {
       const ctx = rawCtx as Record<string, unknown>
-
-      // Force-reset gate (#71). On every successful /sign-in/email, read the
-      // flag and log its value. The user model's additionalFields config
-      // (mustResetPassword → password_reset_required) is what actually exposes
-      // it on session.user; this hook exists for observability and to keep
-      // the integration point explicit.
-      if (ctx.path === '/sign-in/email') {
-        const c = ctx.context as Record<string, unknown> | undefined
-        const newSession = c?.newSession as Record<string, unknown> | undefined
-        const sess = c?.session as Record<string, unknown> | undefined
-        const user = ((newSession?.user as Record<string, unknown>) ??
-          (sess?.user as Record<string, unknown>) ??
-          undefined) as Record<string, unknown> | undefined
-        const userId = user?.id as string | undefined
-        if (userId) {
-          const [row] = await db
-            .select({ flag: schema.users.passwordResetRequired })
-            .from(schema.users)
-            .where(eq(schema.users.id, userId))
-          const mustResetPassword = row?.flag === true
-          log.debug({ userId, mustResetPassword }, 'sign-in/email after hook')
-        }
-        return { response: null, headers: null }
-      }
 
       if (ctx.path !== '/sign-up/email') return { response: null, headers: null }
 

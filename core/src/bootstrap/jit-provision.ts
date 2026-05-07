@@ -72,12 +72,11 @@ export async function ensureFirstUser(): Promise<void> {
   const dek = generateDek()
   const wrappedDek = wrapDek(dek, masterKey)
 
+  // `users.password_reset_required` is left at its default (false). The column
+  // remains as a documentation primitive; nothing reads or writes it at runtime.
   await db
     .update(users)
-    .set({
-      encryptedDek: wrappedDek,
-      passwordResetRequired: true,
-    })
+    .set({ encryptedDek: wrappedDek })
     .where(eq(users.id, userId))
 
   // Generate keypair inline so the MCP endpoint is available immediately
@@ -126,7 +125,7 @@ export async function ensureFirstUser(): Promise<void> {
   await seedDemoWiki()
 
   provisioned = true
-  log.info({ userId, email }, 'first user provisioned with DEK and password_reset_required=true')
+  log.info({ userId, email }, 'first user provisioned with DEK')
 }
 
 /**

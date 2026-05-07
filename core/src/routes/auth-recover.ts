@@ -143,18 +143,11 @@ authRecoverRoutes.post('/recover', async (c) => {
     return c.json({ error: 'No account found' }, 404)
   }
 
-  // Re-set password_reset_required = true (#71). The user just used the
-  // server-secret recovery channel, which means a deployment-side process
-  // chose this password — the human must pick their own on next sign-in.
-  // Same transaction as the password update so the two states stay aligned.
-  await db.transaction(async (tx) => {
-    await tx.execute(
-      sql`UPDATE accounts SET password = ${hashed} WHERE id = ${account.id}`
-    )
-    await tx.execute(
-      sql`UPDATE users SET password_reset_required = true WHERE id = ${account.user_id}`
-    )
-  })
+  // Recovery is a documentation primitive (server-secret channel). No follow-up
+  // force-reset gate — the operator owns the new password.
+  await db.execute(
+    sql`UPDATE accounts SET password = ${hashed} WHERE id = ${account.id}`
+  )
 
   log.info({ accountId: account.id, ip }, 'password recovery succeeded')
   await emitAuditEvent(db, {

@@ -120,19 +120,6 @@ usersRouter.patch('/onboard', async (c) => {
   return c.json(okResponseSchema.parse({ ok: true }))
 })
 
-// POST /users/clear-reset-flag — clear the JIT-set initial-password flag
-// after the user has chosen their own password. Auth-gated, no body.
-// Companion to the after-hook in auth.ts and the /account/initial-password-reset
-// page in the wiki. Returns 204 on success.
-usersRouter.post('/clear-reset-flag', async (c) => {
-  const userId = c.get('userId') as string
-  await db
-    .update(users)
-    .set({ passwordResetRequired: false })
-    .where(eq(users.id, userId))
-  return c.body(null, 204)
-})
-
 // GET /users/keypair — metadata only (no privateKey). The decrypted key is
 // only ever returned via POST /users/keypair/reveal after a password proof.
 usersRouter.get('/keypair', async (c) => {
