@@ -1,13 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { T, FONT } from '@/lib/typography'
 
 export default function RecoverPage() {
-  const router = useRouter()
   const [secretKey, setSecretKey] = useState('')
+  const [newPassword, setNewPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -15,24 +14,32 @@ export default function RecoverPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    setLoading(true)
 
+    // Client-side guard only; server is the enforced check.
+    if (newPassword.length < 12) {
+      setError('Password must be at least 12 characters.')
+      return
+    }
+
+    setLoading(true)
     try {
       const res = await fetch('/auth/recover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ secretKey }),
+        body: JSON.stringify({ secretKey, newPassword }),
       })
 
       if (res.ok) {
         setSuccess(true)
-        setTimeout(() => router.push('/login'), 2000)
-      } else if (res.status === 403) {
-        setError('Invalid server secret key')
-      } else if (res.status === 429) {
-        setError('Too many attempts. Try again in 1 minute.')
       } else {
-        setError('Something went wrong. Please try again.')
+        let serverError: string | null = null
+        try {
+          const data = (await res.json()) as { error?: string }
+          serverError = data.error ?? null
+        } catch {
+          // ignore
+        }
+        setError(serverError ?? 'Something went wrong. Please try again.')
       }
     } catch {
       setError('Something went wrong. Please try again.')
@@ -73,19 +80,32 @@ export default function RecoverPage() {
             marginBottom: 32,
           }}
         >
-          Enter the server secret key to reset your password.
+          Enter the recovery secret and a new password.
         </p>
 
         {success ? (
-          <p
-            style={{
-              ...T.bodySmall,
-              color: 'var(--profile-connected)',
-              textAlign: 'center',
-            }}
-          >
-            Password has been reset. Redirecting to login...
-          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+            <p
+              style={{
+                ...T.bodySmall,
+                color: 'var(--profile-connected)',
+                textAlign: 'center',
+                margin: 0,
+              }}
+            >
+              Password reset.
+            </p>
+            <Link
+              href="/login"
+              style={{
+                ...T.bodySmall,
+                color: 'var(--wiki-link)',
+                textDecoration: 'none',
+              }}
+            >
+              Sign in
+            </Link>
+          </div>
         ) : (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -96,7 +116,7 @@ export default function RecoverPage() {
                   color: 'var(--input-label)',
                 }}
               >
-                Server Secret Key
+                Recovery Secret
               </label>
               <input
                 id="secretKey"
@@ -104,6 +124,37 @@ export default function RecoverPage() {
                 value={secretKey}
                 onChange={(e) => setSecretKey(e.target.value)}
                 required
+                style={{
+                  ...T.input,
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid var(--input-border)',
+                  borderRadius: 2,
+                  background: 'transparent',
+                  color: 'var(--heading-color)',
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label
+                htmlFor="newPassword"
+                style={{
+                  ...T.label,
+                  color: 'var(--input-label)',
+                }}
+              >
+                New password (12+ chars, letters and digits)
+              </label>
+              <input
+                id="newPassword"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={12}
                 style={{
                   ...T.input,
                   width: '100%',

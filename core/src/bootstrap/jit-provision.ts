@@ -19,6 +19,10 @@ let provisioned: boolean | null = null
  * Ensure the single-user app has its one user, provisioning on first login
  * attempt if the users table is empty. After the first check confirms a user
  * exists, all subsequent calls are free (in-memory flag, zero DB queries).
+ *
+ * NOTE: `INITIAL_PASSWORD` is consumed ONLY here, on the first-boot path. No
+ * runtime auth route may read it. Password recovery uses RECOVERY_SECRET +
+ * a caller-supplied newPassword — see `core/src/routes/auth-recover.ts`.
  */
 export async function ensureFirstUser(): Promise<void> {
   if (provisioned === true) return

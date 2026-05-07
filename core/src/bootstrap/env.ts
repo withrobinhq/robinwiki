@@ -14,6 +14,7 @@ export function assertProdEnv(): void {
     'DATABASE_URL',
     'REDIS_URL',
     'BETTER_AUTH_SECRET',
+    'RECOVERY_SECRET',
     'MASTER_KEY',
     'KEY_ENCRYPTION_SECRET',
   ] as const
@@ -63,6 +64,13 @@ export const env = createConfigVar({
       .string()
       .min(32)
       .describe('32+ char session signing key (openssl rand -hex 32)'),
+    RECOVERY_SECRET: z
+      .string()
+      .min(32)
+      .optional()
+      .describe(
+        '32+ char recovery secret for /auth/recover (separate from BETTER_AUTH_SECRET). Required in production.',
+      ),
     SERVER_PUBLIC_URL: z
       .string()
       .min(1)
