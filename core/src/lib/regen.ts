@@ -1,7 +1,9 @@
 import { eq, ne, and, inArray, desc, isNull, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import {
+  createHydeAgent,
   createIngestAgents,
+  createStringCaller,
   createTypedCaller,
   embedText,
   wikiClassify,
@@ -40,6 +42,10 @@ import { hybridSearch } from './search.js'
 import { nanoid } from './id.js'
 import { logger } from './logger.js'
 import { emitAuditEvent } from '../db/audit.js'
+import {
+  generateWikiAgentSchema,
+  resolveRetrievalIndexModel,
+} from './wiki-agent-schema.js'
 
 const log = logger.child({ component: 'regen' })
 
@@ -732,6 +738,40 @@ export async function regenerateWiki(
     }
   }
   const embedMs = performance.now() - tEmbed0
+
+  // Wave G — agent-schema regeneration (description + hyde_synthetic).
+  // Runs alongside the existing wikis.embedding update during the
+  // transition. Retrieval reads from wiki_agent_schema when rows exist
+  // and falls back to wikis.embedding otherwise. See
+  // docs/architecture/wiki-agent-schema.md.
+  //
+  // Failures here MUST NOT abort the regen — the wiki body and the
+  // legacy wikis.embedding are already persisted. We log and continue.
+  if (!opts?.skipEmbedding) {
+    try {
+      const hydeModel = resolveRetrievalIndexModel(orConfig)
+      const hydeAgent = createHydeAgent(orConfig, hydeModel)
+      const hydeStringCaller = createStringCaller(hydeAgent)
+      await generateWikiAgentSchema(database, {
+        wikiKey,
+        orConfig,
+        // Adapter from agent-schema's HydeCaller to the string-caller the
+        // Mastra agent exposes. The model arg is captured at agent-build
+        // time, but the caller signature accepts it for symmetry with
+        // future per-call model overrides.
+        hydeCaller: async (prompt) => {
+          const text = await hydeStringCaller('', prompt)
+          return text ?? null
+        },
+      })
+    } catch (err) {
+      log.warn(
+        { wikiKey, err: err instanceof Error ? err.message : String(err) },
+        'wiki agent-schema regen failed, continuing without it'
+      )
+    }
+  }
+
   const totalMs = performance.now() - t0
 
   const timing: RegenTiming = {

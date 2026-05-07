@@ -41,7 +41,7 @@ export {
 export type { EmbedConfig, EmbedFailure } from './embeddings.js'
 
 // ── Mastra agent factory + caller helpers ────────────────────────────────
-export { createIngestAgents } from './agent-factory.js'
+export { createIngestAgents, createHydeAgent } from './agent-factory.js'
 export type { IngestAgents } from './agent-factory.js'
 export {
   createTypedCaller,

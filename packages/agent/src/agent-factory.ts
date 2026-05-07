@@ -54,3 +54,26 @@ export function createIngestAgents(config: OpenRouterConfig): IngestAgents {
     }),
   }
 }
+
+/**
+ * Wave G — build a one-shot agent for the HyDE retrieval-index generator.
+ * Configurable model slug because RETRIEVAL_INDEX_MODEL may differ from
+ * the writer model (the architecture intentionally allows pointing this
+ * at a more capable model since generation runs once per wiki per regen,
+ * not on every user interaction).
+ *
+ * Returns the underlying Mastra Agent so callers can wrap it in the same
+ * caller helpers (createStringCaller) used elsewhere in the codebase.
+ */
+export function createHydeAgent(
+  config: OpenRouterConfig,
+  modelSlug: string
+): Agent {
+  const or = createOpenRouter({ apiKey: config.apiKey })
+  return new Agent({
+    id: 'hyde-generator',
+    name: 'HydeGenerator',
+    instructions: '',
+    model: or(modelSlug),
+  })
+}
