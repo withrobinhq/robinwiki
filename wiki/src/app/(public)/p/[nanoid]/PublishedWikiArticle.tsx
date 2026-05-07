@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import { T, FONT } from "@/lib/typography";
 import { WikiInfobox } from "@/components/wiki/WikiInfobox";
 import { MarkdownContent } from "@/components/wiki/MarkdownContent";
+import { sanitizeWikiHtml } from "@/lib/sanitizeWikiHtml";
 import type {
   WikiInfobox as WikiInfoboxData,
   WikiRef,
@@ -33,8 +34,9 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
   // are LLM-emitted prose. ReactMarkdown escapes raw HTML, so an HTML body
   // routed through `<MarkdownContent>` renders as literal `&lt;p&gt;` text.
   // Mirror the shell page's `isHtmlBody` branch: HTML body short-circuits to
-  // `dangerouslySetInnerHTML` (#253). The body is server-side authored and
-  // already trusted (Tiptap save endpoint or AI generation).
+  // `dangerouslySetInnerHTML` (#253). Sanitised through `sanitizeWikiHtml`
+  // (#sec-phase-1-chain-a). Trust boundary: AI-generated bodies and Tiptap
+  // saves are both treated as untrusted.
   const isHtmlBody =
     typeof wiki.content === "string" && wiki.content.trim().startsWith("<");
 
@@ -173,7 +175,7 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
           <div
             className="wiki-richtext-rendered"
             style={bodyStyle}
-            dangerouslySetInnerHTML={{ __html: wiki.content }}
+            dangerouslySetInnerHTML={{ __html: sanitizeWikiHtml(wiki.content) }}
           />
         ) : (
           <MarkdownContent
