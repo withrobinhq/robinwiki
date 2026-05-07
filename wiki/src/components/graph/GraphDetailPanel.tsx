@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
-import { safeRefToHref } from "@robin/shared";
+import { safeRefToHref } from "@robin/shared/identity";
 import { T, FONT } from "@/lib/typography";
 import type { GraphData, GraphNode, GraphNodeType } from "./graphSampleData";
 
