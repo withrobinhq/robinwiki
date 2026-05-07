@@ -9,6 +9,9 @@ task: thread_wiki_decision
 description: Generates a decision wiki — a record of a discrete choice and its reasoning.
 temperature: 0.3
 
+internal_framing: |
+  Write as if recounting why a choice was made. Cover what was chosen, what was rejected, the constraints, and who was involved.
+
 default_structure: |
   Use this exact structure:
   # Decision: {{title}}

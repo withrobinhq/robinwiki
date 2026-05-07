@@ -9,6 +9,9 @@ task: thread_wiki_skill
 description: Generates a skill wiki — a knowledge base for a capability being built.
 temperature: 0.3
 
+internal_framing: |
+  Write as if teaching how to perform this. Cover the steps, the rationale, common mistakes, and when to use it.
+
 default_structure: |
   Use this exact structure:
   # Skill: {{title}}

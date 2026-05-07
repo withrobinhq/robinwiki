@@ -9,6 +9,9 @@ task: thread_wiki_objective
 description: Generates an objective wiki — a high-level objective with measurable direction.
 temperature: 0.3
 
+internal_framing: |
+  Write as if articulating a goal. Cover what success looks like, the deadline, the constraints, and dependencies.
+
 default_structure: |
   Use this exact structure:
   # Objective: {{title}}

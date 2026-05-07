@@ -52,6 +52,10 @@ export const PromptSpecSchema = z.object({
   display_description: z.string().optional(),
   display_short_descriptor: z.string().optional(),
   display_order: z.coerce.number().int().optional(),
+  // Wave G — type-aware HyDE authoring instruction. Loaded into
+  // wiki_types.internal_framing on bootstrap. Optional because non
+  // wiki-type specs (fragmenter, classifier, etc.) do not need framing.
+  internal_framing: z.string().optional(),
 })
 
 export type PromptSpec = z.infer<typeof PromptSpecSchema>

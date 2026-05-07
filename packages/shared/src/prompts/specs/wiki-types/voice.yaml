@@ -9,6 +9,9 @@ task: thread_wiki_voice
 description: Generates a voice wiki — a style guide for communication.
 temperature: 0.3
 
+internal_framing: |
+  Write as if capturing how someone phrases things. Cover characteristic phrases, tone, and go-to framings.
+
 default_structure: |
   Use this exact structure:
   # Voice: {{title}}

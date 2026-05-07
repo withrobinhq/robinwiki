@@ -9,6 +9,9 @@ task: thread_wiki_agent
 description: Generates an agent wiki — documentation for a configured AI assistant.
 temperature: 0.3
 
+internal_framing: |
+  Write as if defining an LLM agent's role. Cover the purpose, instructions, capabilities, and constraints.
+
 default_structure: |
   Use this exact structure:
   # Agent: {{title}}

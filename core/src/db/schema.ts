@@ -150,6 +150,14 @@ export const wikiTypes = pgTable('wiki_types', {
    * prompt-validation.ts. See regen.ts and routes/wiki-types.ts.
    */
   prompt: text('prompt').notNull().default(''),
+  /**
+   * Type-aware authoring instruction for the HyDE generator (Wave G,
+   * wiki_agent_schema kind='hyde_synthetic'). Loaded from the YAML
+   * spec's `internal_framing` field on bootstrap. Belief wikis get
+   * framed differently than Decision wikis. Nullable so legacy types
+   * without framing still load.
+   */
+  internalFraming: text('internal_framing'),
   isDefault: boolean('is_default').notNull().default(false),
   userModified: boolean('user_modified').notNull().default(false),
   basedOnVersion: integer('based_on_version').notNull().default(1),
@@ -448,3 +456,42 @@ export const apiKeys = pgTable('api_keys', {
   hint: text('hint').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
+
+// ─── Wiki Agent Schema (multi-row agent-facing retrieval surface — Wave G) ───
+
+/**
+ * Multi-row keyed by (wikiKey, kind). Each `kind` is a different
+ * representation pathway used during retrieval. v0.2.0 ships two kinds:
+ *
+ *   - `description`     direct embedding of `wikis.description`
+ *   - `hyde_synthetic`  LLM-generated hypothetical document, then embedded
+ *
+ * Future kinds (post-v0.2.0) compose into the same table with no schema
+ * change: `hyde_questions`, `expanded_keywords`, `retrieval_friendly_summary`,
+ * `archetype_brief`. See docs/architecture/wiki-agent-schema.md.
+ *
+ * `generator_version` bumps when the prompt template, framing, embedding
+ * model, or generator LLM changes. Backfill is incremental — wikis whose
+ * stored version trails the canonical version surface in /settings/outstanding.
+ *
+ * The composite PRIMARY KEY (wiki_key, kind) is declared in the migration
+ * (0005_wiki_agent_schema.sql). Drizzle's pg-core does not support
+ * multi-column PKs via the column-level `.primaryKey()` helper without
+ * raw SQL fallthrough, so the constraint stays authoritative in the
+ * migration file. The kind index is declared here so drizzle-kit and
+ * the SQL stay in sync when future migrations diff against the schema.
+ */
+export const wikiAgentSchema = pgTable(
+  'wiki_agent_schema',
+  {
+    wikiKey: text('wiki_key')
+      .notNull()
+      .references(() => wikis.lookupKey, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    content: text('content').notNull(),
+    embedding: vector('embedding', { dimensions: 1536 }),
+    generatedAt: timestamp('generated_at').defaultNow().notNull(),
+    generatorVersion: text('generator_version').notNull(),
+  },
+  (t) => [index('wiki_agent_schema_kind_idx').on(t.kind)]
+)

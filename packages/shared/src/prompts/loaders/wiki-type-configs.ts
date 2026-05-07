@@ -15,6 +15,13 @@ export interface WikiTypeConfig {
   displayOrder: number
   version: number
   rawYaml: string
+  /**
+   * Wave G — type-aware HyDE authoring instruction. Empty string when the
+   * spec does not define `internal_framing`; the seeder writes NULL into
+   * wiki_types.internal_framing in that case so the column genuinely
+   * reflects "no framing on disk".
+   */
+  internalFraming: string
 }
 
 /**
@@ -46,6 +53,7 @@ export function loadWikiTypeConfigs(): WikiTypeConfig[] {
       displayOrder: spec.display_order ?? 999,
       version: spec.version,
       rawYaml,
+      internalFraming: spec.internal_framing ?? '',
     })
   }
   return configs.sort((a, b) => a.displayOrder - b.displayOrder)

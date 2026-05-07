@@ -9,6 +9,9 @@ task: thread_wiki_research
 description: Generates a research wiki — a curated library of references and findings on a topic.
 temperature: 0.3
 
+internal_framing: |
+  Write as if summarizing a literature review. Cover the question, the evidence, the sources, and the synthesis.
+
 default_structure: |
   Use this exact structure:
   # Research: {{title}}

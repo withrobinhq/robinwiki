@@ -9,6 +9,9 @@ task: thread_wiki_log
 description: Generates a log wiki — a chronological synthesis of events and observations.
 temperature: 0.3
 
+internal_framing: |
+  Write as if recounting an event or session. Cover what happened, when, who, and what was discussed.
+
 default_structure: |
   Use this exact structure:
   # Log: {{title}}

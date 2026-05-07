@@ -9,6 +9,9 @@ task: thread_wiki_project
 description: Generates a project wiki — a living document of an active initiative.
 temperature: 0.3
 
+internal_framing: |
+  Write as if updating someone on the project's state. Cover what is being built, why, where it stands, and what is next.
+
 default_structure: |
   Use this exact structure:
   # Project: {{title}}

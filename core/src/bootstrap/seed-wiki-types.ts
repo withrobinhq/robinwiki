@@ -49,6 +49,15 @@ export async function seedWikiTypes(): Promise<SeedWikiTypesResult> {
         .from(wikiTypes)
         .where(eq(wikiTypes.slug, cfg.slug))
 
+      // Wave G — internal_framing for HyDE generator (wiki_agent_schema
+      // kind='hyde_synthetic'). Empty string from disk → NULL in DB so the
+      // column genuinely reflects "no framing on disk" rather than "empty
+      // framing on disk", matching what the HyDE pipeline checks for.
+      const internalFraming =
+        cfg.internalFraming && cfg.internalFraming.trim().length > 0
+          ? cfg.internalFraming
+          : null
+
       if (!existing) {
         await db.insert(wikiTypes).values({
           slug: cfg.slug,
@@ -56,6 +65,7 @@ export async function seedWikiTypes(): Promise<SeedWikiTypesResult> {
           shortDescriptor: cfg.displayShortDescriptor,
           descriptor: cfg.displayDescription,
           prompt: cfg.rawYaml,
+          internalFraming,
           isDefault: true,
           userModified: false,
           basedOnVersion: cfg.version,
@@ -69,6 +79,7 @@ export async function seedWikiTypes(): Promise<SeedWikiTypesResult> {
             shortDescriptor: cfg.displayShortDescriptor,
             descriptor: cfg.displayDescription,
             prompt: cfg.rawYaml,
+            internalFraming,
             basedOnVersion: cfg.version,
             updatedAt: new Date(),
           })

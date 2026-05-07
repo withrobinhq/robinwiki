@@ -9,6 +9,9 @@ task: thread_wiki_principle
 description: Generates a principle wiki — a document of an operating rule or commitment.
 temperature: 0.3
 
+internal_framing: |
+  Write as if explaining a guiding rule. Cover what the rule is, when it applies, what happens when violated, and examples.
+
 default_structure: |
   Use this exact structure:
   # Principle: {{title}}

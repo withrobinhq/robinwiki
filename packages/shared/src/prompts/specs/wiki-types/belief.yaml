@@ -9,6 +9,9 @@ task: thread_wiki_belief
 description: Generates a belief wiki — a synthesis of a held position or mental model.
 temperature: 0.3
 
+internal_framing: |
+  Write as if explaining the position someone holds and why. Cover what they believe, the rationale, when it applies, and what would change their mind.
+
 default_structure: |
   Use this exact structure:
   # Belief: {{title}}
