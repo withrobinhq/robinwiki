@@ -51,6 +51,7 @@ export const wikiResponseSchema = z.object({
   bouncerMode: z.enum(['auto', 'review']).default('auto'),
   published: z.boolean().default(false),
   publishedSlug: z.string().nullable().default(null),
+  publishedOrigin: z.string().nullable().default(null),
   collections: z.array(wikiCollectionSchema).default([]),
 })
 
@@ -129,6 +130,7 @@ export const publishWikiResponseSchema = z.object({
   published: z.boolean(),
   publishedSlug: z.string().nullable(),
   publishedAt: z.coerce.date().nullable(),
+  publishedOrigin: z.string().nullable(),
   regenerate: z.boolean(),
 })
 

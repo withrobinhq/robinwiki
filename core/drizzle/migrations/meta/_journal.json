@@ -1,34 +1,41 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1777571058035,
-      "tag": "0000_bootstrap",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1778457600000,
-      "tag": "0001_wikis_people_embedding_retry_columns",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1778120351456,
-      "tag": "0002_users_singleton_uidx",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1778457601000,
-      "tag": "0003_migrations_meta_and_pipeline_nullable",
-      "breakpoints": true
-    }
-  ]
+	"version": "7",
+	"dialect": "postgresql",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1777571058035,
+			"tag": "0000_bootstrap",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1778457600000,
+			"tag": "0001_wikis_people_embedding_retry_columns",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1778120351456,
+			"tag": "0002_users_singleton_uidx",
+			"breakpoints": true
+		},
+		{
+			"idx": 3,
+			"version": "7",
+			"when": 1778457601000,
+			"tag": "0003_migrations_meta_and_pipeline_nullable",
+			"breakpoints": true
+		},
+		{
+			"idx": 4,
+			"version": "7",
+			"when": 1746604800000,
+			"tag": "0004_wikis_published_origin",
+			"breakpoints": true
+		}
+	]
 }

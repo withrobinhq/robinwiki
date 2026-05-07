@@ -260,6 +260,14 @@ export const wikis = pgTable(
     published: boolean('published').notNull().default(false),
     publishedSlug: text('published_slug'),
     publishedAt: timestamp('published_at'),
+    /**
+     * Origin captured at publish time (e.g. `https://wiki.example.com`).
+     * Lets clients build an absolute public URL deterministically when
+     * the user is browsing on a different host than where the wiki was
+     * published. Nullable: legacy rows fall back to
+     * `window.location.origin` or `process.env.SERVER_PUBLIC_URL`.
+     */
+    publishedOrigin: text('published_origin'),
     regenerate: boolean('regenerate').notNull().default(true),
     bouncerMode: text('bouncer_mode').notNull().default('auto'), // 'auto' | 'review'
     embedding: vector('embedding', { dimensions: 1536 }),
