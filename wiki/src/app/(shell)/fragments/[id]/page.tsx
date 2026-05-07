@@ -45,6 +45,12 @@ function FragmentInfobox({ fragment }: { fragment: FragmentData }) {
     margin: 0,
   };
 
+  // Stream F2: full lineage view in one place. The infobox now exposes
+  // `state` (PENDING/RESOLVED/LINKING/DIRTY) and `updatedAt` so users see
+  // the fragment's pipeline status alongside its origin metadata. Source
+  // client (mcp/api/web) lives on the parent entry today; surfacing it
+  // here would require an extra round-trip and is deferred to A5 once the
+  // fragment endpoint denormalises it.
   return (
     <aside
       className="wiki-aside-infobox"
@@ -66,6 +72,11 @@ function FragmentInfobox({ fragment }: { fragment: FragmentData }) {
         <p style={body}>{fragment.type}</p>
       </div>
 
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <p style={label}>State</p>
+        <p style={body}>{fragment.state}</p>
+      </div>
+
       {fragment.tags.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <p style={label}>Tags</p>
@@ -77,6 +88,13 @@ function FragmentInfobox({ fragment }: { fragment: FragmentData }) {
         <p style={label}>Created</p>
         <p style={body}>{formatDate(fragment.createdAt)}</p>
       </div>
+
+      {fragment.updatedAt && fragment.updatedAt !== fragment.createdAt && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <p style={label}>Updated</p>
+          <p style={body}>{formatDate(fragment.updatedAt)}</p>
+        </div>
+      )}
     </aside>
   );
 }
@@ -159,9 +177,16 @@ function EntryOriginSection({ entryId }: { entryId: string | null }) {
 }
 
 function BacklinksSection({ backlinks }: { backlinks: Array<{ id: string; name: string; type: string }> }) {
+  // Stream F2: stable `id="references"` so any in-page link (or external
+  // link of the form `/fragments/<id>#references`) lands on the wikis-
+  // citing list. F1's wiki-side superscripts already jump to each wiki's
+  // own bibliography (`#fragment-{lookupKey}`); this anchor is the
+  // mirror image on the fragment side — "where am I cited from?".
+  // `scrollMarginTop` keeps the section header visible under any sticky
+  // page chrome.
   return (
-    <section style={{ width: "100%" }}>
-      <WikiSectionH2 title="Wikis" count={backlinks.length} />
+    <section id="references" style={{ width: "100%", scrollMarginTop: 80 }}>
+      <WikiSectionH2 title="Wiki references" count={backlinks.length} />
       {backlinks.length === 0 ? (
         <EmptyState text="Not filed in any wiki" />
       ) : (
