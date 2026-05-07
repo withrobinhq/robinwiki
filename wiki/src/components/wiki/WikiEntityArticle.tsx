@@ -287,6 +287,9 @@ export type WikiEntityArticleProps = {
   published?: boolean;
   /** Public published-wiki nanoid slug (when published) for share-link UI. */
   publishedSlug?: string | null;
+  /** Origin recorded at publish time. Drives the clickable URL when
+   *  the user is browsing from a different host (Stream I Phase 4). */
+  publishedOrigin?: string | null;
   /** Current collection memberships — feeds the Collections section in the modal. */
   collections?: Array<{ id: string; name: string; slug: string; color: string }>;
   /** Real wiki id for settings-mode PUT. Prototype pages omit → 'preview' sentinel. */
@@ -341,6 +344,7 @@ export function WikiEntityArticle({
   bouncerMode,
   published,
   publishedSlug,
+  publishedOrigin,
   collections,
   onSave,
   onSettingsClick: onSettingsClickProp,
@@ -408,9 +412,10 @@ export function WikiEntityArticle({
       bouncerMode,
       published,
       publishedSlug,
+      publishedOrigin,
       collections,
     }),
-    [displayTitle, displayChipLabel, description, promptOverride, bouncerMode, published, publishedSlug, collections],
+    [displayTitle, displayChipLabel, description, promptOverride, bouncerMode, published, publishedSlug, publishedOrigin, collections],
   );
 
   const tabs = ["Read", "Edit", "View history"] as const;

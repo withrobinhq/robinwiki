@@ -105,6 +105,9 @@ export default function AddWikiModal({
   /** #255: publish toggle state inside settings modal. */
   const [published, setPublished] = useState<boolean>(false);
   const [publishedSlug, setPublishedSlug] = useState<string | null>(null);
+  /** Stream I Phase 4: origin recorded at publish time. Drives the
+   *  clickable URL when the user is browsing from a different host. */
+  const [publishedOrigin, setPublishedOrigin] = useState<string | null>(null);
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   /** Collection membership — settings mode persists immediately via API; create
@@ -161,6 +164,7 @@ export default function AddWikiModal({
           initialBouncerModeRef.current = bm;
           setPublished(Boolean(prefill.published));
           setPublishedSlug(prefill.publishedSlug ?? null);
+          setPublishedOrigin(prefill.publishedOrigin ?? null);
           setPublishError(null);
           setLocalCollections(prefill.collections ?? []);
           setCollectionPendingId(null);
@@ -771,6 +775,9 @@ export default function AddWikiModal({
                         setPublishedSlug(
                           (data as { publishedSlug?: string } | undefined)?.publishedSlug ?? null,
                         );
+                        setPublishedOrigin(
+                          (data as { publishedOrigin?: string | null } | undefined)?.publishedOrigin ?? null,
+                        );
                       } else {
                         const { error } = await unpublishWiki({
                           path: { id: wikiId },
@@ -778,6 +785,8 @@ export default function AddWikiModal({
                         });
                         if (error) throw new Error((error as { error?: string })?.error ?? "Unpublish failed");
                         setPublished(false);
+                        setPublishedSlug(null);
+                        setPublishedOrigin(null);
                       }
                       await queryClient.invalidateQueries({ queryKey: ["wikis"] });
                       await queryClient.invalidateQueries({ queryKey: ["wiki", wikiId] });
@@ -805,7 +814,8 @@ export default function AddWikiModal({
                     <button
                       type="button"
                       onClick={() => {
-                        const url = `${window.location.origin}/p/${publishedSlug}`;
+                        const base = publishedOrigin || window.location.origin;
+                        const url = `${base}/p/${publishedSlug}`;
                         void navigator.clipboard.writeText(url).catch(() => {});
                       }}
                       className="rounded px-2 text-[11px]"
@@ -822,7 +832,8 @@ export default function AddWikiModal({
                     <button
                       type="button"
                       onClick={() => {
-                        const url = `${window.location.origin}/p/${publishedSlug}`;
+                        const base = publishedOrigin || window.location.origin;
+                        const url = `${base}/p/${publishedSlug}`;
                         window.open(url, "_blank", "noopener,noreferrer");
                       }}
                       className="rounded px-2 text-[11px]"
