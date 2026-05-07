@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { loadSpec, parseSpecFromBlob, renderTemplate } from '../loader.js'
+import { loadSpec, parseUserSpecFromBlobLenient, renderTemplate } from '../loader.js'
 import type { PromptResult } from '../types.js'
 import type { PromptSpec } from '../schema.js'
 import type { WikiType } from '../../types/wiki.js'
@@ -154,12 +154,27 @@ export function loadWikiGenerationSpec(
   const validated = inputSchema.parse(vars)
   const diskSpec = loadSpec(`${type}.yaml`, 'wiki-types')
 
-  // Resolve effective spec based on override shape. parseSpecFromBlob throws on
-  // parse/schema failure — the caller (regen.ts) catches and falls back to disk.
+  // Resolve effective spec based on override shape. parseUserSpecFromBlobLenient
+  // strips the locked forbidden fields (system_message, system_only) from
+  // user-supplied YAML so a stored blob written before the strict gate landed
+  // cannot crash the worker. It throws on yaml-parse / schema failures only —
+  // the caller (regen.ts) catches and falls back to disk.
   let effective: PromptSpec = diskSpec
+  let strippedFields: string[] = []
   if (override) {
     if (override.kind === 'yaml') {
-      effective = parseSpecFromBlob(override.blob)
+      const { spec: userSpec, stripped } = parseUserSpecFromBlobLenient(override.blob)
+      strippedFields = stripped
+      // User blob fields win for everything EXCEPT system_message and
+      // system_only — those always come from disk so a forbidden field that
+      // slipped past the strict HTTP gate (e.g. legacy stored row) cannot
+      // reach the LLM.
+      effective = {
+        ...diskSpec,
+        ...userSpec,
+        system_message: diskSpec.system_message,
+        system_only: diskSpec.system_only,
+      }
     } else {
       // Append (not replace): user text extends the canonical type system_message.
       // trimEnd on both sides keeps the blank-line separator clean.
@@ -195,5 +210,9 @@ export function loadWikiGenerationSpec(
       temperature: effective.temperature,
       outputSchema: schemaMap[type],
     },
+    // Names of forbidden user-override fields that the lenient parser dropped.
+    // Empty for disk-default + systemMessage-append paths. Callers with a DB
+    // connection should emit an audit row when non-empty.
+    strippedFields,
   }
 }

@@ -284,7 +284,12 @@ describe('regenerateWiki — override hierarchy integration', () => {
     expect(llmCalls[0].user).toContain('DOCUMENT STRUCTURE')
   })
 
-  it('honors a user-customized wiki_type YAML blob for both system_message and template', async () => {
+  it('honors a user-customized wiki_type YAML blob for template (system_message stays disk-sourced after sec-phase-4)', async () => {
+    // SEC-H4 lockdown (sec-phase-4-pipeline 01): user YAML overrides may
+    // change template, temperature, etc. — but system_message always comes
+    // from the disk default. Even if a stored row carried a forbidden
+    // override, the lenient loader strips it silently and the disk
+    // system_message wins.
     const customYaml = `name: CustomLog
 version: 7
 category: generation
@@ -322,13 +327,77 @@ input_variables:
     await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
 
     expect(llmCalls).toHaveLength(1)
-    // Custom YAML fully drives system + template.
-    expect(llmCalls[0].system).toContain('CUSTOM_SYSTEM_MARKER')
-    expect(llmCalls[0].system).not.toContain('Quill')
+    // System message: disk default wins, the forbidden user override is stripped.
+    expect(llmCalls[0].system).not.toContain('CUSTOM_SYSTEM_MARKER')
+    expect(llmCalls[0].system).toContain('Quill')
+    // Template (allowed override): the user's CUSTOM_TEMPLATE_MARKER drives the user prompt.
     expect(llmCalls[0].user).toContain('CUSTOM_TEMPLATE_MARKER')
     expect(llmCalls[0].user).toContain('Title: Test Wiki')
     expect(llmCalls[0].user).toContain('Count: 0')
     expect(llmCalls[0].user).not.toContain('DOCUMENT STRUCTURE')
+  })
+
+  it('emits a forbidden_field_stripped audit row when the stored YAML carries a system_message override', async () => {
+    // sec-phase-4-pipeline 01: the runtime loader silently drops forbidden
+    // fields and the regen path emits an audit row so operators can find
+    // legacy rows that still carry an override.
+    const customYaml = `name: CustomLog
+version: 7
+category: generation
+task: thread_wiki_log
+description: custom log variant
+temperature: 0.5
+system_message: "evil prompt override"
+template: |
+  Title: {{title}}
+input_variables:
+  - name: fragments
+    description: fragment content
+    required: true
+  - name: title
+    description: title
+    required: true
+  - name: date
+    description: current date
+    required: false
+  - name: count
+    description: count
+    required: true
+`
+
+    stageDbResponses([
+      [baseWiki()],
+      [],
+      [],
+      [],
+      [{ prompt: customYaml }],
+    ])
+
+    const { emitAuditEvent } = await import('../db/audit.js')
+    const auditMock = emitAuditEvent as unknown as ReturnType<typeof vi.fn>
+    auditMock.mockClear()
+
+    await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
+
+    expect(llmCalls).toHaveLength(1)
+    // Disk system_message wins.
+    expect(llmCalls[0].system).not.toContain('evil prompt override')
+    expect(llmCalls[0].system).toContain('Quill')
+
+    // Audit row emitted.
+    const calls = auditMock.mock.calls
+    const stripCall = calls.find(
+      (c) => (c[1] as { eventType?: string }).eventType === 'forbidden_field_stripped'
+    )
+    expect(stripCall).toBeDefined()
+    const params = stripCall?.[1] as {
+      entityType: string
+      entityId: string
+      detail?: { fields?: string[]; wikiType?: string }
+    }
+    expect(params.entityType).toBe('wiki_type')
+    expect(params.entityId).toBe('log')
+    expect(params.detail?.fields).toContain('system_message')
   })
 
   it('falls back to disk default (does NOT throw) when the stored YAML blob is syntactically malformed', async () => {
