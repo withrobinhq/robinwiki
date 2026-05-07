@@ -15,6 +15,7 @@
     "baseUrl": ".",
     "paths": {
       "@robin/agent": ["packages/agent/src/index.ts"],
+      "@robin/graph": ["packages/graph/src/index.ts"],
       "@robin/queue": ["packages/queue/src/index.ts"],
       "@robin/shared": ["packages/shared/src/index.ts"]
     }

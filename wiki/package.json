@@ -19,6 +19,7 @@
     "@codemirror/theme-one-dark": "6.1.3",
     "@codemirror/view": "6.41.1",
     "@hey-api/client-fetch": "^0.13.1",
+    "@robin/graph": "workspace:*",
     "@robin/shared": "workspace:*",
     "@tanstack/react-query": "^5.99.0",
     "@tiptap/extension-placeholder": "^3.22.3",

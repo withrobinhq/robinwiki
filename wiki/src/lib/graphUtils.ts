@@ -1,5 +1,14 @@
 import type { GraphEdge } from "../components/graph/graphSampleData";
 
+// Wave G — re-export the @robin/graph adapter for callers that need to
+// rejoin srcType/dstType onto edges coming back from /graph (the API
+// strips them in the EDGE_TYPE_MAP projection). The in-tree
+// buildAdjacencyMap / extractEgoSubgraph / shouldShowLabel below have
+// extra zoom-fade smoothing the package version intentionally omits;
+// keep both available rather than collapse onto one implementation.
+export { enrichEdges } from "@robin/graph";
+export type { EnrichedEdge, NodeWithType } from "@robin/graph";
+
 /**
  * Build a bidirectional adjacency map from edges for O(1) neighbor lookups.
  */
