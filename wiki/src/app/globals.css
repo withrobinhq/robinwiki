@@ -598,6 +598,14 @@ input:focus {
     max-width: 100% !important;
   }
 
+  /* G2: unfloat infobox table on mobile so it stacks above the body. */
+  .winfo {
+    float: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 0 16px 0 !important;
+  }
+
   /* Stack title + tabs (absolute Figma layout → column) */
   .wiki-article-title-wrap {
     min-height: 0 !important;
@@ -1062,13 +1070,24 @@ input:focus {
 }
 
 /* ─── Infobox (.winfo) — Wikipedia-style table ─────────────── */
+/*
+ * G2 right-column fix: at desktop the infobox floats to the right of the
+ * article body so prose wraps around it (Wikipedia mental model). The
+ * `.winfo` element is rendered as the first child of `.wiki-article-content`
+ * (or sibling of body markdown in the published surface) so the float
+ * pulls out of the normal flow and the body fills the remaining width.
+ * Mobile (<= 1023px) media query below unfloats and stretches to 100%.
+ */
 .winfo {
   border: 1px solid var(--wiki-nav-border);
   background: #fff;
   font-family: "Noto Sans", var(--font-noto-sans), sans-serif;
   font-size: 13px;
   color: var(--wiki-article-text);
-  width: 100%;
+  width: 280px;
+  max-width: 40%;
+  float: right;
+  margin: 0 0 12px 16px;
   border-collapse: collapse;
 }
 .winfo__head {

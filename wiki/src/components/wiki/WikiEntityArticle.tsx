@@ -743,19 +743,12 @@ export function WikiEntityArticle({
           </div>
 
           {/*
-            Structured `.winfo` infobox (sidecar-driven) renders ABOVE the
-            article body at full content width — issue #251. The legacy
-            217px `.wiki-aside-infobox` variants (renderInfobox) keep their
-            side-rail slot below.
+            Structured `.winfo` infobox (sidecar-driven) renders inline as
+            the first child of `.wiki-article-content` so prose body wraps
+            around it via `float: right` (globals.css `.winfo`). #251 +
+            G2 right-column fix. The legacy 217px `.wiki-aside-infobox`
+            variants (renderInfobox) keep their side-rail flex slot.
           */}
-          {showInfobox && infoVisible && !isEditing && !isViewingHistory && renderCustomInfobox
-            ? (
-                <div className="wiki-article-infobox-above" style={{ width: "100%" }}>
-                  {renderCustomInfobox()}
-                </div>
-              )
-            : null}
-
           <div
             className="wiki-article-layout"
             style={{
@@ -770,11 +763,16 @@ export function WikiEntityArticle({
               style={{
                 flex: 1,
                 minWidth: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
+                // G2: flow-root establishes a block formatting context so
+                // `.winfo` (rendered first child) can float right and the
+                // body markdown wraps around it. `display: flex` would
+                // turn children into flex items and ignore the float.
+                display: "flow-root",
               }}
             >
+              {showInfobox && infoVisible && !isEditing && !isViewingHistory && renderCustomInfobox
+                ? renderCustomInfobox()
+                : null}
               {isEditing ? (
                 <InlineEditor
                   content={draftContent}
