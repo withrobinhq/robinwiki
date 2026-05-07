@@ -172,9 +172,10 @@ export async function persist(
   await deps.emitEvent({
     entryKey: input.entryKey,
     jobId: input.jobId,
-    stage: 'persist',
+    stage: 'capture',
     status: 'completed',
     metadata: {
+      substage: 'persist',
       fragmentCount: fragmentKeys.length,
       personCount: input.newPeople?.length ?? 0,
     },

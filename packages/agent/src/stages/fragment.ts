@@ -36,9 +36,10 @@ export async function fragment(
       await deps.emitEvent({
         entryKey: input.entryKey,
         jobId: input.jobId,
-        stage: 'fragmentation',
+        stage: 'fragment',
         status: 'completed',
         metadata: {
+          substage: 'fragmentation',
           warning: 'fragment_size_out_of_range',
           wordCount,
           fragmentTitle: frag.title,

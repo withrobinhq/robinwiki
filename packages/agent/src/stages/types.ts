@@ -31,10 +31,19 @@ export interface LinkingInput {
 
 // ── Event Emitter ────────────────────────────────────────────────────────────
 
+/**
+ * Top-level stage taxonomy for pipeline_events emission. Mirrors the union in
+ * `core/src/db/pipeline-events.ts`. Sub-stage detail (entity-extract,
+ * wiki-classify, persist, etc.) goes into `metadata.substage` instead of
+ * widening this union.
+ */
+export type EmitStage = 'capture' | 'fragment' | 'classify' | 'regen' | 'embed'
+
 export type EmitEvent = (event: {
-  entryKey: string
+  /** Null for regen/embed batch jobs that are not entry-scoped. */
+  entryKey: string | null
   jobId: string
-  stage: string
+  stage: EmitStage
   status: 'started' | 'completed' | 'failed'
   fragmentKey?: string
   metadata?: Record<string, unknown>

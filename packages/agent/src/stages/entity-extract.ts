@@ -131,8 +131,9 @@ export async function entityExtract(
   await deps.emitEvent({
     entryKey: input.entryKey,
     jobId: input.jobId,
-    stage: 'entity-extract',
+    stage: 'classify',
     status: 'started',
+    metadata: { substage: 'entity-extract' },
   })
 
   // 1. Load known people
@@ -195,9 +196,10 @@ export async function entityExtract(
   await deps.emitEvent({
     entryKey: input.entryKey,
     jobId: input.jobId,
-    stage: 'entity-extract',
+    stage: 'classify',
     status: 'completed',
     metadata: {
+      substage: 'entity-extract',
       totalMentions: parsed.people.length,
       matchedMentions: peopleMap.size,
       unmatchedDropped,

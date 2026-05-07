@@ -50,7 +50,7 @@ import {
 import { entryLock, fragmentLock } from '../db/locks.js'
 import { resolveFragmentSlug } from '../db/slug.js'
 import { computeContentHash } from '../db/dedup.js'
-import { emitPipelineEvent } from '../db/pipeline-events.js'
+import { emitPipelineEvent, type PipelineStage } from '../db/pipeline-events.js'
 import { emitAuditEvent } from '../db/audit.js'
 import { producer } from './producer.js'
 import { processRegenJob, processRegenBatchJob } from './regen-worker.js'
@@ -69,9 +69,9 @@ const bullWorker = new BullMQWorker(connection)
 // ── Shared helpers ──────────────────────────────────────────────────────────
 
 function emitEvent(event: {
-  entryKey: string
+  entryKey: string | null
   jobId: string
-  stage: string
+  stage: PipelineStage
   status: 'started' | 'completed' | 'failed'
   fragmentKey?: string
   metadata?: Record<string, unknown>

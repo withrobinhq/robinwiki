@@ -94,8 +94,9 @@ export async function runExtraction(
       await deps.emitEvent({
         entryKey: input.entryKey,
         jobId: input.jobId,
-        stage: 'extraction',
+        stage: 'capture',
         status: 'started',
+        metadata: { substage: 'extraction' },
       })
 
       // Stage 1: fragment + entity-extract in parallel (entity-extract fail-open)
@@ -122,9 +123,12 @@ export async function runExtraction(
         await deps.emitEvent({
           entryKey: input.entryKey,
           jobId: input.jobId,
-          stage: 'entity-extract',
+          stage: 'classify',
           status: 'failed',
-          metadata: { error: entitySettled.reason?.message ?? 'unknown' },
+          metadata: {
+            substage: 'entity-extract',
+            error: entitySettled.reason?.message ?? 'unknown',
+          },
         })
       }
 
@@ -158,9 +162,10 @@ export async function runExtraction(
       await deps.emitEvent({
         entryKey: input.entryKey,
         jobId: input.jobId,
-        stage: 'extraction',
+        stage: 'capture',
         status: 'completed',
         metadata: {
+          substage: 'extraction',
           fragmentCount: persistResult.data.fragmentKeys.length,
         },
       })
@@ -198,9 +203,10 @@ export async function runLinking(
       await deps.emitEvent({
         entryKey: input.entryKey,
         jobId: input.jobId,
-        stage: 'linking',
+        stage: 'classify',
         status: 'started',
         fragmentKey: input.fragmentKey,
+        metadata: { substage: 'linking' },
       })
 
       // Stage 1: wiki classification
@@ -298,10 +304,11 @@ export async function runLinking(
       await deps.emitEvent({
         entryKey: input.entryKey,
         jobId: input.jobId,
-        stage: 'linking',
+        stage: 'classify',
         status: 'completed',
         fragmentKey: input.fragmentKey,
         metadata: {
+          substage: 'linking',
           wikiEdgeCount: wikiResult.data.wikiEdges.length,
           relatedEdgeCount: relateResult.data.relatedEdges.length,
         },

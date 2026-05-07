@@ -42,10 +42,11 @@ export async function fragRelate(
   await deps.emitEvent({
     entryKey: input.entryKey,
     jobId: input.jobId,
-    stage: 'frag-relate',
+    stage: 'classify',
     status: 'completed',
     fragmentKey: input.fragmentKey,
     metadata: {
+      substage: 'frag-relate',
       candidateCount: filtered.length,
       scoredCount: relatedEdges.length,
     },

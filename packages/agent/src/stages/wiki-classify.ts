@@ -26,10 +26,15 @@ export async function wikiClassify(
     await deps.emitEvent({
       entryKey: input.entryKey,
       jobId: input.jobId,
-      stage: 'wiki-classify',
+      stage: 'classify',
       status: 'completed',
       fragmentKey: input.fragmentKey,
-      metadata: { candidateCount: 0, matchedCount: 0, threshold: THRESHOLD },
+      metadata: {
+        substage: 'wiki-classify',
+        candidateCount: 0,
+        matchedCount: 0,
+        threshold: THRESHOLD,
+      },
     })
     return { data: { wikiEdges: [] }, durationMs: performance.now() - start }
   }
@@ -62,10 +67,11 @@ export async function wikiClassify(
   await deps.emitEvent({
     entryKey: input.entryKey,
     jobId: input.jobId,
-    stage: 'wiki-classify',
+    stage: 'classify',
     status: 'completed',
     fragmentKey: input.fragmentKey,
     metadata: {
+      substage: 'wiki-classify',
       candidateCount: candidates.length,
       matchedCount: wikiEdges.length,
       threshold: THRESHOLD,
