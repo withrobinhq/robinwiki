@@ -29,24 +29,31 @@ const tsvector = customType<{ data: string; driverData: string }>({
 // All other domain tables dropped user_id in M2 (single-user collapse). Do not
 // re-add user_id to domain tables — single user means unscoped queries.
 
-export const users = pgTable('users', {
-  id: text('id').primaryKey(),
-  email: text('email').notNull().unique(),
-  emailVerified: boolean('email_verified').notNull().default(false),
-  name: text('name'),
-  image: text('image'),
-  // MCP JWT signing + token revocation (preserved from prior schema):
-  publicKey: text('public_key').notNull().default(''),
-  encryptedPrivateKey: text('encrypted_private_key').notNull().default(''),
-  mcpTokenVersion: integer('mcp_token_version').notNull().default(1),
-  // Single-user additions (M1):
-  encryptedDek: text('encrypted_dek').notNull().default(''),
-  passwordResetRequired: boolean('password_reset_required').notNull().default(false),
-  onboardingComplete: boolean('onboarding_complete').notNull().default(false),
-  onboardedAt: timestamp('onboarded_at'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-})
+export const users = pgTable(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    email: text('email').notNull().unique(),
+    emailVerified: boolean('email_verified').notNull().default(false),
+    name: text('name'),
+    image: text('image'),
+    // MCP JWT signing + token revocation (preserved from prior schema):
+    publicKey: text('public_key').notNull().default(''),
+    encryptedPrivateKey: text('encrypted_private_key').notNull().default(''),
+    mcpTokenVersion: integer('mcp_token_version').notNull().default(1),
+    // Single-user additions (M1):
+    encryptedDek: text('encrypted_dek').notNull().default(''),
+    passwordResetRequired: boolean('password_reset_required').notNull().default(false),
+    onboardingComplete: boolean('onboarding_complete').notNull().default(false),
+    onboardedAt: timestamp('onboarded_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  // Single-tenant invariant (#audit-M1). Mirrors migration
+  // 0002_users_singleton_uidx.sql. The `(true)` expression collapses every
+  // row to the same key, so the second insert raises SQLSTATE 23505.
+  (_t) => [uniqueIndex('users_singleton_uidx').on(sql`(true)`)],
+)
 
 export const sessions = pgTable('sessions', {
   id: text('id').primaryKey(),
