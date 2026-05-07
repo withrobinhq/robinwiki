@@ -30,6 +30,7 @@ vi.mock('../db/schema.js', () => ({
     published: 'wikis.published',
     updatedAt: 'wikis.updated_at',
   },
+  entries: {},
   edges: {},
   wikiTypes: {},
   fragments: {},
@@ -38,6 +39,14 @@ vi.mock('../db/schema.js', () => ({
   edits: {},
   groupWikis: {},
   groups: {},
+}))
+
+// db/locks.ts pulls drizzle tables at module load — stub to avoid
+// running the real CasLock constructor against the test schema mocks.
+vi.mock('../db/locks.js', () => ({
+  wikiRegenLock: { using: vi.fn() },
+  entryLock: { using: vi.fn() },
+  fragmentLock: { using: vi.fn() },
 }))
 
 vi.mock('../middleware/session.js', () => ({
