@@ -24,47 +24,98 @@ import { eq, isNotNull } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import { users } from '../db/schema.js'
 import { decryptPrivateKey } from '../keypair.js'
+import { logger } from '../lib/logger.js'
+
+const log = logger.child({ component: 'mcp-jwt' })
 
 /**
  * In-memory `kid → user` cache to avoid full table scan per MCP request.
  *
- * @remarks Invalidated on cache miss (new user) by rebuilding the
- * entire map. This is acceptable because new users are rare events.
+ * @remarks Map is keyed by the full 32-char kid. The cache is rebuilt
+ * lazily on miss; callers must invoke {@link clearKidCache} after any
+ * write to `users.publicKey` or `users.mcpTokenVersion` so we never
+ * serve a stale public key after key rotation.
  *
  * @internal
  */
 let kidCache: Map<string, typeof users.$inferSelect> | null = null
 
 /**
+ * Rebuild the `kid → user` cache from all provisioned users.
+ *
+ * @internal
+ */
+async function rebuildKidCache(): Promise<void> {
+  const rows = await db.select().from(users).where(isNotNull(users.publicKey))
+  kidCache = new Map()
+  for (const u of rows) {
+    if (u.publicKey) kidCache.set(publicKeyId(u.publicKey), u)
+  }
+}
+
+/**
  * Look up a user by their public key fingerprint (`kid`).
  *
- * @remarks On cache miss, rebuilds from all provisioned users.
+ * @remarks
+ * Accepts both 32-char (current) and 16-char (legacy, in-flight tokens
+ * minted before the kid-length change) fingerprints. On a 16-char miss,
+ * scans the cache for any entry whose full 32-char kid begins with the
+ * supplied prefix. If nothing matches and the cache hasn't just been
+ * rebuilt, force a rebuild and retry once — this keeps already-issued
+ * legacy tokens valid even after a process restart with a cold cache.
  *
- * @param kid - SHA-256 fingerprint of the user's public key (first 16 hex chars)
+ * TODO(sec-phase-4): remove the 16-char prefix fallback after one
+ * release cycle.
+ *
+ * @param kid - SHA-256 fingerprint of the user's public key (32 hex
+ *              chars for new tokens, 16 hex chars for legacy tokens)
  * @returns User record or `undefined` if not found
  *
  * @internal
  */
 async function findUserByKid(kid: string) {
   if (kidCache?.has(kid)) return kidCache.get(kid)
-  const rows = await db.select().from(users).where(isNotNull(users.publicKey))
-  kidCache = new Map()
-  for (const u of rows) {
-    if (u.publicKey) kidCache.set(publicKeyId(u.publicKey), u)
+
+  const tryPrefixMatch = () => {
+    if (kid.length !== 16 || !kidCache) return undefined
+    for (const [fullKid, user] of kidCache) {
+      if (fullKid.startsWith(kid)) {
+        // Cache the legacy key so subsequent lookups are O(1).
+        kidCache.set(kid, user)
+        log.debug({ kid }, 'mcp jwt: 16-char kid fallback')
+        return user
+      }
+    }
+    return undefined
   }
-  return kidCache.get(kid)
+
+  // Warm cache: try a prefix match before paying for a DB scan.
+  if (kidCache) {
+    const hit = tryPrefixMatch()
+    if (hit) return hit
+    if (kid.length !== 16 && kid.length !== 32) return undefined
+  }
+
+  // Cold cache or no exact/prefix hit yet — rebuild once and retry.
+  await rebuildKidCache()
+  if (kidCache?.has(kid)) return kidCache.get(kid)
+  return tryPrefixMatch()
 }
 
 /**
  * Derive a `kid` (key ID) from a hex-encoded public key.
  *
+ * @remarks Returns 32 hex chars (128 bits) of the SHA-256 digest. The
+ * verify path also accepts a 16-char prefix during the legacy-token
+ * grace window — see {@link findUserByKid}.
+ *
  * @param publicKeyHex - DER-encoded public key as hex string
- * @returns First 16 chars of the SHA-256 hex digest
+ * @returns First 32 chars of the SHA-256 hex digest
  *
  * @internal
  */
 function publicKeyId(publicKeyHex: string): string {
-  return createHash('sha256').update(publicKeyHex).digest('hex').slice(0, 16)
+  return createHash('sha256').update(publicKeyHex).digest('hex').slice(0, 32)
 }
 
 /**
