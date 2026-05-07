@@ -41,7 +41,11 @@ import {
   probeEmbeddingsOrRefuseWorkers,
 } from './bootstrap/check-openrouter-key.js'
 import { ensurePgvector } from './bootstrap/ensure-pgvector.js'
-import { runMigrations } from './bootstrap/run-migrations.js'
+import {
+  runMigrations,
+  checkAndUpdateJournalDrift,
+  updateJournalSha,
+} from './bootstrap/run-migrations.js'
 import { seedWikiTypes } from './bootstrap/seed-wiki-types.js'
 import { loadMasterKey } from './lib/crypto.js'
 
@@ -236,6 +240,50 @@ await runMigrations().catch((err) => {
   logger.fatal({ err }, 'run-migrations failed — refusing to start')
   process.exit(1)
 })
+
+// Drizzle journal-hash drift detection (Phyl #12 / Phase A2). Compares the
+// SHA-256 of meta/_journal.json on disk against the value stored in
+// migrations_meta. Production exits 1 on mismatch (the schema state in this
+// DB was recorded against a different journal — risk of corruption). Dev /
+// test warn but update the row so legitimate rebases don't keep tripping.
+await checkAndUpdateJournalDrift()
+  .then(async (result) => {
+    if (result.kind === 'unavailable') {
+      logger.warn('migration-journal SHA unavailable — skipping drift check')
+      return
+    }
+    if (result.kind === 'seeded') {
+      logger.info({ diskSha: result.diskSha }, 'migrations_meta journal sha seeded')
+      return
+    }
+    if (result.kind === 'match') return // expected steady-state
+    // result.kind === 'drift'
+    if (process.env.NODE_ENV === 'production') {
+      logger.fatal(
+        {
+          diskSha: result.diskSha,
+          dbSha: result.dbSha,
+        },
+        'FATAL: drizzle journal SHA drift detected — disk does not match the recorded migration state. ' +
+          'Refusing to start in production. Investigate which deploy introduced the mismatched journal ' +
+          '(forced push? cherry-pick? rebased migration?) and reconcile before restarting.',
+      )
+      process.exit(1)
+    }
+    logger.warn(
+      {
+        diskSha: result.diskSha,
+        dbSha: result.dbSha,
+      },
+      'drizzle journal SHA drift detected — refreshing migrations_meta (dev/test only)',
+    )
+    await updateJournalSha().catch((err) =>
+      logger.warn({ err }, 'failed to refresh migrations_meta journal sha'),
+    )
+  })
+  .catch((err) => {
+    logger.warn({ err }, 'drift check failed — continuing startup')
+  })
 
 // Warn loudly if the OpenRouter key is missing — non-fatal so non-ingest traffic still works
 await checkOpenRouterKey().catch((err) => {
