@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { MarkdownContent } from "@/components/wiki/MarkdownContent";
 import { ROUTES } from "@/lib/routes";
 import type { FragmentWithContentResponseSchema } from "@/lib/generated/types.gen";
+import { FragmentEvolution } from "./FragmentEvolution";
 
 type FragmentData = Omit<FragmentWithContentResponseSchema, "entryId"> & {
   entryId: string | null;
@@ -301,10 +302,27 @@ function RelatedFragmentsSection({ relatedFragments }: { relatedFragments: Array
   );
 }
 
+function EvolutionSection({ fragment }: { fragment: FragmentData }) {
+  // Stream F4: edit-history timeline lives on the fragment-detail page
+  // itself so the click chain from a wiki citation ends at one surface
+  // showing origin + evolution. The component handles its own loading,
+  // error, and empty states; we just wrap it in a section heading.
+  return (
+    <section style={{ width: "100%" }}>
+      <WikiSectionH2 title="Evolution" />
+      <FragmentEvolution
+        fragmentId={fragment.lookupKey}
+        currentContent={fragment.content}
+      />
+    </section>
+  );
+}
+
 function FragmentBottomSections({ fragment }: { fragment: FragmentData }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 40, width: "100%" }}>
       <EntryOriginSection entryId={fragment.entryId} />
+      <EvolutionSection fragment={fragment} />
       <BacklinksSection backlinks={fragment.backlinks ?? []} />
       <RelatedFragmentsSection relatedFragments={fragment.relatedFragments ?? []} />
     </div>

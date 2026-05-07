@@ -176,11 +176,14 @@ export function FragmentEvolution({
   // outer section opens; older entries stay collapsed until clicked.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const edits = data?.edits ?? [];
+  // Memo against `data` directly so the dep is stable across renders
+  // when React Query returns the same response object — `data?.edits ?? []`
+  // would allocate a fresh empty array each render and defeat the memo.
   const entries = useMemo(
-    () => computeEntries(edits, currentContent),
-    [edits, currentContent],
+    () => computeEntries(data?.edits ?? [], currentContent),
+    [data, currentContent],
   );
+  const edits = data?.edits ?? [];
 
   if (isLoading) {
     return null;
