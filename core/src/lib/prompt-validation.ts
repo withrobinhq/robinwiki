@@ -1,5 +1,5 @@
-import { USER_OVERRIDE_FORBIDDEN_FIELDS, parseUserSpecFromBlobStrict } from '@robin/shared'
-import type { PromptSpec } from '@robin/shared'
+import { USER_OVERRIDE_FORBIDDEN_FIELDS, parseUserSpecFromBlobStrict } from '@robin/shared/prompts'
+import type { PromptSpec } from '@robin/shared/prompts'
 import Handlebars from 'handlebars'
 
 const MAX_YAML_BYTES = 32 * 1024

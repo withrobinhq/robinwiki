@@ -29,9 +29,9 @@ import {
   makeLookupKey,
   parseLookupKey,
   generateSlug,
-  loadPeopleExtractionSpec,
 } from '@robin/shared'
-import type { PeopleExtractionOutput } from '@robin/shared'
+import { loadPeopleExtractionSpec } from '@robin/shared/prompts'
+import type { PeopleExtractionOutput } from '@robin/shared/prompts'
 import type { BullMQProducer, ExtractionJob } from '@robin/queue'
 import { resolveEntrySlug, resolveFragmentSlug, resolveWikiSlug } from '../db/slug.js'
 import { computeContentHash, findDuplicateEntry, findDuplicateFragment } from '../db/dedup.js'

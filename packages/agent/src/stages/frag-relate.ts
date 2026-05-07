@@ -1,4 +1,4 @@
-import { loadFragmentRelevanceSpec } from '@robin/shared'
+import { loadFragmentRelevanceSpec } from '@robin/shared/prompts'
 import type { StageResult, FragRelateDeps, FragRelateResult } from './types.js'
 
 const THRESHOLD = Number(process.env.FRAG_RELATE_THRESHOLD) || 0.5

@@ -32,11 +32,13 @@ import {
 import {
   makeLookupKey,
   generateSlug,
+} from '@robin/shared'
+import {
   fragmentationSchema,
   peopleExtractionSchema,
   wikiClassificationSchema,
   fragmentRelevanceSchema,
-} from '@robin/shared'
+} from '@robin/shared/prompts'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import {

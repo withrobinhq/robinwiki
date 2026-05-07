@@ -1,4 +1,4 @@
-import { loadWikiClassificationSpec } from '@robin/shared'
+import { loadWikiClassificationSpec } from '@robin/shared/prompts'
 import type { StageResult, WikiClassifyDeps, WikiClassifyResult } from './types.js'
 
 const THRESHOLD = Number(process.env.WIKI_CLASSIFY_THRESHOLD) || 0.65

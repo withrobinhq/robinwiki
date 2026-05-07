@@ -1,5 +1,5 @@
 import * as fuzz from 'fuzzball'
-import { loadPeopleExtractionSpec } from '@robin/shared'
+import { loadPeopleExtractionSpec } from '@robin/shared/prompts'
 import type {
   EntityExtractDeps,
   EntityExtractResult,
