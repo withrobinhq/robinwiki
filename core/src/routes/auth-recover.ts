@@ -6,25 +6,9 @@ import { emitAuditEvent } from '../db/audit.js'
 import { db } from '../db/client.js'
 import { getClientIp } from '../lib/getClientIp.js'
 import { logger } from '../lib/logger.js'
+import { checkRateLimit } from '../lib/rate-limit.js'
 
 const log = logger.child({ component: 'auth-recover' })
-
-// In-memory rate limiter (sufficient for single-tenant). Plan 02 replaces
-// this with a Redis-backed counter — do not extend this here.
-const attempts: { ts: number }[] = []
-const WINDOW_MS = 60_000
-const MAX_ATTEMPTS = 5
-
-function isRateLimited(): boolean {
-  const now = Date.now()
-  // Purge expired entries
-  while (attempts.length > 0 && now - attempts[0].ts > WINDOW_MS) {
-    attempts.shift()
-  }
-  if (attempts.length >= MAX_ATTEMPTS) return true
-  attempts.push({ ts: now })
-  return false
-}
 
 /** Constant-time comparison of two strings (prevents timing attacks on secret). */
 function safeEqual(a: string, b: string): boolean {
@@ -52,17 +36,40 @@ authRecoverRoutes.post('/recover', async (c) => {
   const ip = getClientIp(c)
   const ts = new Date().toISOString()
 
-  if (isRateLimited()) {
-    log.warn({ ip }, 'rate limit exceeded on /auth/recover')
+  // Redis-backed rate limit MUST run before JSON parsing so a flood of
+  // malformed bodies still trips the budget. Fail-closed on Redis errors.
+  const rl = await checkRateLimit({
+    key: `recover:${ip}`,
+    perMinute: 5,
+    perDay: 60,
+  })
+
+  if (rl.reason === 'redis-down') {
+    log.error({ ip }, 'rate-limit redis unavailable — failing closed')
+    await emitAuditEvent(db, {
+      entityType: 'auth',
+      entityId: 'unknown',
+      eventType: 'recover.rate-limited',
+      source: 'http',
+      summary: 'Recovery rate-limit fail-closed (redis-down)',
+      detail: { ip, ts, reason: 'redis-down' },
+    })
+    return c.json({ error: 'Service temporarily unavailable' }, 503)
+  }
+
+  if (!rl.allowed) {
+    log.warn({ ip, reason: rl.reason }, 'rate limit exceeded on /auth/recover')
     await emitAuditEvent(db, {
       entityType: 'auth',
       entityId: 'unknown',
       eventType: 'recover.rate-limited',
       source: 'http',
       summary: 'Recovery rate-limited',
-      detail: { ip, ts },
+      detail: { ip, ts, reason: rl.reason },
     })
-    return c.json({ error: 'Too many attempts. Try again in 1 minute.' }, 429)
+    const retryAfter = rl.retryAfterSec ?? 60
+    c.header('Retry-After', String(retryAfter))
+    return c.json({ error: 'Too many attempts. Try again later.', retryAfterSec: retryAfter }, 429)
   }
 
   let body: { secretKey?: string; newPassword?: string }
