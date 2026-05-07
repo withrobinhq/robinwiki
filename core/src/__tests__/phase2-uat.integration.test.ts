@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import { createRedisConnection } from '@robin/queue'
+import { validEnvStub } from './helpers/validEnvStub.js'
 
 /**
  * Phase 2 UAT integration tests. One file per the task brief; each `describe`
@@ -171,21 +172,10 @@ describe('UAT 1: assertProdEnv refuses prod + http SERVER_PUBLIC_URL', () => {
   })
 
   it('throws ProdSafetyError with the documented message when SERVER_PUBLIC_URL is http://', async () => {
-    Object.assign(process.env, {
-      NODE_ENV: 'production',
-      DATABASE_URL: 'postgres://localhost/robin',
-      REDIS_URL: 'redis://localhost:6379',
-      BETTER_AUTH_SECRET: 'a'.repeat(40),
-      RECOVERY_SECRET: 'b'.repeat(40),
-      MASTER_KEY: 'a'.repeat(64),
-      KEY_ENCRYPTION_SECRET: 'c'.repeat(40),
-      JOB_SIGNING_SECRET: 'd'.repeat(40),
-      INITIAL_USERNAME: 'admin@example.com',
-      INITIAL_PASSWORD: 'password123',
-      OPENROUTER_API_KEY: 'sk-test',
-      SERVER_PUBLIC_URL: 'http://api.example.com',
-      WIKI_ORIGIN: 'https://wiki.example.com',
-    })
+    Object.assign(
+      process.env,
+      validEnvStub({ SERVER_PUBLIC_URL: 'http://api.example.com' }),
+    )
 
     vi.resetModules()
     const { assertProdEnv, ProdSafetyError } = await import('../bootstrap/env.js')
