@@ -9,9 +9,10 @@ export {
   parseUserSpecFromBlobStrict,
   parseUserSpecFromBlobLenient,
   renderPromptSpec,
+  escapeHandlebarsDelimiters,
   USER_OVERRIDE_FORBIDDEN_FIELDS,
 } from './loader.js'
-export type { RenderWarning, RenderResult } from './loader.js'
+export type { RenderWarning, RenderResult, RenderTemplateOptions } from './loader.js'
 export { loadWikiTypePreviewFixture } from './fixtures/loader.js'
 export type { PromptPreviewVars } from './fixtures/loader.js'
 

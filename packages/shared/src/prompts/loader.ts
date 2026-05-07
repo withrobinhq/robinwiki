@@ -32,12 +32,89 @@ export function loadSpec(filename: string, subdir?: string): PromptSpec {
 }
 
 /**
+ * Render-context invariant: variables passed to renderTemplate must be
+ * limited to the typed input_variables declared by each prompt spec.
+ * NEVER pass process.env, master keys, OpenRouter config, password hashes,
+ * encrypted DEKs, or any secret-bearing field through this function. The
+ * compiled template can be partially user-controlled (via wiki-type YAML
+ * overrides), so any value reachable here is effectively user-readable.
+ *
+ * `render-context-purity.test.ts` enumerates every loader call site and
+ * asserts the variable map is free of named secrets. Keep that contract
+ * intact when adding new loaders.
+ */
+
+/**
+ * Insert a zero-width space between consecutive Handlebars delimiters so a
+ * user-controlled value containing literal `{{...}}` cannot be re-evaluated
+ * as a sub-template. The ZWSP is invisible to the LLM (humans / models see
+ * the literal `{{evil}}` glyphs), but Handlebars no longer parses the pair
+ * as an opening / closing delimiter.
+ *
+ * Verified to survive multi-pass rendering — see template-injection.test.ts
+ * for the round-trip lock.
+ */
+const ZERO_WIDTH_SPACE = '\u200B'
+export function escapeHandlebarsDelimiters(s: string): string {
+  return s.replace(/\{\{/g, `{${ZERO_WIDTH_SPACE}{`).replace(/\}\}/g, `}${ZERO_WIDTH_SPACE}}`)
+}
+
+/**
+ * Options for renderTemplate. The `userControlled` array names variable keys
+ * whose string values are sourced from user content (fragment text, wiki
+ * names, etc.) — those values are passed through escapeHandlebarsDelimiters
+ * before substitution. Keys not listed are treated as server-controlled and
+ * pass through verbatim. Missing entry list means RAW substitution — callers
+ * must explicitly opt in to escaping.
+ */
+export interface RenderTemplateOptions {
+  userControlled?: readonly string[]
+}
+
+const MAX_ESCAPE_RECURSION_DEPTH = 4
+
+function escapeUserControlledValue(value: unknown, depth: number): unknown {
+  if (depth > MAX_ESCAPE_RECURSION_DEPTH) return value
+  if (typeof value === 'string') return escapeHandlebarsDelimiters(value)
+  if (Array.isArray(value)) {
+    return value.map((item) => escapeUserControlledValue(item, depth + 1))
+  }
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = escapeUserControlledValue(v, depth + 1)
+    }
+    return out
+  }
+  return value
+}
+
+/**
  * Render a Handlebars template with the given variables.
  * Uses noEscape to avoid HTML entity escaping (these are LLM prompts, not HTML).
+ *
+ * When `opts.userControlled` is supplied, string values for the listed keys
+ * (and string leaves of arrays / nested objects up to depth 4) are passed
+ * through escapeHandlebarsDelimiters. This blocks attempts to smuggle a
+ * `{{...}}` sub-template through a user-controlled fragment. Server-derived
+ * values (counts, dates, etc.) are not escaped.
  */
-export function renderTemplate(template: string, variables: Record<string, unknown>): string {
+export function renderTemplate(
+  template: string,
+  variables: Record<string, unknown>,
+  opts?: RenderTemplateOptions
+): string {
+  let effectiveVars = variables
+  const userControlled = opts?.userControlled
+  if (userControlled && userControlled.length > 0) {
+    effectiveVars = { ...variables }
+    for (const key of userControlled) {
+      if (!Object.hasOwn(effectiveVars, key)) continue
+      effectiveVars[key] = escapeUserControlledValue(effectiveVars[key], 0)
+    }
+  }
   const compiled = Handlebars.compile(template, { noEscape: true })
-  return compiled(variables)
+  return compiled(effectiveVars)
 }
 
 /**
@@ -228,9 +305,10 @@ export interface RenderResult {
  */
 export function renderPromptSpec(
   spec: PromptSpec,
-  vars: Record<string, unknown>
+  vars: Record<string, unknown>,
+  opts?: RenderTemplateOptions
 ): RenderResult {
-  const rendered = renderTemplate(spec.template, vars)
+  const rendered = renderTemplate(spec.template, vars, opts)
 
   // Narrow reference-collection walk. Duplicates the subset of
   // validatePromptYaml's walk that gathers variable names — see RESEARCH.md
