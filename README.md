@@ -233,6 +233,19 @@ Robin exposes an MCP server for Claude Desktop, ChatGPT, and other AI clients. T
 | `publish_wiki` | Publish a wiki with a stable public URL |
 | `unpublish_wiki` | Unpublish a wiki (preserves slug for re-publish) |
 | `get_timeline` | Audit timeline for a wiki and its fragments |
+| `list_skills` | List skill wikis (the Capture pack and any user-authored skills) |
+
+### Capture pack — installable Claude skills
+
+The repo ships three Claude skills under `skills/` for use in any Claude client that supports project skills:
+
+- `skills/log-to-robin-guide.md` — onboarding + reference for new Robin users; required reading before `create_wiki` calls.
+- `skills/log-to-robin-short.md` — short-form capture (under ~2,000 words, clear attribution).
+- `skills/log-to-robin-long.md` — long-form mining + curation; pre-chunks long input into atomic `log_entry` calls (the server stays naive on entry size, by design).
+
+To install: copy or symlink the three files into your Claude client's project skills directory (e.g. `.claude/skills/log-to-robin-guide/SKILL.md`). They are also discoverable at runtime via the `list_skills` MCP tool when stored as `skill`-typed wikis in your Robin instance.
+
+Closes [#233](https://github.com/withrobinhq/robin/issues/233).
 
 ## API
 
