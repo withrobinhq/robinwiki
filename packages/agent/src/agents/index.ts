@@ -4,6 +4,14 @@
 export {
   createTypedCaller,
   createStringCaller,
+  withTypedUsage,
+  withStringUsage,
   AGENT_RETRY_CONFIG,
   AGENT_MODEL_SETTINGS,
+} from './caller.js'
+export type {
+  UsageContext,
+  UsageRecord,
+  UsageRecorder,
+  WithUsageOptions,
 } from './caller.js'

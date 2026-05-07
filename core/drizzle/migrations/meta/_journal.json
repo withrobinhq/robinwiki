@@ -29,6 +29,13 @@
       "when": 1778457601000,
       "tag": "0003_migrations_meta_and_pipeline_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778457602000,
+      "tag": "0004_usage_events_and_app_settings",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import {
   createIngestAgents,
   createTypedCaller,
   embedText,
+  withTypedUsage,
   wikiClassify,
 } from '@robin/agent'
 import {
@@ -40,6 +41,7 @@ import { hybridSearch } from './search.js'
 import { nanoid } from './id.js'
 import { logger } from './logger.js'
 import { emitAuditEvent } from '../db/audit.js'
+import { emitUsageEvent } from '../db/usage-events.js'
 
 const log = logger.child({ component: 'regen' })
 
@@ -404,7 +406,7 @@ export async function classifyUnfiledFragments(
 export async function regenerateWiki(
   database: DB,
   wikiKey: string,
-  opts?: { skipEmbedding?: boolean }
+  opts?: { skipEmbedding?: boolean; jobId?: string }
 ): Promise<RegenResult> {
   const t0 = performance.now()
   const [wiki] = await database.select().from(wikis).where(eq(wikis.lookupKey, wikiKey))
@@ -454,13 +456,37 @@ export async function regenerateWiki(
   // input type but createTypedCaller is parameterised by the output type
   // (what the caller ultimately consumes).
   //
-  // Use the dedicated wikiWriter agent (Sonnet, 16k output cap) — not the
+  // Use the dedicated wikiWriter agent (Sonnet, 16k output cap), not the
   // wiki-classifier (Haiku, 4k cap). Issue #257: long regen output was
   // silently truncated mid-sentence because the classifier model's default
   // ~4096 token cap fell well short of typical wiki bodies.
-  const callLlm = createTypedCaller(
-    agents.wikiWriter,
+  //
+  // Phase A3: wrap with withTypedUsage so the wiki-writer Sonnet call
+  // writes a usage_events row keyed by jobId. Falls back gracefully when
+  // jobId is not supplied (manual route handler tests).
+  const regenJobId = opts?.jobId
+  const callLlm = withTypedUsage(
     regenOutputSchema as unknown as import('zod').ZodType<RegenOutput>,
+    {
+      agent: agents.wikiWriter,
+      record: async (ctx, rec) => {
+        await emitUsageEvent(database as never, {
+          wikiKey,
+          stage: 'regen',
+          model: ctx.model,
+          promptTokens: rec.promptTokens,
+          completionTokens: rec.completionTokens,
+          durationMs: rec.durationMs,
+          jobId: ctx.jobId ?? null,
+        })
+      },
+      context: () => ({
+        stage: 'regen',
+        jobId: regenJobId ?? null,
+        wikiKey,
+        model: orConfig.models.wikiGeneration,
+      }),
+    },
   )
 
   // Gather linked fragments via FRAGMENT_IN_WIKI edges, with signal strength
@@ -730,6 +756,26 @@ export async function regenerateWiki(
       await database.update(wikis).set({ embedding: vec }).where(eq(wikis.lookupKey, wikiKey))
       hasEmbedding = true
     }
+    // Phase A3 — embedding cost telemetry for regen. Token count
+    // estimated from input chars (~4 chars/token); the OpenRouter
+    // embedding endpoint does not return usage data.
+    await emitUsageEvent(database as never, {
+      wikiKey,
+      stage: 'embed',
+      model: orConfig.models.embedding,
+      promptTokens: Math.ceil(markdown.length / 4),
+      completionTokens: 0,
+      durationMs: Math.round(performance.now() - tEmbed0),
+      jobId: regenJobId ?? null,
+      metadata: {
+        inputChars: markdown.length,
+        success: hasEmbedding,
+        estimated: true,
+        substage: 'regen-wiki-embed',
+      },
+    }).catch(() => {
+      // Cost-logging must not block regen.
+    })
   }
   const embedMs = performance.now() - tEmbed0
   const totalMs = performance.now() - t0
