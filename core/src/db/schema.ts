@@ -257,6 +257,28 @@ export const wikis = pgTable(
      */
     structure: text('structure').notNull().default(''),
     lastRebuiltAt: timestamp('last_rebuilt_at'),
+    /**
+     * Stream E dirty-state lifecycle (migration 0004). Sibling of `state`
+     * (the LINKING/RESOLVED object_state machine) — kept as a separate text
+     * column so the two state machines stay orthogonal. Values:
+     *   * 'learning' — at least one fragment attached since the last regen
+     *   * 'dreaming' — regen worker is currently rewriting the body
+     *   * 'filed'    — clean, all fragments processed (default)
+     */
+    lifecycleState: text('lifecycle_state').notNull().default('filed'),
+    /**
+     * Stream E auto-regen toggle (#259, migration 0004). When true, the
+     * midnight batch worker considers this wiki for auto-rewrite if its
+     * lifecycle_state is 'learning'. Default false — feature is opt-in per
+     * Andrew lock.
+     */
+    autoRegen: boolean('auto_regen').notNull().default(false),
+    /**
+     * Stream E last-regen-completed timestamp (migration 0004). Distinct from
+     * `last_rebuilt_at` (which the E1 partition reads). UI surfaces (chip
+     * tooltip, profile counter) read this for human-friendly display.
+     */
+    lastRegenAt: timestamp('last_regen_at'),
     published: boolean('published').notNull().default(false),
     publishedSlug: text('published_slug'),
     publishedAt: timestamp('published_at'),
