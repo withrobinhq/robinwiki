@@ -6,11 +6,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "@/hooks/useSession";
 import { useLogout } from "@/hooks/useLogout";
 
-import AddWikiModal from "@/components/layout/AddWikiModal";
 import AddEntryModal from "@/components/layout/AddEntryModal";
 import AddPersonModal from "@/components/layout/AddPersonModal";
 import AddCollectionModal from "@/components/layout/AddCollectionModal";
 import WikiHeaderSearch from "@/components/layout/WikiHeaderSearch";
+import { useAddWiki } from "@/components/layout/AddWikiContext";
 
 interface HeaderProps {
   onMenuToggle: () => void;
@@ -18,8 +18,12 @@ interface HeaderProps {
 
 export default function Header({ onMenuToggle }: HeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  // H1: the Header dropdown's "Wiki" entry is the LEGACY trigger for Add
+  // Wiki. The canonical A-game location is the Sidebar (#H1). This trigger
+  // stays for one ship-cycle so muscle memory doesn't break, then gets
+  // removed in a follow-up issue once telemetry shows sidebar adoption.
   const [addMenuOpen, setAddMenuOpen] = useState(false);
-  const [addWikiOpen, setAddWikiOpen] = useState(false);
+  const { openModal: openAddWikiModal } = useAddWiki();
   const [addEntryOpen, setAddEntryOpen] = useState(false);
   const [addPersonOpen, setAddPersonOpen] = useState(false);
   const [addCollectionOpen, setAddCollectionOpen] = useState(false);
@@ -189,7 +193,7 @@ export default function Header({ onMenuToggle }: HeaderProps) {
                   role="menuitem"
                   onClick={() => {
                     setAddMenuOpen(false);
-                    setAddWikiOpen(true);
+                    openAddWikiModal();
                   }}
                   className="flex w-full cursor-pointer items-center"
                   style={{
@@ -410,7 +414,6 @@ export default function Header({ onMenuToggle }: HeaderProps) {
         </div>
       </div>
 
-      <AddWikiModal open={addWikiOpen} onClose={() => setAddWikiOpen(false)} />
       <AddEntryModal open={addEntryOpen} onClose={() => setAddEntryOpen(false)} />
       <AddPersonModal open={addPersonOpen} onClose={() => setAddPersonOpen(false)} />
       <AddCollectionModal open={addCollectionOpen} onClose={() => setAddCollectionOpen(false)} />

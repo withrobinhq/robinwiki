@@ -4,6 +4,15 @@ import { useState } from "react";
 import Header from "@/components/layout/Header";
 import Sidebar from "@/components/layout/Sidebar";
 import { AuthGuard } from "@/components/AuthGuard";
+import AddWikiModal from "@/components/layout/AddWikiModal";
+import { AddWikiProvider, useAddWiki } from "@/components/layout/AddWikiContext";
+
+// H1: the Add Wiki modal is mounted ONCE here so Header (legacy) and
+// Sidebar (canonical) can both dispatch open/close through context.
+function SharedAddWikiModal() {
+  const { open, closeModal } = useAddWiki();
+  return <AddWikiModal open={open} onClose={closeModal} />;
+}
 
 export default function WikiLayout({
   children,
@@ -17,6 +26,7 @@ export default function WikiLayout({
 
   return (
     <AuthGuard>
+    <AddWikiProvider>
     <div
       className="wiki-shell relative"
       data-sidebar={sidebarOpen ? "open" : "closed"}
@@ -75,7 +85,10 @@ export default function WikiLayout({
 
       {/* Main content */}
       <main className="wiki-main">{children}</main>
+
+      <SharedAddWikiModal />
     </div>
+    </AddWikiProvider>
     </AuthGuard>
   );
 }

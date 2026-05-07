@@ -8,6 +8,7 @@ import { ROUTES } from "@/lib/routes";
 import { useEntries } from "@/hooks/useEntries";
 import { useWikis } from "@/hooks/useWikis";
 import { useCollections } from "@/hooks/useCollections";
+import { useAddWiki } from "@/components/layout/AddWikiContext";
 
 const ACTIVE_COLOR = "#000000";
 const ACTIVE_WEIGHT = 700;
@@ -470,6 +471,43 @@ function SidebarSection({
   );
 }
 
+// H1: the canonical A-game (line 421) trigger for opening the Add Wiki
+// modal lives in the sidebar. The Header dropdown trigger is preserved
+// for one ship-cycle (see Header.tsx) so existing muscle memory doesn't
+// break. Both dispatch into the same AddWikiContext.
+function AddWikiTrigger() {
+  const { openModal } = useAddWiki();
+  return (
+    <div
+      style={{
+        paddingLeft: 44,
+        paddingRight: 16,
+        paddingTop: 8,
+        paddingBottom: 8,
+      }}
+    >
+      <button
+        type="button"
+        onClick={openModal}
+        style={{
+          ...T.bodySmall,
+          lineHeight: "20px",
+          color: "var(--wiki-link)",
+          background: "none",
+          border: "none",
+          padding: 0,
+          margin: 0,
+          cursor: "pointer",
+          font: "inherit",
+          textAlign: "left",
+        }}
+      >
+        + Add Wiki
+      </button>
+    </div>
+  );
+}
+
 export default function Sidebar() {
   const entriesData = useEntriesData();
   const collectionsData = useCollectionsData();
@@ -482,6 +520,7 @@ export default function Sidebar() {
         section={navigationData}
         borderColor="var(--wiki-nav-border)"
       />
+      <AddWikiTrigger />
       <SidebarSection
         sectionId="collections"
         section={collectionsData}
