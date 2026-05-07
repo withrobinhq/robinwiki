@@ -156,6 +156,25 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
       log.info({ count: stuckWikis.length }, 'batch: wikis in non-RESOLVED state')
     }
 
+    // ── Reason 4: Stream E5 auto-regen — auto_regen=true AND lifecycle='learning' ──
+    // Andrew lock #259: midnight cron sweeps wikis the user has explicitly
+    // opted into auto-regen for, where new fragments have landed since the
+    // last regen (lifecycle_state='learning' is the dirty-state tag from E8).
+    const autoRegenWikis = await db
+      .select({ lookupKey: wikis.lookupKey })
+      .from(wikis)
+      .where(
+        and(
+          isNull(wikis.deletedAt),
+          eq(wikis.autoRegen, true),
+          eq(wikis.lifecycleState, 'learning')
+        )
+      )
+    for (const r of autoRegenWikis) candidateKeys.add(r.lookupKey)
+    if (autoRegenWikis.length > 0) {
+      log.info({ count: autoRegenWikis.length }, 'batch: auto-regen wikis with learning state')
+    }
+
     // ── Enqueue individual regen jobs (capped at BATCH_LIMIT) ──
     // Per-item failures previously logged a warn and disappeared (#273) — the
     // batch reported success regardless. Now: emit an audit row per failure
