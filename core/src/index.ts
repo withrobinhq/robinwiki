@@ -56,14 +56,20 @@ declare module 'hono' {
  * Registered first so nothing escapes, even during startup.
  ***********************************************************************/
 
+// SEC-L4: in production we hand control back to the orchestrator (Railway,
+// systemd, Kubernetes) — process.exit(1) is the contract for a restart. In
+// dev/test we log and continue: a single rejected promise in a request
+// handler must not kill the dev server mid-debug.
+const exitOnFatal = process.env.NODE_ENV === 'production'
+
 process.on('unhandledRejection', (reason) => {
   logger.error({ reason }, 'unhandledRejection')
-  process.exit(1)
+  if (exitOnFatal) process.exit(1)
 })
 
 process.on('uncaughtException', (err) => {
   logger.error({ err }, 'uncaughtException')
-  process.exit(1)
+  if (exitOnFatal) process.exit(1)
 })
 
 process.once('SIGINT', () => process.exit(0))
