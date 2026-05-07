@@ -1,6 +1,6 @@
-import Handlebars from 'handlebars'
-import { parseSpecFromBlob } from '@robin/shared'
+import { USER_OVERRIDE_FORBIDDEN_FIELDS, parseUserSpecFromBlobStrict } from '@robin/shared'
 import type { PromptSpec } from '@robin/shared'
+import Handlebars from 'handlebars'
 
 const MAX_YAML_BYTES = 32 * 1024
 const ALLOWED_HELPERS = new Set(['if', 'each'])
@@ -79,12 +79,19 @@ export function validatePromptYaml(yaml: string): ValidationResult {
     }
   }
 
-  // 2 + 3. Parse YAML + validate schema. parseSpecFromBlob wraps js-yaml then
-  // runs PromptSpecSchema.parse — we disambiguate the two error families by
-  // .name (YAMLException / YAMLError) vs the presence of ZodError's .flatten().
+  // 2 + 3. Parse YAML + validate schema via the STRICT user-blob parser. It
+  // first asserts the root is a plain mapping (YAMLException-shaped error on
+  // arrays / scalars), then enforces USER_OVERRIDE_FORBIDDEN_FIELDS, then
+  // PromptSpecSchema. We disambiguate the error families by .name (YAMLException
+  // / YAMLError) vs. the presence of ZodError's .flatten().
+  //
+  // Forbidden-field violations surface as a ZodError whose issues all sit at
+  // path[0] in the forbidden list — we route those through a dedicated
+  // FORBIDDEN_FIELD response code so the frontend can render an actionable
+  // message instead of a generic schema error.
   let spec: PromptSpec
   try {
-    spec = parseSpecFromBlob(yaml)
+    spec = parseUserSpecFromBlobStrict(yaml)
   } catch (err) {
     const name = (err as { name?: string }).name
     if (name === 'YAMLException' || name === 'YAMLError') {
@@ -98,6 +105,30 @@ export function validatePromptYaml(yaml: string): ValidationResult {
         },
       }
     }
+
+    // Forbidden-field fast path: detect a ZodError whose every issue's first
+    // path segment is in the locked forbidden list. Any mix with non-forbidden
+    // issues falls through to the generic YAML_SCHEMA_ERROR branch so the
+    // operator still sees the full validation detail.
+    const issues = (err as { issues?: Array<{ path?: Array<string | number> }> }).issues
+    if (Array.isArray(issues) && issues.length > 0) {
+      const forbiddenSet = new Set<string>(USER_OVERRIDE_FORBIDDEN_FIELDS)
+      const offendingFields = issues
+        .map((iss) => (iss.path && iss.path.length > 0 ? String(iss.path[0]) : null))
+        .filter((field): field is string => field !== null && forbiddenSet.has(field))
+      if (offendingFields.length > 0 && offendingFields.length === issues.length) {
+        return {
+          ok: false,
+          status: 400,
+          body: {
+            code: 'FORBIDDEN_FIELD',
+            error: 'User-supplied YAML contains a field that may not be overridden',
+            detail: { fields: [...new Set(offendingFields)] },
+          },
+        }
+      }
+    }
+
     const flatten = (err as { flatten?: () => unknown }).flatten
     return {
       ok: false,
@@ -105,8 +136,7 @@ export function validatePromptYaml(yaml: string): ValidationResult {
       body: {
         code: 'YAML_SCHEMA_ERROR',
         error: 'YAML schema validation failed',
-        detail:
-          typeof flatten === 'function' ? flatten.call(err) : (err as Error).message,
+        detail: typeof flatten === 'function' ? flatten.call(err) : (err as Error).message,
       },
     }
   }

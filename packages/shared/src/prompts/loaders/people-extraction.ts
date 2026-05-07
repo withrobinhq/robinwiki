@@ -14,7 +14,10 @@ export function loadPeopleExtractionSpec(vars: {
 }): PromptResult {
   const validated = inputSchema.parse(vars)
   const spec = loadSpec('people-extraction.yaml')
-  const user = renderTemplate(spec.template, validated)
+  // SEC-H5: `content` is user-authored; `knownPeople` carries user-authored names.
+  const user = renderTemplate(spec.template, validated, {
+    userControlled: ['content', 'knownPeople'],
+  })
   return {
     system: spec.system_message,
     user,

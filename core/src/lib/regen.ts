@@ -650,10 +650,23 @@ export async function regenerateWiki(
 
   // Load prompt spec with runtime fallback on override parse/validation failure.
   // A malformed stored YAML must not crash the regen worker — log a warn and retry
-  // with no override (disk default).
+  // with no override (disk default). Forbidden-field stripping is silent at the
+  // loader; we audit it here so operators can find legacy rows that still carry
+  // a stripped system_message / system_only override.
   let spec: ReturnType<typeof loadWikiGenerationSpec> | undefined
   try {
     spec = loadWikiGenerationSpec(wiki.type as WikiType, vars, override)
+    if (spec.strippedFields && spec.strippedFields.length > 0) {
+      await emitAuditEvent(database, {
+        entityType: 'wiki_type',
+        // wikiTypes.slug is plain text — confirmed at core/src/db/audit.ts:22.
+        entityId: wiki.type,
+        eventType: 'forbidden_field_stripped',
+        source: 'system',
+        summary: `Stripped forbidden field(s) from wiki_types.prompt: ${spec.strippedFields.join(', ')}`,
+        detail: { wikiType: wiki.type, fields: spec.strippedFields },
+      })
+    }
   } catch (err) {
     log.warn({
       err: err instanceof Error ? { name: err.name, message: err.message } : err,
@@ -661,6 +674,18 @@ export async function regenerateWiki(
       wikiType: wiki.type,
       overrideKind: override?.kind,
     }, 'prompt override failed to parse/validate — falling back to disk YAML default')
+    await emitAuditEvent(database, {
+      entityType: 'wiki_type',
+      entityId: wiki.type,
+      eventType: 'override_rejected',
+      source: 'system',
+      summary: `Rejected wiki_types.prompt override (parse/schema failure): ${wiki.type}`,
+      detail: {
+        wikiType: wiki.type,
+        overrideKind: override?.kind,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    })
     spec = loadWikiGenerationSpec(wiki.type as WikiType, vars)
   }
 

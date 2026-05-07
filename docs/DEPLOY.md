@@ -38,7 +38,7 @@ Core hosts the HTTP API, MCP server, and BullMQ workers inline. Wiki is a Next.j
 ## Quick deploy (template path)
 
 1. Click the Railway template link for this repo. Railway reads `railway.template.json` and scaffolds four services: `postgres`, `redis`, `core`, `wiki`.
-2. Fill in the prompted env vars (see reference table below). The required ones with no default are: `BETTER_AUTH_SECRET`, `MASTER_KEY`, `KEY_ENCRYPTION_SECRET`, `OPENROUTER_API_KEY`, `INITIAL_USERNAME`, `INITIAL_PASSWORD`. Leave `SERVER_PUBLIC_URL` and `WIKI_ORIGIN` blank for now — you will fill them after first deploy.
+2. Fill in the prompted env vars (see reference table below). The required ones with no default are: `BETTER_AUTH_SECRET`, `MASTER_KEY`, `KEY_ENCRYPTION_SECRET`, `JOB_SIGNING_SECRET`, `OPENROUTER_API_KEY`, `INITIAL_USERNAME`, `INITIAL_PASSWORD`. Leave `SERVER_PUBLIC_URL` and `WIKI_ORIGIN` blank for now — you will fill them after first deploy.
 3. Click Deploy. Wait for all four services to go green.
 4. Run the pre-deploy SQL (see below) against Postgres — this is a one-shot manual step until Phase D2 automates it.
 5. Copy the generated public URLs for `core` and `wiki` back into `SERVER_PUBLIC_URL` and `WIKI_ORIGIN` respectively. Redeploy both services.
@@ -69,6 +69,7 @@ Use this if you prefer to wire services by hand, or Railway's template flow does
 | `BETTER_AUTH_SECRET` | core | yes | manual | Session cookie signing secret. 32+ chars. `openssl rand -base64 48`. |
 | `MASTER_KEY` | core | yes | manual | Root key that wraps per-user KEKs. 64 hex chars. `openssl rand -hex 32`. **Losing this destroys all user data.** |
 | `KEY_ENCRYPTION_SECRET` | core | yes | manual | HMAC secret for MCP JWTs and worker tokens. 32+ chars. `openssl rand -base64 48`. |
+| `JOB_SIGNING_SECRET` | core | yes | manual | HMAC secret for BullMQ job payload signing. 32+ chars. `openssl rand -hex 32`. Producer signs every job; worker verifies on dequeue. |
 | `OPENROUTER_API_KEY` | core | yes | manual | Default OpenRouter key used for LLM calls. |
 | `INITIAL_USERNAME` | core | yes | manual | Bootstrap admin email. Created on first boot if no users exist. |
 | `INITIAL_PASSWORD` | core | yes | manual | Bootstrap admin password. Rotate after first login (force-reset tracked in #71). |

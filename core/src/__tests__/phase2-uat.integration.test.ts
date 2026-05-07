@@ -178,6 +178,7 @@ describe('UAT 1: assertProdEnv refuses prod + http SERVER_PUBLIC_URL', () => {
       RECOVERY_SECRET: 'b'.repeat(40),
       MASTER_KEY: 'a'.repeat(64),
       KEY_ENCRYPTION_SECRET: 'c'.repeat(40),
+      JOB_SIGNING_SECRET: 'd'.repeat(40),
       INITIAL_USERNAME: 'admin@example.com',
       INITIAL_PASSWORD: 'password123',
       OPENROUTER_API_KEY: 'sk-test',

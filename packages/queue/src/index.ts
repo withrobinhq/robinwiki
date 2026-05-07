@@ -1,7 +1,9 @@
-import { Queue, Worker, type Job } from 'bullmq'
+import { type Job, Queue, Worker } from 'bullmq'
 import { Redis } from 'ioredis'
+import { signJob, verifyJob } from './job-signing.js'
 
 export { Queue, Worker } from 'bullmq'
+export { JobSignatureError, signJob, verifyJob } from './job-signing.js'
 
 // ── Redis connection ──────────────────────────────────────────────────────────
 
@@ -110,6 +112,9 @@ export type RobinJob =
   | RegenBatchJob
   | EmbeddingRetryJob
 
+/** Producer wraps a job in this shape via signJob; worker strips it via verifyJob. */
+export type Signed<T> = T & { __sig: string }
+
 export interface JobResult {
   jobId: string
   success: boolean
@@ -170,13 +175,13 @@ export class BullMQProducer implements QueueProducer {
 
   async enqueueExtraction(job: ExtractionJob): Promise<string> {
     const queue = this.getQueue(QUEUE_NAMES.extraction)
-    const bullJob = await queue.add('extraction', job, { jobId: job.jobId })
+    const bullJob = await queue.add('extraction', signJob(job), { jobId: job.jobId })
     return bullJob.id ?? job.jobId
   }
 
   async enqueueLink(job: LinkJob): Promise<string> {
     const queue = this.getQueue(QUEUE_NAMES.link)
-    const bullJob = await queue.add('link', job, {
+    const bullJob = await queue.add('link', signJob(job), {
       jobId: job.jobId,
       ...LINK_RETRY_CONFIG,
     })
@@ -185,7 +190,7 @@ export class BullMQProducer implements QueueProducer {
 
   async enqueueReclassify(job: ReclassifyJob): Promise<string> {
     const queue = this.getQueue(QUEUE_NAMES.reclassify)
-    const bullJob = await queue.add('reclassify', job, { jobId: job.jobId })
+    const bullJob = await queue.add('reclassify', signJob(job), { jobId: job.jobId })
     return bullJob.id ?? job.jobId
   }
 
@@ -195,13 +200,13 @@ export class BullMQProducer implements QueueProducer {
     // with the same id is already waiting, so rapid fragment links to the
     // same wiki only produce one regen job.
     const dedupeId = `regen-${job.objectKey}`
-    const bullJob = await queue.add('regen', job, { jobId: dedupeId })
+    const bullJob = await queue.add('regen', signJob(job), { jobId: dedupeId })
     return bullJob.id ?? job.jobId
   }
 
   async enqueueProvision(job: ProvisionJob): Promise<string> {
     const queue = this.getQueue(QUEUE_NAMES.provision)
-    const bullJob = await queue.add('provision', job, { jobId: job.jobId })
+    const bullJob = await queue.add('provision', signJob(job), { jobId: job.jobId })
     return bullJob.id ?? job.jobId
   }
 
@@ -221,7 +226,7 @@ export class BullMQWorker implements QueueWorker {
   startExtractionWorker(processor: (job: ExtractionJob) => Promise<JobResult>): Worker {
     return new Worker(
       QUEUE_NAMES.extraction,
-      async (job: Job<ExtractionJob>) => processor(job.data),
+      async (job: Job<Signed<ExtractionJob>>) => processor(verifyJob(job.data) as ExtractionJob),
       { connection: this.connection, concurrency: 1, autorun: true }
     )
   }
@@ -229,7 +234,7 @@ export class BullMQWorker implements QueueWorker {
   startLinkWorker(processor: (job: LinkJob) => Promise<JobResult>): Worker {
     return new Worker(
       QUEUE_NAMES.link,
-      async (job: Job<LinkJob>) => processor(job.data),
+      async (job: Job<Signed<LinkJob>>) => processor(verifyJob(job.data) as LinkJob),
       { connection: this.connection, concurrency: 4, autorun: true }
     )
   }
@@ -237,7 +242,7 @@ export class BullMQWorker implements QueueWorker {
   startReclassifyWorker(processor: (job: ReclassifyJob) => Promise<JobResult>): Worker {
     return new Worker(
       QUEUE_NAMES.reclassify,
-      async (job: Job<ReclassifyJob>) => processor(job.data),
+      async (job: Job<Signed<ReclassifyJob>>) => processor(verifyJob(job.data) as ReclassifyJob),
       { connection: this.connection, concurrency: 1, autorun: true }
     )
   }
@@ -245,7 +250,7 @@ export class BullMQWorker implements QueueWorker {
   startRegenWorker(processor: (job: RegenJob) => Promise<JobResult>): Worker {
     return new Worker(
       QUEUE_NAMES.regen,
-      async (job: Job<RegenJob>) => processor(job.data),
+      async (job: Job<Signed<RegenJob>>) => processor(verifyJob(job.data) as RegenJob),
       { connection: this.connection, concurrency: 1, autorun: true }
     )
   }
@@ -253,7 +258,7 @@ export class BullMQWorker implements QueueWorker {
   startProvisionWorker(processor: (job: ProvisionJob) => Promise<JobResult>): Worker {
     return new Worker(
       QUEUE_NAMES.provision,
-      async (job: Job<ProvisionJob>) => processor(job.data),
+      async (job: Job<Signed<ProvisionJob>>) => processor(verifyJob(job.data) as ProvisionJob),
       { connection: this.connection, concurrency: 1, autorun: true }
     )
   }
@@ -261,7 +266,7 @@ export class BullMQWorker implements QueueWorker {
   startSchedulerWorker(processor: (job: SchedulerJob) => Promise<JobResult>): Worker {
     return new Worker(
       QUEUE_NAMES.scheduler,
-      async (job: Job<SchedulerJob>) => processor(job.data),
+      async (job: Job<Signed<SchedulerJob>>) => processor(verifyJob(job.data) as SchedulerJob),
       { connection: this.connection, concurrency: 1, autorun: true }
     )
   }

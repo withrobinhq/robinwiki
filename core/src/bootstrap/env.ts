@@ -1,5 +1,5 @@
-import { z } from 'zod'
 import { createConfigVar } from '@robin/shared'
+import { z } from 'zod'
 
 /**
  * Fail-fast check for production deploys. Runs before any other bootstrap step
@@ -14,17 +14,29 @@ export function assertProdEnv(): void {
     'DATABASE_URL',
     'REDIS_URL',
     'BETTER_AUTH_SECRET',
-    'RECOVERY_SECRET',
     'MASTER_KEY',
     'KEY_ENCRYPTION_SECRET',
+    'WIKI_ORIGIN',
+    'JOB_SIGNING_SECRET',
+    'RECOVERY_SECRET',
     'SERVER_PUBLIC_URL',
   ] as const
 
-  const recommended = ['OPENROUTER_API_KEY', 'WIKI_ORIGIN'] as const
+  const recommended = ['OPENROUTER_API_KEY'] as const
 
   const missing = required.filter((k) => !process.env[k])
   if (missing.length) {
     console.error(`FATAL: missing required env vars in production: ${missing.join(', ')}`)
+    console.error('See .env.example at repo root for descriptions.')
+    process.exit(1)
+  }
+
+  // Empty / whitespace-only WIKI_ORIGIN passes the presence check above but
+  // would silently fall through to the localhost default at the cors mount
+  // site — refuse to boot so the misconfig is loud.
+  const wikiOrigin = process.env.WIKI_ORIGIN
+  if (!wikiOrigin || wikiOrigin.trim() === '') {
+    console.error('FATAL: WIKI_ORIGIN must be a non-empty comma-separated origin list in production')
     console.error('See .env.example at repo root for descriptions.')
     process.exit(1)
   }
@@ -96,6 +108,13 @@ export const env = createConfigVar({
       .regex(/^[a-f0-9]{64}$/)
       .describe('64 hex chars — generate with: openssl rand -hex 32'),
     KEY_ENCRYPTION_SECRET: z.string().min(32).describe('32+ char key encryption secret'),
+    JOB_SIGNING_SECRET: z
+      .string()
+      .min(32)
+      .optional()
+      .describe(
+        '32+ char HMAC secret for BullMQ job payload signing — required in production (openssl rand -hex 32)'
+      ),
     INITIAL_USERNAME: z.string().email().describe('Email for first admin user'),
     INITIAL_PASSWORD: z.string().min(6).describe('Password for first admin user'),
     OPENROUTER_API_KEY: z.string().min(1).describe('OpenRouter API key (openrouter.ai/keys)'),

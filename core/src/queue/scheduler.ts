@@ -1,4 +1,4 @@
-import type { Queue } from '@robin/queue'
+import { type Queue, signJob } from '@robin/queue'
 import { logger } from '../lib/logger.js'
 
 const log = logger.child({ component: 'scheduler' })
@@ -18,12 +18,16 @@ export async function setupRegenScheduler(queue: Queue): Promise<void> {
     { pattern: '0 0 * * *' },
     {
       name: 'regen-batch',
-      data: {
+      // SEC-H6: scheduler-emitted jobs flow through the same signed-payload
+      // contract as producer-emitted jobs. `enqueuedAt` is fixed at scheduler
+      // registration so the HMAC stays stable across cron firings — BullMQ
+      // re-uses the upserted data for every scheduled run.
+      data: signJob({
         type: 'regen-batch',
         jobId: 'midnight-regen-scheduled',
         triggeredBy: 'scheduler',
         enqueuedAt: new Date().toISOString(),
-      },
+      }),
     }
   )
 
@@ -47,12 +51,13 @@ export async function setupEmbeddingRetryScheduler(queue: Queue): Promise<void> 
     { pattern: '*/15 * * * *' },
     {
       name: 'embedding-retry',
-      data: {
+      // SEC-H6 — see scheduler.ts above for the signed-payload rationale.
+      data: signJob({
         type: 'embedding-retry',
         jobId: 'embedding-retry-scheduled',
         triggeredBy: 'scheduler',
         enqueuedAt: new Date().toISOString(),
-      },
+      }),
     }
   )
 

@@ -10,11 +10,12 @@
 
 import {
   BullMQWorker,
-  createRedisConnection,
   type ExtractionJob,
+  JobSignatureError,
+  type JobResult,
   type LinkJob,
   type ProvisionJob,
-  type JobResult,
+  createRedisConnection,
 } from '@robin/queue'
 import {
   runExtraction,
@@ -58,6 +59,7 @@ import type { SchedulerJob } from '@robin/queue'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
 import { generateKeypair } from '../keypair.js'
 import { logger } from '../lib/logger.js'
+import { clearKidCache } from '../mcp/jwt.js'
 
 const log = logger.child({ component: 'worker' })
 
@@ -544,6 +546,10 @@ export async function processProvisionJob(job: ProvisionJob): Promise<JobResult>
     .set({ publicKey, encryptedPrivateKey })
     .where(eq(users.id, job.userId))
 
+  // Evict any cached row so the next /mcp request rebuilds against
+  // the freshly-written publicKey.
+  clearKidCache(job.userId)
+
   log.info({ userId: job.userId }, 'provision: keypair generated and stored')
   return { jobId: job.jobId, success: true, processedAt: new Date().toISOString() }
 }
@@ -588,31 +594,67 @@ export function startWorkers(): void {
     return
   }
 
+  // SEC-H6: emit an audit row whenever a worker rejects a job because its
+  // HMAC signature is missing or mismatched. Indicates either a tampered
+  // Redis payload or a stale producer running with a different secret.
+  function onSignatureFailure(queueName: string) {
+    return async (job: { id?: string; name?: string } | undefined, err: Error) => {
+      if (!(err instanceof JobSignatureError)) return
+      log.error(
+        { jobId: job?.id, queue: queueName, err: err.message },
+        'job rejected: signature verification failed'
+      )
+      try {
+        await emitAuditEvent(db as never, {
+          entityType: 'queue_job',
+          entityId: job?.id ?? 'unknown',
+          eventType: 'signature_rejected',
+          source: 'system',
+          summary: `Job rejected: signature verification failed (${queueName})`,
+          detail: { queue: queueName, error: err.message },
+        })
+      } catch (auditErr) {
+        log.warn({ err: auditErr }, 'failed to emit signature_rejected audit row')
+      }
+    }
+  }
+
   extractionWorker = bullWorker.startExtractionWorker(processExtractionJob)
   extractionWorker.on('completed', (job) => log.info({ jobId: job.id }, 'extraction completed'))
-  extractionWorker.on('failed', (job, err) =>
+  extractionWorker.on('failed', async (job, err) => {
     log.error({ jobId: job?.id, err }, 'extraction failed')
-  )
+    await onSignatureFailure('extraction')(job, err as Error)
+  })
 
   linkWorker = bullWorker.startLinkWorker(processLinkJob)
   linkWorker.on('completed', (job) => log.info({ jobId: job.id }, 'link completed'))
-  linkWorker.on('failed', (job, err) => log.error({ jobId: job?.id, err }, 'link failed'))
+  linkWorker.on('failed', async (job, err) => {
+    log.error({ jobId: job?.id, err }, 'link failed')
+    await onSignatureFailure('link')(job, err as Error)
+  })
 
   regenWorker = bullWorker.startRegenWorker(processRegenJob)
   regenWorker.on('completed', (job) => log.info({ jobId: job.id }, 'regen completed'))
-  regenWorker.on('failed', (job, err) => log.error({ jobId: job?.id, err }, 'regen failed'))
+  regenWorker.on('failed', async (job, err) => {
+    log.error({ jobId: job?.id, err }, 'regen failed')
+    await onSignatureFailure('regen')(job, err as Error)
+  })
 
   provisionWorker = bullWorker.startProvisionWorker(processProvisionJob)
   provisionWorker.on('completed', (job) => log.info({ jobId: job.id }, 'provision completed'))
-  provisionWorker.on('failed', (job, err) => log.error({ jobId: job?.id, err }, 'provision failed'))
+  provisionWorker.on('failed', async (job, err) => {
+    log.error({ jobId: job?.id, err }, 'provision failed')
+    await onSignatureFailure('provision')(job, err as Error)
+  })
 
   schedulerWorker = bullWorker.startSchedulerWorker(dispatchSchedulerJob)
   schedulerWorker.on('completed', (job) =>
     log.info({ jobId: job.id, name: job.name }, 'scheduled job completed')
   )
-  schedulerWorker.on('failed', (job, err) =>
+  schedulerWorker.on('failed', async (job, err) => {
     log.error({ jobId: job?.id, name: job?.name, err }, 'scheduled job failed')
-  )
+    await onSignatureFailure('scheduler')(job, err as Error)
+  })
 
   log.info('ingest workers started')
 }

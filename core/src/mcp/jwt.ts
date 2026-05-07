@@ -28,43 +28,79 @@ import { decryptPrivateKey } from '../keypair.js'
 /**
  * In-memory `kid → user` cache to avoid full table scan per MCP request.
  *
- * @remarks Invalidated on cache miss (new user) by rebuilding the
- * entire map. This is acceptable because new users are rare events.
+ * @remarks Map is keyed by the full 32-char kid. The cache is rebuilt
+ * lazily on miss; callers must invoke {@link clearKidCache} after any
+ * write to `users.publicKey` or `users.mcpTokenVersion` so we never
+ * serve a stale public key after key rotation.
  *
  * @internal
  */
 let kidCache: Map<string, typeof users.$inferSelect> | null = null
 
 /**
- * Look up a user by their public key fingerprint (`kid`).
+ * Reverse index `userId → set of kids` so {@link clearKidCache} can
+ * evict per-user entries in O(1) without scanning the forward map.
+ * Always kept in sync with `kidCache` writes.
  *
- * @remarks On cache miss, rebuilds from all provisioned users.
+ * @internal
+ */
+const userIdToKids: Map<string, Set<string>> = new Map()
+
+/**
+ * Record the `kid → userId` association in the reverse index.
  *
- * @param kid - SHA-256 fingerprint of the user's public key (first 16 hex chars)
- * @returns User record or `undefined` if not found
+ * @internal
+ */
+function indexKid(kid: string, userId: string): void {
+  let set = userIdToKids.get(userId)
+  if (!set) {
+    set = new Set()
+    userIdToKids.set(userId, set)
+  }
+  set.add(kid)
+}
+
+/**
+ * Rebuild the `kid → user` cache from all provisioned users. Also
+ * resets the reverse index so the two stay consistent.
+ *
+ * @internal
+ */
+async function rebuildKidCache(): Promise<void> {
+  const rows = await db.select().from(users).where(isNotNull(users.publicKey))
+  kidCache = new Map()
+  userIdToKids.clear()
+  for (const u of rows) {
+    if (!u.publicKey) continue
+    const kid = publicKeyId(u.publicKey)
+    kidCache.set(kid, u)
+    indexKid(kid, u.id)
+  }
+}
+
+/**
+ * Looks up a cached `kid → user` mapping; rebuilds from DB once on miss.
  *
  * @internal
  */
 async function findUserByKid(kid: string) {
   if (kidCache?.has(kid)) return kidCache.get(kid)
-  const rows = await db.select().from(users).where(isNotNull(users.publicKey))
-  kidCache = new Map()
-  for (const u of rows) {
-    if (u.publicKey) kidCache.set(publicKeyId(u.publicKey), u)
-  }
-  return kidCache.get(kid)
+  await rebuildKidCache()
+  return kidCache?.get(kid)
 }
 
 /**
  * Derive a `kid` (key ID) from a hex-encoded public key.
  *
+ * @remarks Returns 32 hex chars (128 bits) of the SHA-256 digest.
+ *
  * @param publicKeyHex - DER-encoded public key as hex string
- * @returns First 16 chars of the SHA-256 hex digest
+ * @returns First 32 chars of the SHA-256 hex digest
  *
  * @internal
  */
 function publicKeyId(publicKeyHex: string): string {
-  return createHash('sha256').update(publicKeyHex).digest('hex').slice(0, 16)
+  return createHash('sha256').update(publicKeyHex).digest('hex').slice(0, 32)
 }
 
 /**
@@ -73,7 +109,17 @@ function publicKeyId(publicKeyHex: string): string {
  * @remarks
  * Uses the user's Ed25519 private key (decrypted from DB via
  * `KEY_ENCRYPTION_SECRET`). Token includes `ver` claim for
- * revocation support. Expiry is set to 100 years (effectively permanent).
+ * revocation support.
+ *
+ * **No expiry by design.** MCP clients embed the token in a long-lived
+ * URL (`/mcp?token=<jwt>`); rotating expiry would force users to
+ * re-paste the URL into every client config on a schedule, which they
+ * will not do. Revocation is via `users.mcpTokenVersion`: bumping the
+ * column instantly invalidates every outstanding token for that user
+ * (see verifyMcpToken's freshness gate) and `clearKidCache` evicts the
+ * cached row so the next verify rebuilds against fresh DB state. Do
+ * **not** add `.setExpirationTime(...)` here — it does not bound risk
+ * and breaks the stable-URL contract.
  *
  * @param userId - User to sign a token for
  * @returns Signed JWT string, or `null` if user has no keypair
@@ -98,7 +144,6 @@ export async function signMcpToken(userId: string): Promise<string | null> {
     .setIssuer('robin')
     .setAudience('robin-mcp')
     .setIssuedAt()
-    .setExpirationTime('100y')
     .sign(privateKey)
 }
 
@@ -147,4 +192,28 @@ export async function verifyMcpToken(token: string): Promise<string> {
   }
 
   return user.id
+}
+
+/**
+ * Evict cached `kid → user` entries.
+ *
+ * @remarks
+ * Call after any write to `users.publicKey` or `users.mcpTokenVersion`
+ * so the next {@link verifyMcpToken} rebuilds against fresh DB state.
+ * Pass `userId` to evict only that user's entries (typical for
+ * `/regenerate-mcp` and provisioning); omit the argument to nuke the
+ * whole cache (test resets, paranoia).
+ *
+ * @param userId - If provided, evicts only this user's cached entries
+ */
+export function clearKidCache(userId?: string): void {
+  if (userId === undefined) {
+    kidCache = null
+    userIdToKids.clear()
+    return
+  }
+  const kids = userIdToKids.get(userId)
+  if (!kids) return
+  for (const kid of kids) kidCache?.delete(kid)
+  userIdToKids.delete(userId)
 }

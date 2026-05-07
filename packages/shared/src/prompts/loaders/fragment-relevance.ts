@@ -14,7 +14,10 @@ export function loadFragmentRelevanceSpec(vars: {
 }): PromptResult {
   const validated = inputSchema.parse(vars)
   const spec = loadSpec('fragment-relevance.yaml')
-  const user = renderTemplate(spec.template, validated)
+  // SEC-H5: both keys are user-authored fragment content.
+  const user = renderTemplate(spec.template, validated, {
+    userControlled: ['sourceContent', 'candidateContent'],
+  })
   return {
     system: spec.system_message,
     user,
