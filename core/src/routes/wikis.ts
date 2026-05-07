@@ -13,6 +13,7 @@ import { logger } from '../lib/logger.js'
 import { validationHook } from '../lib/validation.js'
 import { nanoid24 } from '../lib/id.js'
 import { regenerateWiki } from '../lib/regen.js'
+import { wikiRegenLock } from '../db/locks.js'
 import { buildSidecar } from '../lib/wikiSidecar.js'
 import { makeSidecarDeps } from '../lib/wikiSidecarDeps.js'
 import { stripWikiContent } from '../lib/strip-wiki-content.js'
@@ -559,6 +560,9 @@ wikisRouter.post('/:id/publish', async (c) => {
     return c.json({ error: 'Cannot publish a wiki with no content' }, 400)
   }
 
+  // Mint a fresh slug whenever publishedSlug IS NULL. Pairs with the
+  // unpublish handler which nulls the slug, so an unpublish/republish
+  // cycle always produces a new public URL (#audit-M2).
   const slug = wiki.publishedSlug ?? nanoid24()
   const [updated] = await db
     .update(wikis)
@@ -583,15 +587,24 @@ wikisRouter.post('/:id/publish', async (c) => {
   return c.json(publishWikiResponseSchema.parse(updated))
 })
 
-// POST /wikis/:id/unpublish — unpublish wiki (preserves slug for re-publish)
+// POST /wikis/:id/unpublish — unpublish wiki and rotate slug
 wikisRouter.post('/:id/unpublish', async (c) => {
   const id = c.req.param('id')
   const [wiki] = await db.select().from(wikis).where(eq(wikis.lookupKey, id))
   if (!wiki) return c.json({ error: 'Not found' }, 404)
 
+  // Rotate publishedSlug on unpublish (#audit-M2). Preserving the slug
+  // across an unpublish/republish cycle reuses the original public URL,
+  // defeating the user's intent that "unpublish" revoke the link they
+  // shared. publishedAt is preserved — it records the historical
+  // first-publish time and downstream audit views read it.
   const [updated] = await db
     .update(wikis)
-    .set({ published: false, updatedAt: new Date() })
+    .set({
+      published: false,
+      publishedSlug: null,
+      updatedAt: new Date(),
+    })
     .where(eq(wikis.lookupKey, id))
     .returning()
 
@@ -607,7 +620,7 @@ wikisRouter.post('/:id/unpublish', async (c) => {
   return c.json(publishWikiResponseSchema.parse(updated))
 })
 
-// POST /wikis/:id/regenerate — on-demand wiki regen
+// POST /wikis/:id/regenerate — on-demand wiki regen, serialized via wikiRegenLock (#audit-M5)
 wikisRouter.post('/:id/regenerate', async (c) => {
   const id = c.req.param('id')
   const [wiki] = await db.select().from(wikis).where(eq(wikis.lookupKey, id))
@@ -617,22 +630,54 @@ wikisRouter.post('/:id/regenerate', async (c) => {
     return c.json({ error: 'Regeneration is disabled for this wiki' }, 400)
   }
 
+  // wikiRegenLock keys on lookup_key. Concurrent calls produce one 200 + one
+  // 409. successState/failureState both return the wiki to PENDING so the
+  // next regen can acquire. TTL-based stolen-lock recovery (90s) takes over
+  // a stale lock after a crashed regen.
+  const lockedBy = `regen-${id}-${crypto.randomUUID()}`
+  let result: Awaited<ReturnType<typeof regenerateWiki>> | null = null
+
   try {
-    const result = await regenerateWiki(db, id)
-    log.info({ wikiKey: id, ...result }, 'wiki regenerated via on-demand endpoint')
-    if (result.timing) {
-      const t = result.timing
-      c.header('Server-Timing', `classify;dur=${t.classify}, gather;dur=${t.gatherFragments}, llm;dur=${t.llmCall}, embed;dur=${t.embed}, total;dur=${t.total}`)
-    }
-    return c.json({ ok: true, lookupKey: id, fragmentCount: result.fragmentCount })
+    await wikiRegenLock.using(
+      {
+        key: id,
+        fromState: 'PENDING',
+        toState: 'LINKING',
+        successState: 'PENDING',
+        failureState: 'PENDING',
+        lockedBy,
+        autoRenew: true,
+      },
+      async () => {
+        result = await regenerateWiki(db, id)
+      }
+    )
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.startsWith('CasLock contended')) {
+      return c.json({ error: 'Regeneration already in progress' }, 409)
+    }
     if (err instanceof NoOpenRouterKeyError) {
       return c.json({ error: 'OpenRouter API key not configured' }, 500)
     }
-    const message = err instanceof Error ? err.message : String(err)
     log.error({ wikiKey: id, error: message }, 'wiki regen failed')
     return c.json({ error: 'Regeneration failed', detail: message }, 500)
   }
+
+  if (!result) {
+    log.error({ wikiKey: id }, 'wiki regen completed without result')
+    return c.json({ error: 'Regeneration failed', detail: 'no result' }, 500)
+  }
+
+  // TS sees `result` as never inside the closure due to control-flow analysis;
+  // rebind to a local with the correct type for the rest of the handler.
+  const regenResult: Awaited<ReturnType<typeof regenerateWiki>> = result
+  log.info({ wikiKey: id, ...regenResult }, 'wiki regenerated via on-demand endpoint')
+  if (regenResult.timing) {
+    const t = regenResult.timing
+    c.header('Server-Timing', `classify;dur=${t.classify}, gather;dur=${t.gatherFragments}, llm;dur=${t.llmCall}, embed;dur=${t.embed}, total;dur=${t.total}`)
+  }
+  return c.json({ ok: true, lookupKey: id, fragmentCount: regenResult.fragmentCount })
 })
 
 // PATCH /wikis/:id/regenerate — toggle regenerate boolean

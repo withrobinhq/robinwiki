@@ -15,6 +15,13 @@
       "when": 1778457600000,
       "tag": "0001_wikis_people_embedding_retry_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778120351456,
+      "tag": "0002_users_singleton_uidx",
+      "breakpoints": true
     }
   ]
 }

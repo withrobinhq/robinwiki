@@ -611,7 +611,18 @@ export type UserActivityResponseSchema = {
 export type KeypairResponseSchema = {
     algorithm: string;
     publicKey: string;
+    fingerprint: string;
+};
+
+export type KeypairRevealRequestSchema = {
+    password: string;
+};
+
+export type KeypairRevealResponseSchema = {
+    algorithm: string;
+    publicKey: string;
     privateKey: string;
+    fingerprint: string;
 };
 
 export type McpEndpointResponseSchema = {
@@ -1859,12 +1870,45 @@ export type GetUserKeypairError = GetUserKeypairErrors[keyof GetUserKeypairError
 
 export type GetUserKeypairResponses = {
     /**
-     * Keypair details
+     * Keypair metadata (algorithm, publicKey, fingerprint)
      */
     200: KeypairResponseSchema;
 };
 
 export type GetUserKeypairResponse = GetUserKeypairResponses[keyof GetUserKeypairResponses];
+
+export type RevealUserKeypairData = {
+    body: KeypairRevealRequestSchema;
+    path?: never;
+    query?: never;
+    url: '/users/keypair/reveal';
+};
+
+export type RevealUserKeypairErrors = {
+    /**
+     * Invalid credentials
+     */
+    401: ErrorResponseSchema;
+    /**
+     * No keypair
+     */
+    404: ErrorResponseSchema;
+    /**
+     * Too many failed reveal attempts
+     */
+    429: ErrorResponseSchema;
+};
+
+export type RevealUserKeypairError = RevealUserKeypairErrors[keyof RevealUserKeypairErrors];
+
+export type RevealUserKeypairResponses = {
+    /**
+     * Keypair with decrypted privateKey
+     */
+    200: KeypairRevealResponseSchema;
+};
+
+export type RevealUserKeypairResponse = RevealUserKeypairResponses[keyof RevealUserKeypairResponses];
 
 export type GetUserStatsData = {
     body?: never;

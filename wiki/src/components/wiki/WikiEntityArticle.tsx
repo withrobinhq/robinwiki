@@ -31,6 +31,7 @@ import {
 import { useWikiEntityEditMode, type WikiRevision } from "@/components/wiki/useWikiEntityEditMode";
 import { useWikiEditHistory } from "@/hooks/useWikiEditHistory";
 import { wikiEntitySettingsPrefill } from "@/lib/wikiSettingsPrefill";
+import { sanitizeWikiHtml } from "@/lib/sanitizeWikiHtml";
 import {
   type LucideIcon,
 } from "lucide-react";
@@ -787,7 +788,7 @@ export function WikiEntityArticle({
                   {savedContent ? (
                     <div
                       className="wiki-richtext-rendered"
-                      dangerouslySetInnerHTML={{ __html: savedContent }}
+                      dangerouslySetInnerHTML={{ __html: sanitizeWikiHtml(savedContent) }}
                     />
                   ) : (
                     children

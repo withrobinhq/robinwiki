@@ -421,6 +421,11 @@ export async function regenerateWiki(
 
   // Optimistic lock: transition to LINKING to prevent concurrent regen runs.
   // If the wiki is already LINKING, another worker owns it — bail out.
+  //
+  // First-line defence is the wikiRegenLock CAS in db/locks.ts (used by
+  // POST /wikis/:id/regenerate). This in-function CAS is a belt-and-braces
+  // backstop for the regen-worker queue path which does not yet sit behind
+  // the same CasLock.
   const [lockedWiki] = await database
     .update(wikis)
     .set({ state: 'LINKING' })

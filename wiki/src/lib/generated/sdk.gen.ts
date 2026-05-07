@@ -2,7 +2,7 @@
 
 import { client } from './client.gen';
 import type { Client, Options as Options2, TDataShape } from './client/index';
-import type { AcceptFragmentData, AcceptFragmentErrors, AcceptFragmentResponses, CreateEntryData, CreateEntryErrors, CreateEntryResponses, CreateFragmentData, CreateFragmentErrors, CreateFragmentResponses, CreateWikiTypeData, CreateWikiTypeErrors, CreateWikiTypeResponses, DeleteUserAccountData, DeleteUserAccountResponses, DeleteUserDataData, DeleteUserDataResponses, ExportUserDataData, ExportUserDataResponses, GetAuditLogData, GetAuditLogResponses, GetContentData, GetContentErrors, GetContentResponses, GetEntryData, GetEntryErrors, GetEntryResponses, GetFragmentData, GetFragmentErrors, GetFragmentResponses, GetGraphData, GetGraphResponses, GetHealthData, GetHealthResponses, GetOpenApiSpecData, GetOpenApiSpecResponses, GetPersonData, GetPersonErrors, GetPersonResponses, GetPublishedWikiData, GetPublishedWikiErrors, GetPublishedWikiResponses, GetRelationshipsData, GetRelationshipsErrors, GetRelationshipsResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetUserActivityData, GetUserActivityResponses, GetUserKeypairData, GetUserKeypairErrors, GetUserKeypairResponses, GetUserProfileData, GetUserProfileErrors, GetUserProfileResponses, GetUserStatsData, GetUserStatsResponses, GetWikiData, GetWikiEditHistoryData, GetWikiEditHistoryErrors, GetWikiEditHistoryResponses, GetWikiErrors, GetWikiResponses, GetWikiTimelineData, GetWikiTimelineErrors, GetWikiTimelineResponses, GetWikiTypeData, GetWikiTypeErrors, GetWikiTypeResponses, ListEntriesData, ListEntriesResponses, ListEntryFragmentsData, ListEntryFragmentsErrors, ListEntryFragmentsResponses, ListFragmentsData, ListFragmentsResponses, ListPeopleData, ListPeopleResponses, ListWikisData, ListWikisResponses, ListWikiTypesData, ListWikiTypesResponses, MarkOnboardedData, MarkOnboardedResponses, McpTransportData, McpTransportErrors, McpTransportResponses, MergeThreadsData, MergeThreadsErrors, MergeWikisData, MergeWikisErrors, PublishWikiData, PublishWikiErrors, PublishWikiResponses, RegenerateMcpEndpointData, RegenerateMcpEndpointErrors, RegenerateMcpEndpointResponses, RegeneratePersonData, RegeneratePersonErrors, RegeneratePersonResponses, RegenerateThreadData, RegenerateThreadErrors, RegenerateThreadResponses, RegenerateWikiData, RegenerateWikiErrors, RegenerateWikiResponses, RejectFragmentData, RejectFragmentErrors, RejectFragmentResponses, RetryStuckFragmentsData, RetryStuckFragmentsResponses, SearchData, SearchErrors, SearchResponses, SetupWikiTypesData, SetupWikiTypesResponses, ToggleBouncerModeData, ToggleBouncerModeErrors, ToggleBouncerModeResponses, ToggleRegenerateData, ToggleRegenerateErrors, ToggleRegenerateResponses, UnpublishWikiData, UnpublishWikiErrors, UnpublishWikiResponses, UpdateContentData, UpdateContentErrors, UpdateContentResponses, UpdateFragmentData, UpdateFragmentErrors, UpdateFragmentResponses, UpdatePersonData, UpdatePersonErrors, UpdatePersonResponses, UpdateThreadData, UpdateThreadErrors, UpdateThreadResponses, UpdateWikiData, UpdateWikiErrors, UpdateWikiProgressData, UpdateWikiProgressErrors, UpdateWikiProgressResponses, UpdateWikiResponses, UpdateWikiTypeData, UpdateWikiTypeErrors, UpdateWikiTypeResponses } from './types.gen';
+import type { AcceptFragmentData, AcceptFragmentErrors, AcceptFragmentResponses, CreateEntryData, CreateEntryErrors, CreateEntryResponses, CreateFragmentData, CreateFragmentErrors, CreateFragmentResponses, CreateWikiTypeData, CreateWikiTypeErrors, CreateWikiTypeResponses, DeleteUserAccountData, DeleteUserAccountResponses, DeleteUserDataData, DeleteUserDataResponses, ExportUserDataData, ExportUserDataResponses, GetAuditLogData, GetAuditLogResponses, GetContentData, GetContentErrors, GetContentResponses, GetEntryData, GetEntryErrors, GetEntryResponses, GetFragmentData, GetFragmentErrors, GetFragmentResponses, GetGraphData, GetGraphResponses, GetHealthData, GetHealthResponses, GetOpenApiSpecData, GetOpenApiSpecResponses, GetPersonData, GetPersonErrors, GetPersonResponses, GetPublishedWikiData, GetPublishedWikiErrors, GetPublishedWikiResponses, GetRelationshipsData, GetRelationshipsErrors, GetRelationshipsResponses, GetThreadData, GetThreadErrors, GetThreadResponses, GetUserActivityData, GetUserActivityResponses, GetUserKeypairData, GetUserKeypairErrors, GetUserKeypairResponses, GetUserProfileData, GetUserProfileErrors, GetUserProfileResponses, GetUserStatsData, GetUserStatsResponses, GetWikiData, GetWikiEditHistoryData, GetWikiEditHistoryErrors, GetWikiEditHistoryResponses, GetWikiErrors, GetWikiResponses, GetWikiTimelineData, GetWikiTimelineErrors, GetWikiTimelineResponses, GetWikiTypeData, GetWikiTypeErrors, GetWikiTypeResponses, ListEntriesData, ListEntriesResponses, ListEntryFragmentsData, ListEntryFragmentsErrors, ListEntryFragmentsResponses, ListFragmentsData, ListFragmentsResponses, ListPeopleData, ListPeopleResponses, ListWikisData, ListWikisResponses, ListWikiTypesData, ListWikiTypesResponses, MarkOnboardedData, MarkOnboardedResponses, McpTransportData, McpTransportErrors, McpTransportResponses, MergeThreadsData, MergeThreadsErrors, MergeWikisData, MergeWikisErrors, PublishWikiData, PublishWikiErrors, PublishWikiResponses, RegenerateMcpEndpointData, RegenerateMcpEndpointErrors, RegenerateMcpEndpointResponses, RegeneratePersonData, RegeneratePersonErrors, RegeneratePersonResponses, RegenerateThreadData, RegenerateThreadErrors, RegenerateThreadResponses, RegenerateWikiData, RegenerateWikiErrors, RegenerateWikiResponses, RejectFragmentData, RejectFragmentErrors, RejectFragmentResponses, RetryStuckFragmentsData, RetryStuckFragmentsResponses, RevealUserKeypairData, RevealUserKeypairErrors, RevealUserKeypairResponses, SearchData, SearchErrors, SearchResponses, SetupWikiTypesData, SetupWikiTypesResponses, ToggleBouncerModeData, ToggleBouncerModeErrors, ToggleBouncerModeResponses, ToggleRegenerateData, ToggleRegenerateErrors, ToggleRegenerateResponses, UnpublishWikiData, UnpublishWikiErrors, UnpublishWikiResponses, UpdateContentData, UpdateContentErrors, UpdateContentResponses, UpdateFragmentData, UpdateFragmentErrors, UpdateFragmentResponses, UpdatePersonData, UpdatePersonErrors, UpdatePersonResponses, UpdateThreadData, UpdateThreadErrors, UpdateThreadResponses, UpdateWikiData, UpdateWikiErrors, UpdateWikiProgressData, UpdateWikiProgressErrors, UpdateWikiProgressResponses, UpdateWikiResponses, UpdateWikiTypeData, UpdateWikiTypeErrors, UpdateWikiTypeResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -632,7 +632,7 @@ export const markOnboarded = <ThrowOnError extends boolean = false>(options?: Op
 });
 
 /**
- * Get user's Ed25519 keypair
+ * Get user's Ed25519 keypair metadata (no privateKey)
  */
 export const getUserKeypair = <ThrowOnError extends boolean = false>(options?: Options<GetUserKeypairData, ThrowOnError>) => (options?.client ?? client).get<GetUserKeypairResponses, GetUserKeypairErrors, ThrowOnError>({
     security: [{
@@ -642,6 +642,23 @@ export const getUserKeypair = <ThrowOnError extends boolean = false>(options?: O
         }],
     url: '/users/keypair',
     ...options
+});
+
+/**
+ * Reveal Ed25519 private key after password verify
+ */
+export const revealUserKeypair = <ThrowOnError extends boolean = false>(options: Options<RevealUserKeypairData, ThrowOnError>) => (options.client ?? client).post<RevealUserKeypairResponses, RevealUserKeypairErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'better-auth.session_token',
+            type: 'apiKey'
+        }],
+    url: '/users/keypair/reveal',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**

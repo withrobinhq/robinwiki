@@ -16,18 +16,28 @@ export function assertProdEnv(): void {
     'BETTER_AUTH_SECRET',
     'MASTER_KEY',
     'KEY_ENCRYPTION_SECRET',
+    'WIKI_ORIGIN',
     'JOB_SIGNING_SECRET',
   ] as const
 
   const recommended = [
     'OPENROUTER_API_KEY',
     'SERVER_PUBLIC_URL',
-    'WIKI_ORIGIN',
   ] as const
 
   const missing = required.filter((k) => !process.env[k])
   if (missing.length) {
     console.error(`FATAL: missing required env vars in production: ${missing.join(', ')}`)
+    console.error('See .env.example at repo root for descriptions.')
+    process.exit(1)
+  }
+
+  // Empty / whitespace-only WIKI_ORIGIN passes the presence check above but
+  // would silently fall through to the localhost default at the cors mount
+  // site — refuse to boot so the misconfig is loud.
+  const wikiOrigin = process.env.WIKI_ORIGIN
+  if (!wikiOrigin || wikiOrigin.trim() === '') {
+    console.error('FATAL: WIKI_ORIGIN must be a non-empty comma-separated origin list in production')
     console.error('See .env.example at repo root for descriptions.')
     process.exit(1)
   }

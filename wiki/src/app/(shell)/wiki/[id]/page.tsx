@@ -32,6 +32,7 @@ import {
   type SectionInfo,
 } from "@/lib/sectionEdit";
 import { useWikiTokenSubstitution } from "@/lib/htmlTokenSubstitute";
+import { sanitizeWikiHtml } from "@/lib/sanitizeWikiHtml";
 import type {
   WikiInfobox as WikiInfoboxData,
   WikiRef,
@@ -112,7 +113,7 @@ function HtmlWikiBody({
       ref={containerRef}
       className="wiki-richtext-rendered"
       style={style}
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={{ __html: sanitizeWikiHtml(html) }}
     />
   );
 }

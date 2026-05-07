@@ -32,7 +32,20 @@ export const userActivityResponseSchema = z.object({
 export const keypairResponseSchema = z.object({
   algorithm: z.string(),
   publicKey: z.string(),
+  // sha256 of the SPKI-DER public key bytes, hex, lowercase. Lets the UI
+  // display a stable identifier without ever surfacing the private key.
+  fingerprint: z.string(),
+})
+
+export const keypairRevealRequestSchema = z.object({
+  password: z.string().min(1),
+})
+
+export const keypairRevealResponseSchema = z.object({
+  algorithm: z.string(),
+  publicKey: z.string(),
   privateKey: z.string(),
+  fingerprint: z.string(),
 })
 
 export const mcpEndpointResponseSchema = z.object({

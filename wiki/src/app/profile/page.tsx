@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Check,
@@ -11,6 +12,7 @@ import {
   KeyRound,
   LogOut,
   Pencil,
+  RefreshCw,
 } from "lucide-react";
 import { T, FONT } from "@/lib/typography";
 import { ModelSelector } from "@/components/ModelSelector";
@@ -40,7 +42,8 @@ import { useProfile } from "@/hooks/useProfile";
 import { useStats } from "@/hooks/useStats";
 import { useLogout } from "@/hooks/useLogout";
 import { useChangePassword } from "@/hooks/useChangePassword";
-import { exportUserData, getUserKeypair } from "@/lib/api";
+import { exportUserData, regenerateMcpEndpoint, revealUserKeypair } from "@/lib/api";
+import { passwordPromptDialog } from "@/lib/passwordPromptDialog";
 
 const sectionLabel: CSSProperties = {
   ...T.micro,
@@ -75,8 +78,11 @@ const titleText: CSSProperties = {
   margin: 0,
 };
 
+type RegenState = "idle" | "confirming" | "success";
+
 export default function ProfilePage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { session, isLoading: sessionLoading } = useSession();
   const profileQuery = useProfile();
   const statsQuery = useStats();
@@ -89,6 +95,11 @@ export default function ProfilePage() {
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
+  const [regenState, setRegenState] = useState<RegenState>("idle");
+  const [regenLoading, setRegenLoading] = useState(false);
+  const [regenError, setRegenError] = useState<string | null>(null);
+  const [regeneratedUrl, setRegeneratedUrl] = useState<string | null>(null);
+  const [regenCopied, setRegenCopied] = useState(false);
 
   const username = session?.user?.name ?? session?.user?.email ?? "";
   const canDelete = username.length > 0 && deleteConfirm === username;
@@ -99,6 +110,50 @@ export default function ProfilePage() {
     navigator.clipboard.writeText(endpointUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleStartRegen = () => {
+    setRegenError(null);
+    setRegenState("confirming");
+  };
+
+  const handleCancelRegen = () => {
+    if (regenLoading) return;
+    setRegenError(null);
+    setRegenState("idle");
+  };
+
+  const handleConfirmRegen = async () => {
+    setRegenLoading(true);
+    setRegenError(null);
+    try {
+      const { data } = await regenerateMcpEndpoint({ credentials: "include" });
+      if (data?.mcpEndpointUrl) {
+        setRegeneratedUrl(data.mcpEndpointUrl);
+        setRegenState("success");
+        // Refresh cached profile so other consumers see the new URL too.
+        await queryClient.invalidateQueries({ queryKey: ["profile"] });
+      } else {
+        setRegenError("Couldn't regenerate. Try again.");
+      }
+    } catch {
+      setRegenError("Couldn't regenerate. Try again.");
+    } finally {
+      setRegenLoading(false);
+    }
+  };
+
+  const handleDoneRegen = () => {
+    setRegenState("idle");
+    setRegeneratedUrl(null);
+    setRegenError(null);
+  };
+
+  const handleCopyRegenerated = () => {
+    if (!regeneratedUrl) return;
+    navigator.clipboard.writeText(regeneratedUrl);
+    setRegenCopied(true);
+    setTimeout(() => setRegenCopied(false), 2000);
   };
 
   const triggerJsonDownload = (data: unknown, filename: string) => {
@@ -120,12 +175,38 @@ export default function ProfilePage() {
     }
   };
 
+  const [keypairError, setKeypairError] = useState<string | null>(null);
   const handleExportKeypair = async () => {
+    setKeypairError(null);
+    const password = await passwordPromptDialog();
+    if (!password) return; // user cancelled
     try {
-      const { data } = await getUserKeypair({ credentials: "include" });
-      if (data) triggerJsonDownload(data, "robin-keypair.json");
-    } catch {
-      // silently fail — user sees no download
+      const { data, response } = await revealUserKeypair({
+        body: { password },
+        credentials: "include",
+      });
+      if (data) {
+        triggerJsonDownload(data, "robin-keypair.json");
+        return;
+      }
+      if (response.status === 401) {
+        setKeypairError("Invalid password");
+      } else if (response.status === 429) {
+        setKeypairError("Too many attempts. Try again later.");
+      } else {
+        setKeypairError("Could not export keypair. Try again later.");
+      }
+    } catch (err) {
+      // The shared client throws ApiError on non-OK responses. Surface a
+      // useful message inline rather than silently swallowing.
+      const message = err instanceof Error ? err.message : "Unknown error";
+      if (message.toLowerCase().includes("invalid")) {
+        setKeypairError("Invalid password");
+      } else if (message.includes("429") || message.toLowerCase().includes("too many")) {
+        setKeypairError("Too many attempts. Try again later.");
+      } else {
+        setKeypairError("Could not export keypair. Try again later.");
+      }
     }
   };
 
@@ -184,21 +265,44 @@ export default function ProfilePage() {
               </div>
 
               <div>
-                <p style={{ ...T.tiny, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--wiki-count)", margin: 0 }}>
-                  Endpoint
-                </p>
+                <div className="flex items-center justify-between">
+                  <p style={{ ...T.tiny, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--wiki-count)", margin: 0 }}>
+                    Endpoint
+                  </p>
+                  {regenState === "idle" && (
+                    <button
+                      type="button"
+                      onClick={handleStartRegen}
+                      className="flex shrink-0 cursor-pointer items-center gap-1 border-none bg-transparent"
+                      style={{ ...T.micro, color: "var(--wiki-count)" }}
+                    >
+                      <RefreshCw className="size-3.5" strokeWidth={1.5} />
+                      Regenerate
+                    </button>
+                  )}
+                </div>
                 <div className="mt-1.5 flex items-center gap-3" style={{ border: "1px solid var(--card-border)", background: "var(--muted)", padding: "10px 14px" }}>
                   <p style={{ ...T.micro, color: "var(--wiki-count)", margin: 0, minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {endpointUrl}
+                    {regenState === "success" && regeneratedUrl ? regeneratedUrl : endpointUrl}
                   </p>
                   <button
                     type="button"
-                    onClick={handleCopy}
-                    title={copied ? "Copied!" : "Copy endpoint"}
+                    onClick={
+                      regenState === "success" ? handleCopyRegenerated : handleCopy
+                    }
+                    title={
+                      regenState === "success"
+                        ? regenCopied
+                          ? "Copied!"
+                          : "Copy new endpoint"
+                        : copied
+                          ? "Copied!"
+                          : "Copy endpoint"
+                    }
                     className="flex shrink-0 cursor-pointer border-none bg-transparent"
                     style={{ color: "var(--wiki-count)", transition: "color 0.15s" }}
                   >
-                    {copied ? (
+                    {(regenState === "success" ? regenCopied : copied) ? (
                       <Check className="size-4" strokeWidth={1.75} />
                     ) : (
                       <Copy className="size-4" strokeWidth={1.5} />
@@ -206,6 +310,84 @@ export default function ProfilePage() {
                   </button>
                 </div>
               </div>
+
+              {regenState === "confirming" && (
+                <div
+                  className="space-y-3"
+                  style={{
+                    border: "1px solid color-mix(in srgb, var(--destructive) 30%, transparent)",
+                    background: "color-mix(in srgb, var(--destructive) 6%, transparent)",
+                    padding: "12px 14px",
+                  }}
+                >
+                  <div>
+                    <p style={{ ...T.body, fontWeight: 500, color: "var(--heading-color)", margin: 0 }}>
+                      Regenerate MCP link?
+                    </p>
+                    <p style={{ ...bodySmallText, marginTop: 4 }}>
+                      This invalidates your current MCP URL. Every connected MCP
+                      client (Claude Desktop, Cursor, etc.) will stop working
+                      until you paste the new URL into each one. There&apos;s no
+                      undo &mdash; the old URL is gone the moment you confirm.
+                    </p>
+                  </div>
+                  {regenError && (
+                    <div className="text-destructive" style={{ ...T.micro }}>
+                      {regenError}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCancelRegen}
+                      disabled={regenLoading}
+                    >
+                      <span style={T.buttonSmall}>Cancel</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleConfirmRegen}
+                      disabled={regenLoading}
+                      className="bg-destructive text-white hover:bg-destructive/90 disabled:opacity-50"
+                    >
+                      {regenLoading ? (
+                        <span className="flex items-center gap-2">
+                          <Spinner className="size-3.5" />
+                          <span style={T.buttonSmall}>Regenerating...</span>
+                        </span>
+                      ) : (
+                        <span style={T.buttonSmall}>Yes, regenerate</span>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {regenState === "success" && (
+                <div
+                  className="flex items-center justify-between gap-3"
+                  style={{
+                    border: "1px solid color-mix(in srgb, var(--emerald-600, #059669) 30%, transparent)",
+                    background: "color-mix(in srgb, var(--emerald-600, #059669) 6%, transparent)",
+                    padding: "10px 14px",
+                  }}
+                >
+                  <p style={{ ...T.micro, color: "var(--heading-secondary)", margin: 0 }}>
+                    New URL generated. Paste it into every MCP client before closing.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleDoneRegen}
+                  >
+                    <span style={T.buttonSmall}>Done</span>
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </section>
@@ -389,6 +571,11 @@ export default function ProfilePage() {
                 icon={<KeyRound className="size-4" strokeWidth={1.5} />}
                 onClick={handleExportKeypair}
               />
+              {keypairError && (
+                <p style={{ ...T.micro, color: "var(--destructive)", margin: 0 }}>
+                  {keypairError}
+                </p>
+              )}
             </CardContent>
           </Card>
         </section>

@@ -70,6 +70,8 @@ import {
   userStatsResponseSchema,
   userActivityResponseSchema,
   keypairResponseSchema,
+  keypairRevealRequestSchema,
+  keypairRevealResponseSchema,
   mcpEndpointResponseSchema,
   exportDataResponseSchema,
   // graph
@@ -151,6 +153,8 @@ const schemaRegistry: Record<string, ZodType> = {
   userStatsResponseSchema,
   userActivityResponseSchema,
   keypairResponseSchema,
+  keypairRevealRequestSchema,
+  keypairRevealResponseSchema,
   mcpEndpointResponseSchema,
   exportDataResponseSchema,
   // graph
@@ -268,7 +272,8 @@ const routes: RouteSpec[] = [
   // ── Users ────────────────────────────────────────────────────────────────
   { method: 'GET', path: '/users/profile', operationId: 'getUserProfile', summary: "Get current user's profile", tags: ['Users'], auth: 'session', responses: { '200': { description: 'User profile', schemaName: 'userProfileResponseSchema' }, '404': { description: 'Not found', schemaName: 'errorResponseSchema' } } },
   { method: 'PATCH', path: '/users/onboard', operationId: 'markOnboarded', summary: 'Mark onboarding complete', tags: ['Users'], auth: 'session', responses: { '200': { description: 'Onboarding marked', schemaName: 'okResponseSchema' } } },
-  { method: 'GET', path: '/users/keypair', operationId: 'getUserKeypair', summary: "Get user's Ed25519 keypair", tags: ['Users'], auth: 'session', responses: { '200': { description: 'Keypair details', schemaName: 'keypairResponseSchema' }, '404': { description: 'No keypair', schemaName: 'errorResponseSchema' } } },
+  { method: 'GET', path: '/users/keypair', operationId: 'getUserKeypair', summary: "Get user's Ed25519 keypair metadata (no privateKey)", tags: ['Users'], auth: 'session', responses: { '200': { description: 'Keypair metadata (algorithm, publicKey, fingerprint)', schemaName: 'keypairResponseSchema' }, '404': { description: 'No keypair', schemaName: 'errorResponseSchema' } } },
+  { method: 'POST', path: '/users/keypair/reveal', operationId: 'revealUserKeypair', summary: 'Reveal Ed25519 private key after password verify', tags: ['Users'], auth: 'session', request: { body: { schemaName: 'keypairRevealRequestSchema' } }, responses: { '200': { description: 'Keypair with decrypted privateKey', schemaName: 'keypairRevealResponseSchema' }, '401': { description: 'Invalid credentials', schemaName: 'errorResponseSchema' }, '404': { description: 'No keypair', schemaName: 'errorResponseSchema' }, '429': { description: 'Too many failed reveal attempts', schemaName: 'errorResponseSchema' } } },
   { method: 'GET', path: '/users/stats', operationId: 'getUserStats', summary: "Get user's stats", tags: ['Users'], auth: 'session', responses: { '200': { description: 'User stats', schemaName: 'userStatsResponseSchema' } } },
   { method: 'GET', path: '/users/activity', operationId: 'getUserActivity', summary: "Get user's recent activity", tags: ['Users'], auth: 'session', responses: { '200': { description: 'Recent activity', schemaName: 'userActivityResponseSchema' } } },
   { method: 'POST', path: '/users/export', operationId: 'exportUserData', summary: 'Export all user data', tags: ['Users'], auth: 'session', responses: { '200': { description: 'Full data export', schemaName: 'exportDataResponseSchema' } } },
