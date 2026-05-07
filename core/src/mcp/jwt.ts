@@ -31,25 +31,54 @@ const log = logger.child({ component: 'mcp-jwt' })
 /**
  * In-memory `kid → user` cache to avoid full table scan per MCP request.
  *
- * @remarks Map is keyed by the full 32-char kid. The cache is rebuilt
- * lazily on miss; callers must invoke {@link clearKidCache} after any
- * write to `users.publicKey` or `users.mcpTokenVersion` so we never
- * serve a stale public key after key rotation.
+ * @remarks Map is keyed by the full 32-char kid plus, opportunistically,
+ * the 16-char prefix once the legacy fallback fires. The cache is
+ * rebuilt lazily on miss; callers must invoke {@link clearKidCache}
+ * after any write to `users.publicKey` or `users.mcpTokenVersion` so we
+ * never serve a stale public key after key rotation.
  *
  * @internal
  */
 let kidCache: Map<string, typeof users.$inferSelect> | null = null
 
 /**
- * Rebuild the `kid → user` cache from all provisioned users.
+ * Reverse index `userId → set of kids` so {@link clearKidCache} can
+ * evict per-user entries in O(1) without scanning the forward map.
+ * Always kept in sync with `kidCache` writes.
+ *
+ * @internal
+ */
+const userIdToKids: Map<string, Set<string>> = new Map()
+
+/**
+ * Record the `kid → userId` association in the reverse index.
+ *
+ * @internal
+ */
+function indexKid(kid: string, userId: string): void {
+  let set = userIdToKids.get(userId)
+  if (!set) {
+    set = new Set()
+    userIdToKids.set(userId, set)
+  }
+  set.add(kid)
+}
+
+/**
+ * Rebuild the `kid → user` cache from all provisioned users. Also
+ * resets the reverse index so the two stay consistent.
  *
  * @internal
  */
 async function rebuildKidCache(): Promise<void> {
   const rows = await db.select().from(users).where(isNotNull(users.publicKey))
   kidCache = new Map()
+  userIdToKids.clear()
   for (const u of rows) {
-    if (u.publicKey) kidCache.set(publicKeyId(u.publicKey), u)
+    if (!u.publicKey) continue
+    const kid = publicKeyId(u.publicKey)
+    kidCache.set(kid, u)
+    indexKid(kid, u.id)
   }
 }
 
@@ -80,8 +109,10 @@ async function findUserByKid(kid: string) {
     if (kid.length !== 16 || !kidCache) return undefined
     for (const [fullKid, user] of kidCache) {
       if (fullKid.startsWith(kid)) {
-        // Cache the legacy key so subsequent lookups are O(1).
+        // Cache the legacy key so subsequent lookups are O(1) and keep
+        // the reverse index in sync so clearKidCache(userId) evicts it.
         kidCache.set(kid, user)
+        indexKid(kid, user.id)
         log.debug({ kid }, 'mcp jwt: 16-char kid fallback')
         return user
       }
@@ -207,4 +238,28 @@ export async function verifyMcpToken(token: string): Promise<string> {
   }
 
   return user.id
+}
+
+/**
+ * Evict cached `kid → user` entries.
+ *
+ * @remarks
+ * Call after any write to `users.publicKey` or `users.mcpTokenVersion`
+ * so the next {@link verifyMcpToken} rebuilds against fresh DB state.
+ * Pass `userId` to evict only that user's entries (typical for
+ * `/regenerate-mcp` and provisioning); omit the argument to nuke the
+ * whole cache (test resets, paranoia).
+ *
+ * @param userId - If provided, evicts only this user's cached entries
+ */
+export function clearKidCache(userId?: string): void {
+  if (userId === undefined) {
+    kidCache = null
+    userIdToKids.clear()
+    return
+  }
+  const kids = userIdToKids.get(userId)
+  if (!kids) return
+  for (const kid of kids) kidCache?.delete(kid)
+  userIdToKids.delete(userId)
 }

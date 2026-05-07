@@ -14,7 +14,7 @@ import {
   edges,
 } from '../db/schema.js'
 import { decryptPrivateKey } from '../keypair.js'
-import { signMcpToken } from '../mcp/jwt.js'
+import { signMcpToken, clearKidCache } from '../mcp/jwt.js'
 import { validationHook } from '../lib/validation.js'
 import { getConfig, setConfig } from '../lib/config.js'
 import { emitAuditEvent } from '../db/audit.js'
@@ -193,6 +193,8 @@ usersRouter.post('/regenerate-mcp', async (c) => {
     .update(users)
     .set({ mcpTokenVersion: sql`${users.mcpTokenVersion} + 1` })
     .where(eq(users.id, userId))
+  // Evict the cached row so the next verify reloads the bumped version.
+  clearKidCache(userId)
   const mcpToken = await signMcpToken(userId)
   if (!mcpToken) return c.json({ error: 'No keypair — sign out and back in to generate one' }, 400)
   const appUrl = process.env.SERVER_PUBLIC_URL ?? 'http://localhost:3000'

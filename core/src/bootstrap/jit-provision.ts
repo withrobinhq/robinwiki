@@ -4,6 +4,7 @@ import { auth } from '../auth.js'
 import { db } from '../db/client.js'
 import { people, users } from '../db/schema.js'
 import { generateKeypair } from '../keypair.js'
+import { clearKidCache } from '../mcp/jwt.js'
 import { generateDek, loadMasterKey, wrapDek } from '../lib/crypto.js'
 import { logger } from '../lib/logger.js'
 import { producer } from '../queue/producer.js'
@@ -82,6 +83,9 @@ export async function ensureFirstUser(): Promise<void> {
     try {
       const { publicKey, encryptedPrivateKey } = generateKeypair(kek)
       await db.update(users).set({ publicKey, encryptedPrivateKey }).where(eq(users.id, userId))
+      // Cache is almost certainly empty at first boot, but keep
+      // eviction wired so the contract holds across restart paths.
+      clearKidCache(userId)
       log.info({ userId }, 'keypair generated inline during provisioning')
     } catch (err) {
       log.error({ userId, err }, 'inline keypair generation failed — falling back to async')

@@ -58,6 +58,7 @@ import type { SchedulerJob } from '@robin/queue'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
 import { generateKeypair } from '../keypair.js'
 import { logger } from '../lib/logger.js'
+import { clearKidCache } from '../mcp/jwt.js'
 
 const log = logger.child({ component: 'worker' })
 
@@ -543,6 +544,10 @@ export async function processProvisionJob(job: ProvisionJob): Promise<JobResult>
     .update(users)
     .set({ publicKey, encryptedPrivateKey })
     .where(eq(users.id, job.userId))
+
+  // Evict any cached row so the next /mcp request rebuilds against
+  // the freshly-written publicKey.
+  clearKidCache(job.userId)
 
   log.info({ userId: job.userId }, 'provision: keypair generated and stored')
   return { jobId: job.jobId, success: true, processedAt: new Date().toISOString() }
