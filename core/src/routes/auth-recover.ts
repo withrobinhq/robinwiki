@@ -126,8 +126,8 @@ authRecoverRoutes.post('/recover', async (c) => {
 
   const hashed = await hashPassword(body.newPassword)
 
-  const rows = await db.execute<{ id: string }>(
-    sql`SELECT id FROM accounts WHERE provider_id = 'credential' LIMIT 1`
+  const rows = await db.execute<{ id: string; user_id: string }>(
+    sql`SELECT id, user_id FROM accounts WHERE provider_id = 'credential' LIMIT 1`
   )
   const account = rows[0]
   if (!account) {
@@ -143,9 +143,18 @@ authRecoverRoutes.post('/recover', async (c) => {
     return c.json({ error: 'No account found' }, 404)
   }
 
-  await db.execute(
-    sql`UPDATE accounts SET password = ${hashed} WHERE id = ${account.id}`
-  )
+  // Re-set password_reset_required = true (#71). The user just used the
+  // server-secret recovery channel, which means a deployment-side process
+  // chose this password — the human must pick their own on next sign-in.
+  // Same transaction as the password update so the two states stay aligned.
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`UPDATE accounts SET password = ${hashed} WHERE id = ${account.id}`
+    )
+    await tx.execute(
+      sql`UPDATE users SET password_reset_required = true WHERE id = ${account.user_id}`
+    )
+  })
 
   log.info({ accountId: account.id, ip }, 'password recovery succeeded')
   await emitAuditEvent(db, {
