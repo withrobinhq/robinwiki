@@ -5,6 +5,8 @@ import { db } from '../db/client.js'
 import { fragments, wikis, people } from '../db/schema.js'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
 import { logger } from '../lib/logger.js'
+import { emitPipelineEvent } from '../db/pipeline-events.js'
+import { emitAuditEvent } from '../db/audit.js'
 
 const log = logger.child({ component: 'embedding-retry' })
 
@@ -237,12 +239,34 @@ export async function processEmbeddingRetryJob(
   log.info({ jobId: job.jobId }, 'processing embedding retry batch')
   const t0 = performance.now()
 
+  // Embedding-retry batches sweep all unembedded rows across fragments / wikis /
+  // people; there is no single entryKey. Pipeline-event emission keeps that
+  // column null and surfaces detail (per-table scan/ok/failed counts) in
+  // metadata. Audit log gets a parallel summary row so the cron run is visible
+  // alongside other system audits.
+  await emitPipelineEvent(db as never, {
+    entryKey: null,
+    jobId: job.jobId,
+    stage: 'embed',
+    status: 'started',
+    metadata: { triggeredBy: job.triggeredBy },
+  })
+
   let config: Awaited<ReturnType<typeof loadOpenRouterConfig>> | undefined
   try {
     config = await loadOpenRouterConfig()
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     log.warn({ jobId: job.jobId, error: message }, 'openrouter config unavailable — skipping batch')
+    // Treat a missing key as a non-fatal skip for the cron — emit a completed
+    // row with reason so operators can see the retry batch ran but no-op'd.
+    await emitPipelineEvent(db as never, {
+      entryKey: null,
+      jobId: job.jobId,
+      stage: 'embed',
+      status: 'completed',
+      metadata: { skipped: true, reason: 'no_openrouter_config', error: message },
+    })
     return {
       jobId: job.jobId,
       success: true,
@@ -253,25 +277,77 @@ export async function processEmbeddingRetryJob(
   const cutoff = new Date(Date.now() - MIN_RETRY_GAP_MS)
   const embedConfig = { apiKey: config.apiKey, model: config.models.embedding }
 
-  const fragResult = await retryTable('fragments', cutoff, embedConfig)
-  const wikiResult = await retryTable('wikis', cutoff, embedConfig)
-  const peopleResult = await retryTable('people', cutoff, embedConfig)
+  try {
+    const fragResult = await retryTable('fragments', cutoff, embedConfig)
+    const wikiResult = await retryTable('wikis', cutoff, embedConfig)
+    const peopleResult = await retryTable('people', cutoff, embedConfig)
 
-  const elapsed = Math.round(performance.now() - t0)
-  log.info(
-    {
+    const elapsed = Math.round(performance.now() - t0)
+    log.info(
+      {
+        jobId: job.jobId,
+        fragments: fragResult,
+        wikis: wikiResult,
+        people: peopleResult,
+        ms: elapsed,
+      },
+      'embedding retry batch done'
+    )
+
+    await emitPipelineEvent(db as never, {
+      entryKey: null,
       jobId: job.jobId,
-      fragments: fragResult,
-      wikis: wikiResult,
-      people: peopleResult,
-      ms: elapsed,
-    },
-    'embedding retry batch done'
-  )
+      stage: 'embed',
+      status: 'completed',
+      metadata: {
+        fragments: fragResult,
+        wikis: wikiResult,
+        people: peopleResult,
+        durationMs: elapsed,
+      },
+    })
 
-  return {
-    jobId: job.jobId,
-    success: true,
-    processedAt: new Date().toISOString(),
+    // Parallel audit row so /admin/diagnose's audit_log column carries a
+    // human-readable summary of the cron tick (dashboards / log greps that
+    // look at audit_log, not pipeline_events, still see embed activity).
+    await emitAuditEvent(db, {
+      entityType: 'embedding_retry',
+      entityId: job.jobId,
+      eventType: 'completed',
+      source: 'system',
+      summary: `Embedding retry batch: ${fragResult.ok}+${wikiResult.ok}+${peopleResult.ok} healed, ${fragResult.failed}+${wikiResult.failed}+${peopleResult.failed} still pending`,
+      detail: {
+        fragments: fragResult,
+        wikis: wikiResult,
+        people: peopleResult,
+        durationMs: elapsed,
+      },
+    })
+
+    return {
+      jobId: job.jobId,
+      success: true,
+      processedAt: new Date().toISOString(),
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const elapsed = Math.round(performance.now() - t0)
+    log.error({ jobId: job.jobId, error: message, ms: elapsed }, 'embedding retry batch failed')
+    await emitPipelineEvent(db as never, {
+      entryKey: null,
+      jobId: job.jobId,
+      stage: 'embed',
+      status: 'failed',
+      metadata: { error: message, durationMs: elapsed },
+    })
+    await emitAuditEvent(db, {
+      entityType: 'embedding_retry',
+      entityId: job.jobId,
+      eventType: 'failed',
+      source: 'system',
+      summary: `Embedding retry batch failed: ${message}`,
+      detail: { error: message, durationMs: elapsed },
+    })
+    throw err
   }
 }
