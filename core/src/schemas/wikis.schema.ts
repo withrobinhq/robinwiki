@@ -170,6 +170,17 @@ export const toggleRegenerateResponseSchema = z.object({
   regenerate: z.boolean(),
 })
 
+// ── Auto-regen toggle schemas (Stream E5; #259) ────────────────────────────
+
+export const autoRegenBodySchema = z.object({
+  autoRegen: z.boolean(),
+})
+
+export const autoRegenResponseSchema = z.object({
+  id: lookupKeySchema,
+  autoRegen: z.boolean(),
+})
+
 // ── Edit history schemas ──────────────────────────────────────────────────
 
 export const editRecordSchema = z.object({

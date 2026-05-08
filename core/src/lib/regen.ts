@@ -1,9 +1,10 @@
-import { eq, ne, and, inArray, desc, isNull, sql } from 'drizzle-orm'
+import { eq, ne, and, gt, lte, inArray, desc, isNull, isNotNull, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import {
   createIngestAgents,
   createTypedCaller,
   embedText,
+  withTypedUsage,
   wikiClassify,
 } from '@robin/agent'
 import {
@@ -40,6 +41,7 @@ import { hybridSearch } from './search.js'
 import { nanoid } from './id.js'
 import { logger } from './logger.js'
 import { emitAuditEvent } from '../db/audit.js'
+import { emitUsageEvent } from '../db/usage-events.js'
 
 const log = logger.child({ component: 'regen' })
 
@@ -72,11 +74,52 @@ export interface RegenTiming {
   total: number
 }
 
+/**
+ * Reference shape for fragments surfaced in the regen partition (E1 keystone).
+ * Used by callers (E4 timeline UI) that want a structured "what changed"
+ * summary without re-querying.
+ */
+export interface FragmentRef {
+  lookupKey: string
+  slug: string
+  title: string | null
+}
+
+/**
+ * Triggering-fragments partition emitted alongside the regen result. The four
+ * buckets are computed against `wikis.last_rebuilt_at`:
+ *   - new       — edges.created_at > last_rebuilt_at
+ *   - updated   — edges.created_at <= last_rebuilt_at AND fragment.updated_at > last_rebuilt_at
+ *   - removed   — edges.deleted_at > last_rebuilt_at
+ *   - integrated — physically absent from the LLM prompt (the architectural
+ *                  enforcement). Surfaced in the count only for observability;
+ *                  not echoed back as a list to keep the response shape small.
+ *
+ * On first regen (`last_rebuilt_at IS NULL`), all live fragments are reported
+ * in `integrated` and the LLM sees the full set via the legacy full-synthesis
+ * code path. The cache contract activates from the next regen forward.
+ */
+export interface TriggeringFragments {
+  new: FragmentRef[]
+  updated: FragmentRef[]
+  removed: FragmentRef[]
+  integratedCount: number
+}
+
 export interface RegenResult {
   content: string
   fragmentCount: number
   hasEmbedding: boolean
   timing?: RegenTiming
+  /**
+   * Set when the partition path ran (post-first-regen). Undefined on first
+   * regen and on the no-op short-circuit. E4's timeline UI consumes this
+   * directly; the cron path may inspect `removed.length` or `new.length` to
+   * decide whether to enqueue follow-up work.
+   */
+  triggeringFragments?: TriggeringFragments
+  /** True when the partition was empty and the LLM call was skipped. */
+  skipped?: boolean
 }
 
 /**
@@ -404,9 +447,14 @@ export async function classifyUnfiledFragments(
 export async function regenerateWiki(
   database: DB,
   wikiKey: string,
-  opts?: { skipEmbedding?: boolean }
+  opts?: { skipEmbedding?: boolean; jobId?: string }
 ): Promise<RegenResult> {
   const t0 = performance.now()
+  // E1 keystone: capture `now` at the top so the partition uses `<= now`
+  // consistently and the post-success `last_rebuilt_at` write uses the same
+  // wall-clock. A fragment edit during the LLM call lands in the *next*
+  // pass, not this one (PLAN.md E1 §4 TOCTOU).
+  const partitionNow = new Date()
   const [wiki] = await database.select().from(wikis).where(eq(wikis.lookupKey, wikiKey))
   if (!wiki) throw new Error(`Wiki not found: ${wikiKey}`)
   // #236 — a regen job may still be in the queue when the wiki is
@@ -426,9 +474,13 @@ export async function regenerateWiki(
   // POST /wikis/:id/regenerate). This in-function CAS is a belt-and-braces
   // backstop for the regen-worker queue path which does not yet sit behind
   // the same CasLock.
+  //
+  // Stream E (lifecycle): also flip lifecycle_state to 'dreaming' here. The
+  // CAS on `state != 'LINKING'` doubles as the lifecycle gate — only one
+  // regen can hold the lock so only one transition happens.
   const [lockedWiki] = await database
     .update(wikis)
-    .set({ state: 'LINKING' })
+    .set({ state: 'LINKING', lifecycleState: 'dreaming' })
     .where(and(eq(wikis.lookupKey, wikiKey), ne(wikis.state, 'LINKING')))
     .returning()
   if (!lockedWiki) {
@@ -454,19 +506,63 @@ export async function regenerateWiki(
   // input type but createTypedCaller is parameterised by the output type
   // (what the caller ultimately consumes).
   //
-  // Use the dedicated wikiWriter agent (Sonnet, 16k output cap) — not the
+  // Use the dedicated wikiWriter agent (Sonnet, 16k output cap), not the
   // wiki-classifier (Haiku, 4k cap). Issue #257: long regen output was
   // silently truncated mid-sentence because the classifier model's default
   // ~4096 token cap fell well short of typical wiki bodies.
-  const callLlm = createTypedCaller(
-    agents.wikiWriter,
+  //
+  // Phase A3: wrap with withTypedUsage so the wiki-writer Sonnet call
+  // writes a usage_events row keyed by jobId. Falls back gracefully when
+  // jobId is not supplied (manual route handler tests).
+  const regenJobId = opts?.jobId
+  const callLlm = withTypedUsage(
     regenOutputSchema as unknown as import('zod').ZodType<RegenOutput>,
+    {
+      agent: agents.wikiWriter,
+      record: async (ctx, rec) => {
+        await emitUsageEvent(database as never, {
+          wikiKey,
+          stage: 'regen',
+          model: ctx.model,
+          promptTokens: rec.promptTokens,
+          completionTokens: rec.completionTokens,
+          durationMs: rec.durationMs,
+          jobId: ctx.jobId ?? null,
+        })
+      },
+      context: () => ({
+        stage: 'regen',
+        jobId: regenJobId ?? null,
+        wikiKey,
+        model: orConfig.models.wikiGeneration,
+      }),
+    },
   )
 
-  // Gather linked fragments via FRAGMENT_IN_WIKI edges, with signal strength
+  // Gather linked fragments via FRAGMENT_IN_WIKI edges, with signal strength.
+  //
+  // E1 keystone (PLAN.md §3.E1) — replace the single "all live edges" gather
+  // with a partition computed against `wikis.last_rebuilt_at`:
+  //   * NEW        — edges.created_at > last_rebuilt_at AND deleted_at IS NULL
+  //   * UPDATED    — edges.created_at <= last_rebuilt_at
+  //                  AND fragments.updated_at > last_rebuilt_at
+  //                  AND deleted_at IS NULL
+  //   * REMOVED    — edges.deleted_at > last_rebuilt_at
+  //   * INTEGRATED — edges.created_at <= last_rebuilt_at
+  //                  AND fragments.updated_at <= last_rebuilt_at
+  //                  AND deleted_at IS NULL — physically absent from the prompt.
+  //
+  // First regen (`last_rebuilt_at IS NULL`) falls through to the legacy full-
+  // synthesis path so greenfield wikis behave as today; the cache contract
+  // activates from the next regen forward.
   const tGather0 = performance.now()
+  const isFirstRegen = wiki.lastRebuiltAt == null
+  const lastRebuiltAt = wiki.lastRebuiltAt ?? null
+
+  // Pull the active edges (full set used for related-wiki co-occurrence
+  // discovery later in the function — kept as before).
   const fragmentEdgeRows = await database
-    .select({ srcId: edges.srcId, attrs: edges.attrs })
+    .select({ srcId: edges.srcId, attrs: edges.attrs, createdAt: edges.createdAt })
     .from(edges)
     .where(
       and(
@@ -478,39 +574,162 @@ export async function regenerateWiki(
 
   // Build a signal map: fragmentKey → 'strong' | 'weak' (default strong for legacy edges without attrs)
   const signalMap = new Map<string, 'strong' | 'weak'>()
+  const edgeCreatedAtMap = new Map<string, Date>()
   for (const e of fragmentEdgeRows) {
     const attrs = e.attrs as Record<string, unknown> | null
     const signal = (attrs?.signal === 'weak' ? 'weak' : 'strong') as 'strong' | 'weak'
     signalMap.set(e.srcId, signal)
+    edgeCreatedAtMap.set(e.srcId, e.createdAt)
   }
 
   const fragmentKeys = fragmentEdgeRows.map((e) => e.srcId)
+
+  // Pull the REMOVED partition: edges with deleted_at > last_rebuilt_at
+  // up to `partitionNow`. On first regen this set is empty by definition
+  // (no prior rebuilt baseline). The fragment row may itself be deleted,
+  // so we LEFT-style join via a separate query rather than insisting on
+  // live fragments.
+  const removedRows: { lookupKey: string; slug: string; title: string | null }[] = []
+  if (!isFirstRegen && lastRebuiltAt) {
+    const removedEdgeRows = await database
+      .select({ srcId: edges.srcId })
+      .from(edges)
+      .where(
+        and(
+          eq(edges.dstId, wikiKey),
+          eq(edges.edgeType, 'FRAGMENT_IN_WIKI'),
+          isNotNull(edges.deletedAt),
+          gt(edges.deletedAt, lastRebuiltAt),
+          lte(edges.deletedAt, partitionNow)
+        )
+      )
+    if (removedEdgeRows.length > 0) {
+      const removedKeys = removedEdgeRows.map((r) => r.srcId)
+      const removedFragRows = await database
+        .select({
+          lookupKey: fragments.lookupKey,
+          slug: fragments.slug,
+          title: fragments.title,
+        })
+        .from(fragments)
+        .where(inArray(fragments.lookupKey, removedKeys))
+      for (const r of removedFragRows) {
+        removedRows.push({ lookupKey: r.lookupKey, slug: r.slug, title: r.title })
+      }
+    }
+  }
+
   let fragmentsText = ''
   let fragmentCount = 0
+  let triggeringFragments: TriggeringFragments | undefined
+  let skipped = false
 
-  if (fragmentKeys.length > 0) {
-    const fragRows = await database
-      .select({
-        lookupKey: fragments.lookupKey,
-        slug: fragments.slug,
-        title: fragments.title,
-        content: fragments.content,
-        createdAt: fragments.createdAt,
-      })
-      .from(fragments)
-      .where(and(inArray(fragments.lookupKey, fragmentKeys), isNull(fragments.deletedAt)))
+  if (fragmentKeys.length > 0 || removedRows.length > 0) {
+    // Hydrate the live fragments. The fragments table carries updated_at,
+    // which (with the edge createdAt map above) is what the partition reads.
+    const fragRows = fragmentKeys.length > 0
+      ? await database
+          .select({
+            lookupKey: fragments.lookupKey,
+            slug: fragments.slug,
+            title: fragments.title,
+            content: fragments.content,
+            createdAt: fragments.createdAt,
+            updatedAt: fragments.updatedAt,
+          })
+          .from(fragments)
+          .where(and(inArray(fragments.lookupKey, fragmentKeys), isNull(fragments.deletedAt)))
+      : []
 
-    // Sort: strong-signal fragments first, then weak
-    fragRows.sort((a, b) => {
+    // Partition into NEW / UPDATED / INTEGRATED. INTEGRATED is physically
+    // absent from the prompt — it's the architectural enforcement of the
+    // wiki-as-cache contract: Quill cannot re-litigate a settled fragment
+    // because it never sees it.
+    const newFrags: typeof fragRows = []
+    const updatedFrags: typeof fragRows = []
+    const integratedFrags: typeof fragRows = []
+
+    for (const f of fragRows) {
+      if (isFirstRegen || lastRebuiltAt == null) {
+        // First regen: legacy full-synthesis path. Treat everything as
+        // INTEGRATED-equivalent (i.e. include them all in the prompt) so
+        // greenfield wikis still get a body. The cache contract activates
+        // from the next pass forward.
+        integratedFrags.push(f)
+        continue
+      }
+      const edgeCreatedAt = edgeCreatedAtMap.get(f.lookupKey)
+      const isNew = edgeCreatedAt != null && edgeCreatedAt > lastRebuiltAt && edgeCreatedAt <= partitionNow
+      const isUpdated = !isNew && f.updatedAt > lastRebuiltAt && f.updatedAt <= partitionNow
+      if (isNew) newFrags.push(f)
+      else if (isUpdated) updatedFrags.push(f)
+      else integratedFrags.push(f)
+    }
+
+    triggeringFragments = {
+      new: newFrags.map((f) => ({ lookupKey: f.lookupKey, slug: f.slug, title: f.title })),
+      updated: updatedFrags.map((f) => ({ lookupKey: f.lookupKey, slug: f.slug, title: f.title })),
+      removed: removedRows,
+      integratedCount: integratedFrags.length,
+    }
+
+    // No-op short-circuit: post-first-regen, if the partition has no NEW,
+    // UPDATED, or REMOVED, skip the LLM call entirely. The body is already
+    // a faithful synthesis of the integrated set (cache contract). Bumping
+    // last_rebuilt_at to partitionNow keeps the partition window correct;
+    // not bumping last_regen_at preserves the "last meaningful regen" UX
+    // signal so the chip still shows the previous regen date.
+    if (!isFirstRegen && newFrags.length === 0 && updatedFrags.length === 0 && removedRows.length === 0) {
+      skipped = true
+      log.info({ wikiKey, integratedCount: integratedFrags.length }, 'regen skipped: empty partition')
+
+      // Still flip lifecycle back to filed and bump last_rebuilt_at so the
+      // partition window is honoured on the next pass.
+      await database
+        .update(wikis)
+        .set({
+          state: 'RESOLVED',
+          lifecycleState: 'filed',
+          lastRebuiltAt: partitionNow,
+          updatedAt: partitionNow,
+        })
+        .where(eq(wikis.lookupKey, wikiKey))
+
+      const totalMs = performance.now() - t0
+      return {
+        content: wiki.content,
+        fragmentCount: integratedFrags.length,
+        hasEmbedding: wiki.embedding != null,
+        timing: {
+          classify: Math.round(classifyMs),
+          gatherFragments: Math.round(performance.now() - tGather0),
+          llmCall: 0,
+          embed: 0,
+          total: Math.round(totalMs),
+        },
+        triggeringFragments,
+        skipped: true,
+      }
+    }
+
+    // Build the prompt fragment set. Post-first-regen this is NEW + UPDATED
+    // only (INTEGRATED physically absent). On first regen it's everything,
+    // labeled INTEGRATED above, treated as a single block.
+    const promptFrags = isFirstRegen
+      ? integratedFrags
+      : [...newFrags, ...updatedFrags]
+
+    // Sort: strong-signal fragments first, then weak (preserved from the
+    // legacy gather order; the partition itself doesn't reorder by signal).
+    const sorted = promptFrags.slice().sort((a, b) => {
       const sigA = signalMap.get(a.lookupKey) === 'weak' ? 1 : 0
       const sigB = signalMap.get(b.lookupKey) === 'weak' ? 1 : 0
       return sigA - sigB
     })
+    const strongFrags = sorted.filter((f) => signalMap.get(f.lookupKey) !== 'weak')
+    const weakFrags = sorted.filter((f) => signalMap.get(f.lookupKey) === 'weak')
 
-    const strongFrags = fragRows.filter((f) => signalMap.get(f.lookupKey) !== 'weak')
-    const weakFrags = fragRows.filter((f) => signalMap.get(f.lookupKey) === 'weak')
-
-    fragmentCount = fragRows.length
+    fragmentCount = sorted.length
 
     // Render each fragment with inline id/slug/captured header so the LLM
     // can emit grounded [[fragment:<slug>]] tokens and per-section
@@ -534,10 +753,37 @@ export async function regenerateWiki(
       })),
     )
 
+    let baseFragmentsText = ''
     if (weakFrags.length > 0 && strongFrags.length > 0) {
-      fragmentsText = `${strongText}\n\n---\n[SUPPLEMENTARY FRAGMENTS — lower confidence, include as supporting context or "See also" references]\n\n${weakText}`
+      baseFragmentsText = `${strongText}\n\n---\n[SUPPLEMENTARY FRAGMENTS — lower confidence, include as supporting context or "See also" references]\n\n${weakText}`
     } else {
-      fragmentsText = strongText || weakText
+      baseFragmentsText = strongText || weakText
+    }
+
+    // Post-first-regen: prepend partition headers so Quill can distinguish
+    // NEW from UPDATED fragments without restructuring all 10 wiki-type
+    // YAMLs in this same wave (deferred — see follow-up issue Stream-E #YAML).
+    // The headers are advisory; the architectural enforcement is that
+    // INTEGRATED is absent, not that the LLM treats NEW vs UPDATED
+    // differently.
+    if (!isFirstRegen && (newFrags.length > 0 || updatedFrags.length > 0 || removedRows.length > 0)) {
+      const sections: string[] = []
+      if (newFrags.length > 0) {
+        sections.push(`[NEW FRAGMENTS — attached since last regen]\n\n${baseFragmentsText}`)
+      } else if (updatedFrags.length > 0) {
+        sections.push(`[UPDATED FRAGMENTS — content changed since last regen]\n\n${baseFragmentsText}`)
+      } else {
+        sections.push(baseFragmentsText)
+      }
+      if (removedRows.length > 0) {
+        const removedList = removedRows
+          .map((r) => `- id: ${r.lookupKey}  slug: ${r.slug}${r.title ? `  title: ${r.title}` : ''}`)
+          .join('\n')
+        sections.push(`[REMOVED FRAGMENTS — un-attached since last regen, integrate the deletion]\n\n${removedList}`)
+      }
+      fragmentsText = sections.join('\n\n')
+    } else {
+      fragmentsText = baseFragmentsText
     }
   }
 
@@ -705,7 +951,15 @@ export async function regenerateWiki(
 
   // Update wiki content + sidecar fields in a single statement so readers
   // never observe a stale infobox paired with fresh markdown.
-  const now = new Date()
+  //
+  // E1 keystone: use `partitionNow` (captured at function entry) for both
+  // last_rebuilt_at and updatedAt so the partition window honoured by the
+  // *next* regen lines up exactly with the snapshot this regen made. Stream
+  // E lifecycle: flip lifecycle_state back to 'filed' and stamp last_regen_at
+  // for UI surfaces. last_regen_at is wall-clock now (when the body actually
+  // landed) — it could differ from partitionNow by the LLM duration but for
+  // the chip's purposes wall-clock-now is more honest.
+  const completedAt = new Date()
   await database
     .update(wikis)
     .set({
@@ -713,8 +967,10 @@ export async function regenerateWiki(
       metadata: mergedMetadata,
       citationDeclarations: llmCitations,
       state: 'RESOLVED',
-      lastRebuiltAt: now,
-      updatedAt: now,
+      lifecycleState: 'filed',
+      lastRebuiltAt: partitionNow,
+      lastRegenAt: completedAt,
+      updatedAt: completedAt,
     })
     .where(eq(wikis.lookupKey, wikiKey))
 
@@ -730,6 +986,26 @@ export async function regenerateWiki(
       await database.update(wikis).set({ embedding: vec }).where(eq(wikis.lookupKey, wikiKey))
       hasEmbedding = true
     }
+    // Phase A3 — embedding cost telemetry for regen. Token count
+    // estimated from input chars (~4 chars/token); the OpenRouter
+    // embedding endpoint does not return usage data.
+    await emitUsageEvent(database as never, {
+      wikiKey,
+      stage: 'embed',
+      model: orConfig.models.embedding,
+      promptTokens: Math.ceil(markdown.length / 4),
+      completionTokens: 0,
+      durationMs: Math.round(performance.now() - tEmbed0),
+      jobId: regenJobId ?? null,
+      metadata: {
+        inputChars: markdown.length,
+        success: hasEmbedding,
+        estimated: true,
+        substage: 'regen-wiki-embed',
+      },
+    }).catch(() => {
+      // Cost-logging must not block regen.
+    })
   }
   const embedMs = performance.now() - tEmbed0
   const totalMs = performance.now() - t0
@@ -759,10 +1035,26 @@ export async function regenerateWiki(
     eventType: 'composed',
     source: 'system',
     summary: `Wiki regenerated from ${fragmentCount} fragments`,
-    detail: { wikiKey, fragmentCount, hasEmbedding, timing },
+    detail: {
+      wikiKey,
+      fragmentCount,
+      hasEmbedding,
+      timing,
+      // E1 keystone: surface the partition counts in the audit row so E4's
+      // timeline UI can render "regenerated overnight: N new fragments
+      // integrated, M removed, K updated" without re-deriving the partition.
+      partition: triggeringFragments
+        ? {
+            new: triggeringFragments.new.length,
+            updated: triggeringFragments.updated.length,
+            removed: triggeringFragments.removed.length,
+            integrated: triggeringFragments.integratedCount,
+          }
+        : null,
+    },
   })
 
-  log.info({ wikiKey, fragmentCount, hasEmbedding, timing }, 'wiki regenerated')
+  log.info({ wikiKey, fragmentCount, hasEmbedding, timing, triggeringFragments }, 'wiki regenerated')
 
-  return { content: markdown, fragmentCount, hasEmbedding, timing }
+  return { content: markdown, fragmentCount, hasEmbedding, timing, triggeringFragments, skipped }
 }

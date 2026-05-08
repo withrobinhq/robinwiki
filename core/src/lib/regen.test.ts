@@ -33,6 +33,12 @@ vi.mock('@robin/agent', async (importOriginal) => {
       wikiWriter: {},
     })),
     createTypedCaller: vi.fn(() => fakeCallLlm),
+    // Phase A3: regen.ts switched from createTypedCaller to withTypedUsage
+    // for the wikiWriter call so cost telemetry can attach. Mock returns
+    // the same fakeCallLlm so existing assertions keep working; the usage
+    // record callback is never invoked in this mock path because the
+    // fake bypasses agent.generate() entirely.
+    withTypedUsage: vi.fn(() => fakeCallLlm),
     embedText: vi.fn(async () => null),
   }
 })
@@ -594,5 +600,188 @@ describe('regenerateWiki — sidecar persistence', () => {
     const merged = contentUpdate.metadata as { infobox: unknown; futureField?: unknown }
     expect(merged.infobox).toEqual(llmResponse.infobox)
     expect(merged.futureField).toEqual({ answer: 42 })
+  })
+})
+
+// ── Stream E1 keystone — partition tests ──────────────────────────────────
+//
+// Focus: assert the post-first-regen partition behaviour — no-op short-circuit,
+// triggering-fragments shape, lifecycle_state transitions. The mock DB harness
+// returns whatever the test queues; partition compute is pure JS over the
+// queued fragment + edge rows.
+
+describe('regenerateWiki — E1 partition (post-first-regen)', () => {
+  beforeEach(() => {
+    llmCalls.length = 0
+    dbUpdates.length = 0
+    dbInserts.length = 0
+    dbResponseQueue.length = 0
+  })
+
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('flips lifecycle_state to dreaming on entry and back to filed on success', async () => {
+    stageDbResponses([
+      [baseWiki()], // 1. wikis select (outer)
+      [],           // 2. classifyUnfiledFragments
+      [],           // 3. fragment edges (empty → first-regen path)
+      [],           // 4. user edits
+      [],           // 5. wikiTypes select
+    ])
+
+    await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
+
+    // dbUpdates[0] is the LINKING + dreaming flip; [1] is content + filed.
+    expect(dbUpdates[0]).toMatchObject({ state: 'LINKING', lifecycleState: 'dreaming' })
+    expect(dbUpdates[1]).toMatchObject({ state: 'RESOLVED', lifecycleState: 'filed' })
+    // last_regen_at is stamped on success (not on the dreaming flip).
+    expect(dbUpdates[1].lastRegenAt).toBeInstanceOf(Date)
+  })
+
+  it('returns triggeringFragments=undefined and skipped=undefined on first regen', async () => {
+    // First regen: wiki.lastRebuiltAt is null → legacy full-synthesis path.
+    // Partition is not computed; triggeringFragments is undefined.
+    stageDbResponses([
+      [baseWiki({ lastRebuiltAt: null })],
+      [],
+      [],
+      [],
+      [],
+    ])
+
+    const result = await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
+    expect(result.triggeringFragments).toBeUndefined()
+    expect(result.skipped).toBeFalsy()
+    expect(llmCalls).toHaveLength(1)
+  })
+
+  it('short-circuits when partition is empty post-first-regen and lifecycle returns to filed', async () => {
+    // Post-first-regen wiki with one INTEGRATED fragment (edge older than
+    // last_rebuilt_at, fragment older than last_rebuilt_at). Partition: NEW
+    // and UPDATED both empty; REMOVED empty too. Expect skipped=true.
+    const lastRebuiltAt = new Date('2026-04-01T00:00:00Z')
+    const oldEdge = {
+      srcId: 'frag-1',
+      attrs: null,
+      createdAt: new Date('2026-03-01T00:00:00Z'),
+    }
+    const oldFrag = {
+      lookupKey: 'frag-1',
+      slug: 'frag-1',
+      title: 't',
+      content: 'c',
+      createdAt: new Date('2026-03-01T00:00:00Z'),
+      updatedAt: new Date('2026-03-01T00:00:00Z'),
+    }
+    stageDbResponses([
+      [baseWiki({ lastRebuiltAt, content: 'existing body' })],
+      [],
+      [oldEdge],   // FRAGMENT_IN_WIKI active edges (with createdAt)
+      [],          // REMOVED partition: empty
+      [oldFrag],   // hydrate fragments
+      [],          // user edits
+      [],          // wikiTypes select
+    ])
+
+    const result = await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
+
+    expect(result.skipped).toBe(true)
+    // No LLM call when partition is empty.
+    expect(llmCalls).toHaveLength(0)
+    // Still flips lifecycle back to filed and bumps last_rebuilt_at.
+    const skipUpdate = dbUpdates.find(
+      (u) => u.lifecycleState === 'filed' && u.state === 'RESOLVED' && u.content === undefined
+    )
+    expect(skipUpdate).toBeDefined()
+    // Body stays the same — content key not in the skip-path update.
+    // triggeringFragments still surfaces the integrated count for audit.
+    expect(result.triggeringFragments).toBeDefined()
+    expect(result.triggeringFragments?.integratedCount).toBe(1)
+    expect(result.triggeringFragments?.new).toEqual([])
+    expect(result.triggeringFragments?.updated).toEqual([])
+    expect(result.triggeringFragments?.removed).toEqual([])
+  })
+
+  it('reports NEW fragments in triggeringFragments and INTEGRATED is absent from prompt', async () => {
+    const lastRebuiltAt = new Date('2026-04-01T00:00:00Z')
+    // One NEW edge (created after last_rebuilt_at), one INTEGRATED edge.
+    const newEdge = {
+      srcId: 'frag-new',
+      attrs: null,
+      createdAt: new Date('2026-04-15T00:00:00Z'),
+    }
+    const intEdge = {
+      srcId: 'frag-int',
+      attrs: null,
+      createdAt: new Date('2026-03-01T00:00:00Z'),
+    }
+    const newFrag = {
+      lookupKey: 'frag-new',
+      slug: 'frag-new',
+      title: 'New fragment',
+      content: 'fresh content body',
+      createdAt: new Date('2026-04-15T00:00:00Z'),
+      updatedAt: new Date('2026-04-15T00:00:00Z'),
+    }
+    const intFrag = {
+      lookupKey: 'frag-int',
+      slug: 'frag-int',
+      title: 'Integrated fragment',
+      content: 'this should NOT be in the prompt',
+      createdAt: new Date('2026-03-01T00:00:00Z'),
+      updatedAt: new Date('2026-03-01T00:00:00Z'),
+    }
+    stageDbResponses([
+      [baseWiki({ lastRebuiltAt, content: 'existing body' })],
+      [],
+      [newEdge, intEdge],
+      [],            // REMOVED partition: empty
+      [newFrag, intFrag],
+      [],            // user edits
+      [],            // wikiTypes select
+    ])
+
+    const result = await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
+
+    expect(result.skipped).toBeFalsy()
+    expect(result.triggeringFragments?.new).toHaveLength(1)
+    expect(result.triggeringFragments?.new[0].slug).toBe('frag-new')
+    expect(result.triggeringFragments?.integratedCount).toBe(1)
+
+    // Architectural enforcement: the integrated fragment's content must not
+    // appear in the prompt. The new fragment's content must.
+    expect(llmCalls).toHaveLength(1)
+    expect(llmCalls[0].user).toContain('fresh content body')
+    expect(llmCalls[0].user).not.toContain('this should NOT be in the prompt')
+    // The partition header is prepended on post-first-regen.
+    expect(llmCalls[0].user).toContain('[NEW FRAGMENTS')
+  })
+
+  it('reports REMOVED fragments and includes them in the prompt for deletion integration', async () => {
+    const lastRebuiltAt = new Date('2026-04-01T00:00:00Z')
+    // No active edges, but one REMOVED edge (deleted_at > last_rebuilt_at).
+    stageDbResponses([
+      [baseWiki({ lastRebuiltAt, content: 'existing body' })],
+      [],
+      [],            // active edges: none
+      [{ srcId: 'frag-removed' }],  // removed-edge query
+      [{ lookupKey: 'frag-removed', slug: 'frag-removed', title: 'Old fragment' }],  // removed frags hydrate
+      [],            // user edits
+      [],            // wikiTypes select
+    ])
+
+    const result = await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
+
+    expect(result.skipped).toBeFalsy()
+    expect(result.triggeringFragments?.removed).toHaveLength(1)
+    expect(result.triggeringFragments?.removed[0].slug).toBe('frag-removed')
+
+    // The REMOVED partition is included in the prompt so Quill writes the
+    // deletion into the body.
+    expect(llmCalls).toHaveLength(1)
+    expect(llmCalls[0].user).toContain('[REMOVED FRAGMENTS')
+    expect(llmCalls[0].user).toContain('frag-removed')
   })
 })

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { zValidator } from '@hono/zod-validator'
 import { generateSlug, makeLookupKey } from '@robin/shared'
 import { NoOpenRouterKeyError, embedText } from '@robin/agent'
@@ -29,6 +29,7 @@ import {
   bouncerModeResponseSchema,
   toggleRegenerateBodySchema,
   toggleRegenerateResponseSchema,
+  autoRegenBodySchema,
   spawnWikiBodySchema,
   spawnWikiResponseSchema,
   updateProgressBodySchema,
@@ -243,6 +244,13 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
       }
 
       if (matched.length > 0) {
+        // Stream E lifecycle: a freshly-created wiki with attached fragments
+        // is 'learning' until the first regen completes.
+        await db
+          .update(wikis)
+          .set({ lifecycleState: 'learning' })
+          .where(eq(wikis.lookupKey, lookupKey))
+
         await producer.enqueueRegen({
           type: 'regen',
           jobId: crypto.randomUUID(),
@@ -825,6 +833,101 @@ wikisRouter.post('/:targetId/merge', async (c) => {
   return c.json({ error: 'Not implemented — wiki merge needs edges table rewrite' }, 501)
 })
 
+// DELETE /wikis/:id/fragments/:fragmentId — un-attach a fragment from a wiki
+//
+// Stream E2: the wiki page surfaces a member-fragments table; the user clicks
+// "un-attach" on a row; the server soft-deletes the FRAGMENT_IN_WIKI edge.
+// The fragment row itself is untouched — it lives on as an unattached atom
+// per the A-game brief.
+//
+// Composes with E1: on the next regen, the partition picks up this edge as
+// REMOVED (deleted_at > last_rebuilt_at) and Quill writes the deletion into
+// the body.
+//
+// This endpoint is bouncer-mode-agnostic. The existing
+// POST /fragments/:id/reject is review-mode-only (see fragments.ts:461). For
+// auto-mode wikis, this is the un-attach path.
+wikisRouter.delete('/:id/fragments/:fragmentId', async (c) => {
+  const id = c.req.param('id')
+  const fragmentId = c.req.param('fragmentId')
+
+  const [wiki] = await db
+    .select()
+    .from(wikis)
+    .where(and(eq(wikis.lookupKey, id), isNull(wikis.deletedAt)))
+  if (!wiki) return c.json({ error: 'Wiki not found' }, 404)
+
+  const [edge] = await db
+    .select()
+    .from(edges)
+    .where(
+      and(
+        eq(edges.srcId, fragmentId),
+        eq(edges.dstId, id),
+        eq(edges.edgeType, 'FRAGMENT_IN_WIKI'),
+        isNull(edges.deletedAt)
+      )
+    )
+    .limit(1)
+  if (!edge) return c.json({ error: 'No active edge between fragment and wiki' }, 404)
+
+  const now = new Date()
+  await db
+    .update(edges)
+    .set({ deletedAt: now })
+    .where(eq(edges.id, edge.id))
+
+  // E8 lifecycle: an un-attach is a partition mutation — flip to learning
+  // (skip when dreaming; the regen completion will reset).
+  await db
+    .update(wikis)
+    .set({ lifecycleState: 'learning' })
+    .where(and(eq(wikis.lookupKey, id), ne(wikis.lifecycleState, 'dreaming')))
+
+  await emitAuditEvent(db, {
+    entityType: 'wiki',
+    entityId: id,
+    eventType: 'fragment_unattached',
+    source: 'api',
+    summary: `Fragment un-attached from ${wiki.name}`,
+    detail: { wikiKey: id, fragmentKey: fragmentId, wikiName: wiki.name },
+  })
+
+  return c.json({ ok: true, wikiId: id, fragmentId })
+})
+
+// PATCH /wikis/:id/auto-regen — toggle auto_regen boolean (Stream E5; #259)
+//
+// Wiki-level opt-in for the midnight cron. Profile-level default lives in the
+// configs table (kind='auto_regen_default') and is consulted at wiki creation
+// time. Default is false — feature is opt-in per Andrew lock.
+wikisRouter.patch(
+  '/:id/auto-regen',
+  zValidator('json', autoRegenBodySchema, validationHook),
+  async (c) => {
+    const id = c.req.param('id')
+    const { autoRegen } = c.req.valid('json')
+
+    const [wiki] = await db.select().from(wikis).where(eq(wikis.lookupKey, id))
+    if (!wiki) return c.json({ error: 'Not found' }, 404)
+
+    await db
+      .update(wikis)
+      .set({ autoRegen, updatedAt: new Date() })
+      .where(eq(wikis.lookupKey, id))
+
+    await emitAuditEvent(db, {
+      entityType: 'wiki',
+      entityId: id,
+      eventType: 'edited',
+      source: 'api',
+      summary: `Wiki auto_regen set to ${autoRegen}`,
+      detail: { wikiKey: id, changedFields: ['autoRegen'] },
+    })
+
+    return c.json({ id, autoRegen })
+  }
+)
 
 // DELETE /wikis/:id — soft delete
 wikisRouter.delete('/:id', async (c) => {
