@@ -7,6 +7,7 @@ import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
 import { logger } from '../lib/logger.js'
 import { emitPipelineEvent } from '../db/pipeline-events.js'
 import { emitAuditEvent } from '../db/audit.js'
+import { emitUsageEvent } from '../db/usage-events.js'
 
 const log = logger.child({ component: 'embedding-retry' })
 
@@ -46,7 +47,8 @@ type EmbeddableRow = {
 async function retryTable<TableName extends 'fragments' | 'wikis' | 'people'>(
   tableName: TableName,
   cutoff: Date,
-  embedConfig: { apiKey: string; model: string }
+  embedConfig: { apiKey: string; model: string },
+  jobId: string,
 ): Promise<{ scanned: number; ok: number; failed: number }> {
   let rows: EmbeddableRow[]
 
@@ -165,7 +167,37 @@ async function retryTable<TableName extends 'fragments' | 'wikis' | 'people'>(
   let failed = 0
 
   for (const row of rows) {
+    const tEmbed0 = performance.now()
     const vec = row.text.trim().length > 0 ? await embedText(row.text, embedConfig) : null
+    const embedMs = Math.round(performance.now() - tEmbed0)
+
+    // Phase A3 — embedding cost telemetry for the retry path. Token
+    // count estimated from input chars (OpenRouter embeddings do not
+    // surface usage). Skipped when text was empty (no API call made).
+    if (row.text.trim().length > 0) {
+      const fragKey =
+        tableName === 'fragments' ? row.lookupKey : null
+      const wikKey = tableName === 'wikis' ? row.lookupKey : null
+      await emitUsageEvent(db as never, {
+        fragmentKey: fragKey,
+        wikiKey: wikKey,
+        stage: 'embed',
+        model: embedConfig.model,
+        promptTokens: Math.ceil(row.text.length / 4),
+        completionTokens: 0,
+        durationMs: embedMs,
+        jobId,
+        metadata: {
+          inputChars: row.text.length,
+          success: vec !== null,
+          estimated: true,
+          substage: 'embedding-retry',
+          table: tableName,
+        },
+      }).catch(() => {
+        // Cost-logging must not block the retry path.
+      })
+    }
 
     if (vec) {
       if (tableName === 'fragments') {
@@ -278,9 +310,9 @@ export async function processEmbeddingRetryJob(
   const embedConfig = { apiKey: config.apiKey, model: config.models.embedding }
 
   try {
-    const fragResult = await retryTable('fragments', cutoff, embedConfig)
-    const wikiResult = await retryTable('wikis', cutoff, embedConfig)
-    const peopleResult = await retryTable('people', cutoff, embedConfig)
+    const fragResult = await retryTable('fragments', cutoff, embedConfig, job.jobId)
+    const wikiResult = await retryTable('wikis', cutoff, embedConfig, job.jobId)
+    const peopleResult = await retryTable('people', cutoff, embedConfig, job.jobId)
 
     const elapsed = Math.round(performance.now() - t0)
     log.info(

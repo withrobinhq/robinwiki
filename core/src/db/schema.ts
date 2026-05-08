@@ -114,6 +114,36 @@ export const groups = pgTable(
   (t) => [uniqueIndex('groups_slug_uidx').on(t.slug)]
 )
 
+// ─── Skill-Pack Aliases (Stream I Phases 5+6 — server-side alias registry) ───
+//
+// Maps user-facing alias names (e.g. `/short-capture`) to canonical MCP
+// tool names (e.g. `log_entry`) plus optional default args. Populated
+// when a skill pack installs (Stream C) and consumed at MCP
+// tool-list time by the alias resolver in mcp/alias-registry.ts.
+
+export const skillPackAliases = pgTable(
+  'skill_pack_aliases',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
+    pack: text('pack').notNull(),
+    aliasName: text('alias_name').notNull(),
+    mcpToolName: text('mcp_tool_name').notNull(),
+    /**
+     * Optional JSON merged into the alias's call args before forwarding
+     * to the canonical tool. Lets a pack pre-bake (e.g.) `source: 'mcp'`
+     * or a default `wikiSlug` so the user types fewer words.
+     */
+    argsTemplate: jsonb('args_template').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex('skill_pack_aliases_pack_alias_uidx').on(t.pack, t.aliasName),
+    index('skill_pack_aliases_mcp_tool_idx').on(t.mcpToolName),
+  ]
+)
+
 // ─── Configs (normalized config store — single-user) ───
 
 export const configs = pgTable(
@@ -202,6 +232,16 @@ export const entries = pgTable(
       channel?: string
       sessionId?: string
     }>(),
+    // Stream C / C2: MCP `clientInfo` payload (`{name, version, ...}`)
+    // for MCP captures, `{name: 'web'}` for web-UI captures, NULL for
+    // legacy rows or any caller that doesn't supply client identity.
+    // Migration 0007. Decision 2026-05-07: jsonb (carries optional
+    // `version` and any future MCP-spec fields without re-migrating).
+    sourceClient: jsonb('source_client').$type<{
+      name: string
+      version?: string
+      [key: string]: unknown
+    } | null>(),
     ingestStatus: text('ingest_status').notNull().default('pending'),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at'),
@@ -265,9 +305,39 @@ export const wikis = pgTable(
      */
     structure: text('structure').notNull().default(''),
     lastRebuiltAt: timestamp('last_rebuilt_at'),
+    /**
+     * Stream E dirty-state lifecycle (migration 0004). Sibling of `state`
+     * (the LINKING/RESOLVED object_state machine) — kept as a separate text
+     * column so the two state machines stay orthogonal. Values:
+     *   * 'learning' — at least one fragment attached since the last regen
+     *   * 'dreaming' — regen worker is currently rewriting the body
+     *   * 'filed'    — clean, all fragments processed (default)
+     */
+    lifecycleState: text('lifecycle_state').notNull().default('filed'),
+    /**
+     * Stream E auto-regen toggle (#259, migration 0004). When true, the
+     * midnight batch worker considers this wiki for auto-rewrite if its
+     * lifecycle_state is 'learning'. Default false — feature is opt-in per
+     * Andrew lock.
+     */
+    autoRegen: boolean('auto_regen').notNull().default(false),
+    /**
+     * Stream E last-regen-completed timestamp (migration 0004). Distinct from
+     * `last_rebuilt_at` (which the E1 partition reads). UI surfaces (chip
+     * tooltip, profile counter) read this for human-friendly display.
+     */
+    lastRegenAt: timestamp('last_regen_at'),
     published: boolean('published').notNull().default(false),
     publishedSlug: text('published_slug'),
     publishedAt: timestamp('published_at'),
+    /**
+     * Origin captured at publish time (e.g. `https://wiki.example.com`).
+     * Lets clients build an absolute public URL deterministically when
+     * the user is browsing on a different host than where the wiki was
+     * published. Nullable: legacy rows fall back to
+     * `window.location.origin` or `process.env.SERVER_PUBLIC_URL`.
+     */
+    publishedOrigin: text('published_origin'),
     regenerate: boolean('regenerate').notNull().default(true),
     bouncerMode: text('bouncer_mode').notNull().default('auto'), // 'auto' | 'review'
     embedding: vector('embedding', { dimensions: 1536 }),
@@ -355,9 +425,27 @@ export const edits = pgTable(
     content: text('content').notNull(),
     source: text('source').notNull().default('user'),
     diff: text('diff').notNull().default(''),
+    // Stream D / D1' — fragment edit audit. PUT /fragments/:id writes the
+    // pre-edit content into `contentBefore` and the post-edit content into
+    // `contentAfter`. The existing wiki-edit pattern in content.ts still
+    // populates only `content`; both columns stay nullable so they coexist.
+    contentBefore: text('content_before'),
+    contentAfter: text('content_after'),
   },
   (t) => [index('edits_object_idx').on(t.objectType, t.objectId)]
 )
+
+// ─── Wiki Agent Schema (Stream D/G — machine-side retrieval index) ───
+//
+// Per-wiki rows describing what the machine indexes for retrieval.
+// `kind='description'` is the bootstrap signal populated from
+// wikis.description on wiki create (Stream D / D6). `kind='hyde_synthetic'`
+// is the synthetic question/answer pair Stream G writes when the wiki has
+// fragments to summarise. Unique (wiki_id, kind) so refreshing a kind is
+// an UPDATE, not a second INSERT.
+// `wikiAgentSchema` is owned by Stream G (PR #326). D6 empty-wiki bootstrap
+// is deferred to a follow-up PR after G merges, which will write the
+// kind='description' row from wikis.description into Stream G's schema.
 
 // ─── Edges ───
 
@@ -420,6 +508,54 @@ export const pipelineEvents = pgTable(
     index('pipeline_events_job_id_idx').on(t.jobId),
   ]
 )
+
+// ─── Usage Events (cost & spend, Component #4) ───
+//
+// Sibling of pipeline_events per A-game line 120 / RESEARCH §4.3. Every
+// OpenRouter call (mastra agent + embedding adapter) writes one row here
+// keyed by job_id so a single BullMQ job correlates: pipeline_events.job_id
+// for state, usage_events.job_id for cost. Cost is stored as
+// `cost_usd_micros` (1e-6 USD) so we never lose precision rounding to cents.
+export const usageEvents = pgTable(
+  'usage_events',
+  {
+    id: text('id').primaryKey(),
+    entryKey: text('entry_key'),
+    wikiKey: text('wiki_key'),
+    fragmentKey: text('fragment_key'),
+    userId: text('user_id'),
+    sourceClient: text('source_client'),
+    stage: text('stage').notNull(), // capture | fragment | classify | regen | embed
+    model: text('model').notNull(),
+    provider: text('provider').notNull(),
+    promptTokens: integer('prompt_tokens').notNull().default(0),
+    completionTokens: integer('completion_tokens').notNull().default(0),
+    totalTokens: integer('total_tokens').notNull().default(0),
+    costUsdMicros: integer('cost_usd_micros').notNull().default(0),
+    durationMs: integer('duration_ms'),
+    jobId: text('job_id'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('usage_events_user_id_created_at_idx').on(t.userId, t.createdAt),
+    index('usage_events_wiki_key_created_at_idx').on(t.wikiKey, t.createdAt),
+    index('usage_events_stage_created_at_idx').on(t.stage, t.createdAt),
+    index('usage_events_job_id_idx').on(t.jobId),
+  ]
+)
+
+// ─── App settings (single-tenant key/value store for budgets, etc.) ───
+//
+// Used by Phase A4 for storing budget caps (regen / embed / classify).
+// Keys are free-form strings; values are JSONB so a budget cap can be
+// `{ "limit_usd_micros": 10000000 }` and other settings can use other
+// shapes. Single-tenant — no user_id column.
+export const appSettings = pgTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull().$type<unknown>(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
 
 /**
  * Boot-time drift detection (#12). One-row-per-key store for migration

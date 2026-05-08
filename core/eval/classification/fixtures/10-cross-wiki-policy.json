@@ -1,0 +1,6 @@
+{
+  "input": "The refund policy applies to all customer-segments — retail and enterprise both — but enterprise gets the extended window per their contract.",
+  "expected": ["policy-decisions", "customer-segments", "retail-operations"],
+  "forbidden": ["health", "travel"],
+  "notes": "Cross-wiki recall case — three legitimate wikis. Recognition criterion is 47-fragment scaling."
+}

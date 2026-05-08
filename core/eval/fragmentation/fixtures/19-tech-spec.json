@@ -1,0 +1,7 @@
+{
+  "input": "POST /admin/backfill/fragment-relationships triggers a manual backfill run.\n\nThe endpoint enqueues a BullMQ job and returns { enqueued: true, jobId } immediately — the actual O(n²) cosine similarity sweep runs out-of-band on the regen worker.\n\nIdempotent: the unique index on (srcType, srcId, dstType, dstId, edgeType) prevents duplicate edges.",
+  "expectedCount": { "min": 3, "max": 4 },
+  "mustContain": ["POST /admin/backfill/fragment-relationships", "BullMQ", "Idempotent"],
+  "mustNotContain": [],
+  "notes": "Technical spec for an endpoint. Three distinct facts about the endpoint."
+}

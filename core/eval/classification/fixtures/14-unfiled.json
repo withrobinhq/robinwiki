@@ -1,0 +1,6 @@
+{
+  "input": "Random shower thought: water is wet.",
+  "expected": [],
+  "forbidden": ["health", "engineering-decisions", "policy-decisions"],
+  "notes": "Should land in zero wikis. Tests the 'reject as unattach' path — bouncer-mode protects against junk drift."
+}

@@ -1,0 +1,6 @@
+{
+  "input": "Booked the Lisbon trip for October. Three nights at the boutique hotel in Alfama, then two nights in Sintra.",
+  "expected": ["travel"],
+  "forbidden": ["finance", "health"],
+  "notes": "Travel plan. Should NOT land in finance just because 'booked' implies money."
+}

@@ -109,7 +109,24 @@ export async function persist(
     model: deps.openRouterConfig.models.embedding,
   }
   const vectors = await Promise.all(
-    input.fragments.map((frag) => embedText(frag.content, embedConfig))
+    input.fragments.map(async (frag, i) => {
+      const t0 = performance.now()
+      const vec = await embedText(frag.content, embedConfig)
+      const durationMs = Math.round(performance.now() - t0)
+      if (deps.onEmbedUsage) {
+        try {
+          await deps.onEmbedUsage({
+            fragmentKey: fragmentKeys[i],
+            inputChars: frag.content.length,
+            durationMs,
+            success: vec !== null,
+          })
+        } catch {
+          // Cost-logging must not block the persist path.
+        }
+      }
+      return vec
+    })
   )
   await Promise.all(
     vectors.map((vec, i) =>

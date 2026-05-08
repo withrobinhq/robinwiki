@@ -13,7 +13,7 @@ import { Hono } from 'hono'
 import { eq, and, isNull } from 'drizzle-orm'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { verifyMcpToken } from '../mcp/jwt.js'
-import { createMcpServer } from '../mcp/server.js'
+import { createMcpServer, attachAliases } from '../mcp/server.js'
 import type { McpServerDeps } from '../mcp/server.js'
 import { db } from '../db/client.js'
 import { users } from '../db/schema.js'
@@ -57,6 +57,10 @@ mcp.all('/', async (c) => {
   const transport = new WebStandardStreamableHTTPServerTransport()
 
   const server = createMcpServer(deps)
+  // Stream I Phase 5+6: surface skill-pack aliases on the live server
+  // before the first listTools roundtrip. Failures here log and no-op
+  // -- canonical tools must keep working even if the registry breaks.
+  await attachAliases(server, db)
   await server.connect(transport)
 
   return transport.handleRequest(c.req.raw, {

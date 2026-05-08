@@ -1,0 +1,6 @@
+{
+  "input": "Finished 'Designing Data-Intensive Applications'. The chapter on consensus algorithms is the clearest explanation of Raft I've read.",
+  "expected": ["reading-list"],
+  "forbidden": ["health", "finance"],
+  "notes": "Reading log. Single-wiki landing."
+}

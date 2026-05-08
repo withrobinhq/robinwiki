@@ -24,12 +24,14 @@ import { auditRoutes } from './routes/audit.js'
 import { aiPreferencesRoutes } from './routes/ai-preferences.js'
 import { aiModelsRoutes } from './routes/ai-models.js'
 import { publishedRoutes } from './routes/published.js'
+import { settingsRoutes } from './routes/settings.js'
 import { systemRoutes } from './routes/system.js'
 import { startWorkers } from './queue/worker.js'
 import {
   setupRegenScheduler,
   setupEmbeddingRetryScheduler,
   setupPrunePipelineEventsScheduler,
+  setupFragmentRelationshipBackfillScheduler,
 } from './queue/scheduler.js'
 import { producer } from './queue/producer.js'
 import { QUEUE_NAMES } from '@robin/queue'
@@ -233,6 +235,7 @@ app.route('/api/content', contentRoutes)
 app.route('/wiki-types', wikiTypesRoutes)
 app.route('/audit-log', auditRoutes)
 app.route('/ai', aiModelsRoutes)
+app.route('/settings', settingsRoutes)
 
 /***********************************************************************
  * ## Boot
@@ -363,6 +366,12 @@ await setupEmbeddingRetryScheduler(schedulerQueue).catch((err) => {
 // completed rows, 90d for failed. Without this the table grows unbounded.
 await setupPrunePipelineEventsScheduler(schedulerQueue).catch((err) => {
   logger.warn({ err }, 'prune-pipeline-events scheduler setup failed — retention disabled')
+})
+
+// Stream D / D5 — fragment-relationship backfill (#258). Nightly walk
+// over fragments that lack RELATED_TO edges; idempotent.
+await setupFragmentRelationshipBackfillScheduler(schedulerQueue).catch((err) => {
+  logger.warn({ err }, 'fragment-relationship backfill scheduler setup failed — backfill disabled')
 })
 
 const port = Number.parseInt(process.env.PORT ?? '3000', 10)

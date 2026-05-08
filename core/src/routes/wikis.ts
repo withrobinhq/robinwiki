@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { zValidator } from '@hono/zod-validator'
 import { generateSlug, makeLookupKey } from '@robin/shared'
 import { NoOpenRouterKeyError, embedText } from '@robin/agent'
@@ -29,6 +29,7 @@ import {
   bouncerModeResponseSchema,
   toggleRegenerateBodySchema,
   toggleRegenerateResponseSchema,
+  autoRegenBodySchema,
   spawnWikiBodySchema,
   spawnWikiResponseSchema,
   updateProgressBodySchema,
@@ -37,6 +38,7 @@ import {
   createWikiBodySchema,
 } from '../schemas/wikis.schema.js'
 import { emitAuditEvent } from '../db/audit.js'
+import { publishWiki as publishWikiService, unpublishWiki as unpublishWikiService } from '../services/publish.js'
 import { timelineQuerySchema } from '../schemas/audit.schema.js'
 
 const log = logger.child({ component: 'wikis' })
@@ -200,6 +202,12 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
         .set({ embedding: wikiVec })
         .where(eq(wikis.lookupKey, lookupKey))
 
+      // D6 (empty-wiki bootstrap) is deferred to a follow-up PR. Stream G's
+      // wiki_agent_schema table (PR #326) is the destination; this slice
+      // requires G to merge first so the schema is in main. Once G is in,
+      // a follow-up writes a kind='description' row here using G's shape
+      // (wiki_key + content + embedding + generator_version='hyde_v1').
+
       const candidates = await db
         .select({
           lookupKey: fragments.lookupKey,
@@ -237,6 +245,13 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
       }
 
       if (matched.length > 0) {
+        // Stream E lifecycle: a freshly-created wiki with attached fragments
+        // is 'learning' until the first regen completes.
+        await db
+          .update(wikis)
+          .set({ lifecycleState: 'learning' })
+          .where(eq(wikis.lookupKey, lookupKey))
+
         await producer.enqueueRegen({
           type: 'regen',
           jobId: crypto.randomUUID(),
@@ -550,74 +565,35 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
   return c.json(wikiResponseSchema.parse(prepareWiki(updated)))
 })
 
-// POST /wikis/:id/publish — publish wiki with stable nanoid slug
+// POST /wikis/:id/publish — delegates to services/publish so MCP and HTTP
+// share one code path (Stream I Phase 4).
 wikisRouter.post('/:id/publish', async (c) => {
   const id = c.req.param('id')
-  const [wiki] = await db.select().from(wikis).where(eq(wikis.lookupKey, id))
-  if (!wiki) return c.json({ error: 'Not found' }, 404)
+  const origin = (() => {
+    try {
+      return new URL(c.req.url).origin
+    } catch {
+      return process.env.SERVER_PUBLIC_URL ?? null
+    }
+  })()
 
-  if (!wiki.content) {
+  const result = await publishWikiService(db, id, { origin, source: 'api' })
+  if (result.ok === false) {
+    if (result.error === 'not-found') return c.json({ error: 'Not found' }, 404)
     return c.json({ error: 'Cannot publish a wiki with no content' }, 400)
   }
-
-  // Mint a fresh slug whenever publishedSlug IS NULL. Pairs with the
-  // unpublish handler which nulls the slug, so an unpublish/republish
-  // cycle always produces a new public URL (#audit-M2).
-  const slug = wiki.publishedSlug ?? nanoid24()
-  const [updated] = await db
-    .update(wikis)
-    .set({
-      published: true,
-      publishedSlug: slug,
-      publishedAt: wiki.publishedAt ?? new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(wikis.lookupKey, id))
-    .returning()
-
-  await emitAuditEvent(db, {
-    entityType: 'wiki',
-    entityId: id,
-    eventType: 'published',
-    source: 'api',
-    summary: `Wiki published: ${wiki.name}`,
-    detail: { wikiKey: id, publishedSlug: slug },
-  })
-
-  return c.json(publishWikiResponseSchema.parse(updated))
+  return c.json(publishWikiResponseSchema.parse(result.wiki))
 })
 
-// POST /wikis/:id/unpublish — unpublish wiki and rotate slug
+// POST /wikis/:id/unpublish — delegates to services/publish (Stream I Phase 4).
 wikisRouter.post('/:id/unpublish', async (c) => {
   const id = c.req.param('id')
-  const [wiki] = await db.select().from(wikis).where(eq(wikis.lookupKey, id))
-  if (!wiki) return c.json({ error: 'Not found' }, 404)
-
-  // Rotate publishedSlug on unpublish (#audit-M2). Preserving the slug
-  // across an unpublish/republish cycle reuses the original public URL,
-  // defeating the user's intent that "unpublish" revoke the link they
-  // shared. publishedAt is preserved — it records the historical
-  // first-publish time and downstream audit views read it.
-  const [updated] = await db
-    .update(wikis)
-    .set({
-      published: false,
-      publishedSlug: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(wikis.lookupKey, id))
-    .returning()
-
-  await emitAuditEvent(db, {
-    entityType: 'wiki',
-    entityId: id,
-    eventType: 'unpublished',
-    source: 'api',
-    summary: `Wiki unpublished: ${wiki.name}`,
-    detail: { wikiKey: id },
-  })
-
-  return c.json(publishWikiResponseSchema.parse(updated))
+  const result = await unpublishWikiService(db, id, { source: 'api' })
+  if (result.ok === false) {
+    if (result.error === 'not-found') return c.json({ error: 'Not found' }, 404)
+    return c.json({ error: 'Unpublish failed' }, 500)
+  }
+  return c.json(publishWikiResponseSchema.parse(result.wiki))
 })
 
 // POST /wikis/:id/regenerate — on-demand wiki regen, serialized via wikiRegenLock (#audit-M5)
@@ -819,6 +795,101 @@ wikisRouter.post('/:targetId/merge', async (c) => {
   return c.json({ error: 'Not implemented — wiki merge needs edges table rewrite' }, 501)
 })
 
+// DELETE /wikis/:id/fragments/:fragmentId — un-attach a fragment from a wiki
+//
+// Stream E2: the wiki page surfaces a member-fragments table; the user clicks
+// "un-attach" on a row; the server soft-deletes the FRAGMENT_IN_WIKI edge.
+// The fragment row itself is untouched — it lives on as an unattached atom
+// per the A-game brief.
+//
+// Composes with E1: on the next regen, the partition picks up this edge as
+// REMOVED (deleted_at > last_rebuilt_at) and Quill writes the deletion into
+// the body.
+//
+// This endpoint is bouncer-mode-agnostic. The existing
+// POST /fragments/:id/reject is review-mode-only (see fragments.ts:461). For
+// auto-mode wikis, this is the un-attach path.
+wikisRouter.delete('/:id/fragments/:fragmentId', async (c) => {
+  const id = c.req.param('id')
+  const fragmentId = c.req.param('fragmentId')
+
+  const [wiki] = await db
+    .select()
+    .from(wikis)
+    .where(and(eq(wikis.lookupKey, id), isNull(wikis.deletedAt)))
+  if (!wiki) return c.json({ error: 'Wiki not found' }, 404)
+
+  const [edge] = await db
+    .select()
+    .from(edges)
+    .where(
+      and(
+        eq(edges.srcId, fragmentId),
+        eq(edges.dstId, id),
+        eq(edges.edgeType, 'FRAGMENT_IN_WIKI'),
+        isNull(edges.deletedAt)
+      )
+    )
+    .limit(1)
+  if (!edge) return c.json({ error: 'No active edge between fragment and wiki' }, 404)
+
+  const now = new Date()
+  await db
+    .update(edges)
+    .set({ deletedAt: now })
+    .where(eq(edges.id, edge.id))
+
+  // E8 lifecycle: an un-attach is a partition mutation — flip to learning
+  // (skip when dreaming; the regen completion will reset).
+  await db
+    .update(wikis)
+    .set({ lifecycleState: 'learning' })
+    .where(and(eq(wikis.lookupKey, id), ne(wikis.lifecycleState, 'dreaming')))
+
+  await emitAuditEvent(db, {
+    entityType: 'wiki',
+    entityId: id,
+    eventType: 'fragment_unattached',
+    source: 'api',
+    summary: `Fragment un-attached from ${wiki.name}`,
+    detail: { wikiKey: id, fragmentKey: fragmentId, wikiName: wiki.name },
+  })
+
+  return c.json({ ok: true, wikiId: id, fragmentId })
+})
+
+// PATCH /wikis/:id/auto-regen — toggle auto_regen boolean (Stream E5; #259)
+//
+// Wiki-level opt-in for the midnight cron. Profile-level default lives in the
+// configs table (kind='auto_regen_default') and is consulted at wiki creation
+// time. Default is false — feature is opt-in per Andrew lock.
+wikisRouter.patch(
+  '/:id/auto-regen',
+  zValidator('json', autoRegenBodySchema, validationHook),
+  async (c) => {
+    const id = c.req.param('id')
+    const { autoRegen } = c.req.valid('json')
+
+    const [wiki] = await db.select().from(wikis).where(eq(wikis.lookupKey, id))
+    if (!wiki) return c.json({ error: 'Not found' }, 404)
+
+    await db
+      .update(wikis)
+      .set({ autoRegen, updatedAt: new Date() })
+      .where(eq(wikis.lookupKey, id))
+
+    await emitAuditEvent(db, {
+      entityType: 'wiki',
+      entityId: id,
+      eventType: 'edited',
+      source: 'api',
+      summary: `Wiki auto_regen set to ${autoRegen}`,
+      detail: { wikiKey: id, changedFields: ['autoRegen'] },
+    })
+
+    return c.json({ id, autoRegen })
+  }
+)
 
 // DELETE /wikis/:id — soft delete
 wikisRouter.delete('/:id', async (c) => {

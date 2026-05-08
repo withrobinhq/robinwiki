@@ -1,0 +1,7 @@
+{
+  "input": "We shipped the audit-log emission for fragment edits last week.\n\nWe're now wiring Stream A5's history endpoint to read from those rows.\n\nNext quarter we'll surface the timeline visually on the fragment detail page via Stream F4.",
+  "expectedCount": { "min": 3, "max": 3 },
+  "mustContain": ["audit-log emission", "history endpoint", "timeline visually"],
+  "mustNotContain": [],
+  "notes": "Three tense states (past / present / future). Each is its own fragment."
+}

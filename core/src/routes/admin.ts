@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import { eq, inArray, or, sql } from 'drizzle-orm'
-import type { LinkJob } from '@robin/queue'
+import { QUEUE_NAMES, signJob, type LinkJob } from '@robin/queue'
 import { db } from '../db/client.js'
-import { fragments, entries, auditLog, pipelineEvents } from '../db/schema.js'
+import { fragments, entries, auditLog, pipelineEvents, usageEvents } from '../db/schema.js'
 import { producer } from '../queue/producer.js'
 import { logger } from '../lib/logger.js'
 import { sessionMiddleware } from '../middleware/session.js'
@@ -175,6 +175,45 @@ adminRoutes.get('/diagnose/:entryKey', async (c) => {
           .where(inArray(fragments.lookupKey, fragmentKeys))
       : []
 
+  // Phase A3 — usage_events rows for the same job_ids and entry_key.
+  // Surfaces alongside pipeline_events so an operator can see "this
+  // capture cost $0.0023 across 4 stages" in one place.
+  const usageRows = await db
+    .select()
+    .from(usageEvents)
+    .where(
+      or(
+        eq(usageEvents.entryKey, entryKey),
+        jobIds.length
+          ? sql`${usageEvents.jobId} = ANY(ARRAY[${sql.join(
+              jobIds.map((j) => sql`${j}`),
+              sql`, `
+            )}])`
+          : sql`false`,
+      ),
+    )
+    .orderBy(sql`${usageEvents.createdAt} DESC`)
+    .limit(500)
+
+  const usageTotals = usageRows.reduce(
+    (acc, r) => {
+      acc.totalTokens += r.totalTokens
+      acc.costUsdMicros += r.costUsdMicros
+      acc.byStage[r.stage] = acc.byStage[r.stage] ?? {
+        totalTokens: 0,
+        costUsdMicros: 0,
+      }
+      acc.byStage[r.stage].totalTokens += r.totalTokens
+      acc.byStage[r.stage].costUsdMicros += r.costUsdMicros
+      return acc
+    },
+    {
+      totalTokens: 0,
+      costUsdMicros: 0,
+      byStage: {} as Record<string, { totalTokens: number; costUsdMicros: number }>,
+    },
+  )
+
   return c.json({
     entryKey,
     entry: entryRow
@@ -193,6 +232,11 @@ adminRoutes.get('/diagnose/:entryKey', async (c) => {
       ...r,
       createdAt: r.createdAt.toISOString(),
     })),
+    usageEvents: usageRows.map((r) => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+    })),
+    usageTotals,
     fragments: fragmentRows.map((r) => ({
       lookupKey: r.lookupKey,
       slug: r.slug,
@@ -203,4 +247,41 @@ adminRoutes.get('/diagnose/:entryKey', async (c) => {
       createdAt: r.createdAt?.toISOString() ?? null,
     })),
   })
+})
+
+/**
+ * POST /admin/backfill/fragment-relationships
+ *
+ * Stream D / D5 (#258) — manual trigger for the fragment-relationship
+ * backfill worker. Enqueues a job onto the scheduler queue so the same
+ * worker that runs the cron handles the run; the cron path stays unchanged.
+ *
+ * Session-authenticated. Returns { enqueued, jobId } immediately — the
+ * actual O(n²) cosine sweep runs out-of-band on the scheduler worker.
+ *
+ * The /settings/outstanding endpoint surfaces the run state counter that
+ * the UI's "Run now" button reads.
+ */
+adminRoutes.post('/backfill/fragment-relationships', async (c) => {
+  const jobId = `fragment-relationship-backfill-${crypto.randomUUID()}`
+  const queue = producer.getQueue(QUEUE_NAMES.scheduler)
+
+  try {
+    await queue.add(
+      'fragment-relationship-backfill',
+      signJob({
+        type: 'fragment-relationship-backfill',
+        jobId,
+        triggeredBy: 'manual',
+        enqueuedAt: new Date().toISOString(),
+      }),
+      { jobId },
+    )
+    log.info({ jobId }, 'enqueued manual fragment-relationship backfill')
+    return c.json({ enqueued: true, jobId })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.error({ jobId, err: message }, 'failed to enqueue manual backfill')
+    return c.json({ enqueued: false, error: message }, 500)
+  }
 })

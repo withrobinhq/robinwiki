@@ -1,0 +1,7 @@
+{
+  "input": "If the wiki has zero fragments, the empty-wiki bootstrap uses wikis.description as the embedding seed.\n\nIf the wiki has at least one fragment, the regen pipeline computes the embedding from concatenated fragment content instead.",
+  "expectedCount": { "min": 2, "max": 2 },
+  "mustContain": ["zero fragments", "wikis.description", "regen pipeline"],
+  "mustNotContain": [],
+  "notes": "Two conditional branches. Each conditional is its own fragment."
+}

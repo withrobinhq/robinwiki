@@ -97,3 +97,39 @@ export async function setupPrunePipelineEventsScheduler(queue: Queue): Promise<v
 
   log.info('prune-pipeline-events scheduler registered')
 }
+
+/**
+ * Stream D / D5 — fragment-relationship backfill scheduler (#258). Runs at
+ * midnight, walks fragments embedded before the related-edge logic landed
+ * and creates RELATED_TO edges in batches. Idempotent — safe to re-run.
+ *
+ * Set ENABLE_FRAGMENT_RELATIONSHIP_BACKFILL=false to disable the cron; the
+ * admin endpoint POST /admin/backfill/fragment-relationships still works.
+ */
+export async function setupFragmentRelationshipBackfillScheduler(
+  queue: Queue,
+): Promise<void> {
+  if (process.env.ENABLE_FRAGMENT_RELATIONSHIP_BACKFILL === 'false') {
+    log.info('ENABLE_FRAGMENT_RELATIONSHIP_BACKFILL=false, skipping scheduler setup')
+    return
+  }
+
+  // Pattern: midnight, but offset by 5 minutes so it doesn't collide with
+  // the regen batch cron at 0 0 * * *. Splitting reduces lock contention on
+  // the fragments table at the top of the hour.
+  await queue.upsertJobScheduler(
+    'fragment-relationship-backfill',
+    { pattern: '5 0 * * *' },
+    {
+      name: 'fragment-relationship-backfill',
+      data: signJob({
+        type: 'fragment-relationship-backfill',
+        jobId: 'fragment-relationship-backfill-scheduled',
+        triggeredBy: 'scheduler',
+        enqueuedAt: new Date().toISOString(),
+      }),
+    },
+  )
+
+  log.info('fragment-relationship-backfill scheduler registered')
+}

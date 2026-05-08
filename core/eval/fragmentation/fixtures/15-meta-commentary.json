@@ -1,0 +1,7 @@
+{
+  "input": "Note to self: the fragment-relationship backfill (#258) is gated on Phyl's approval.\n\nIf approval lands before the v1 freeze, ship Option A (admin endpoint). If not, the gap goes in the v1 changelog and we revisit in v1.1.",
+  "expectedCount": { "min": 2, "max": 3 },
+  "mustContain": ["fragment-relationship backfill", "Option A", "v1.1"],
+  "mustNotContain": ["note to self"],
+  "notes": "Meta-commentary. The 'note to self' framing is fluff — should be stripped."
+}

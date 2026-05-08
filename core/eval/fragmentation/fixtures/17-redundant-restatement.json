@@ -1,0 +1,7 @@
+{
+  "input": "We need rate-limiting on the /api/auth/sign-in endpoint.\n\nIn other words, the sign-in route should reject requests that exceed N attempts per IP per minute. To put it differently, we need rate-limiting on sign-in.",
+  "expectedCount": { "min": 1, "max": 2 },
+  "mustContain": ["rate-limiting", "sign-in"],
+  "mustNotContain": ["in other words", "to put it differently"],
+  "notes": "Redundant restatement. The same claim restated twice should produce one fragment, not three."
+}

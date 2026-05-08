@@ -1,0 +1,7 @@
+{
+  "input": "The new index speeds up the dedup query by 40x.\n\nIt also reduces lock contention on the fragments table because the partial-index path doesn't take a row-level lock.",
+  "expectedCount": { "min": 2, "max": 2 },
+  "mustContain": ["dedup query", "lock contention"],
+  "mustNotContain": [],
+  "notes": "Ambiguous pronoun: 'it' refers to 'the new index'. Splitting must preserve the antecedent."
+}

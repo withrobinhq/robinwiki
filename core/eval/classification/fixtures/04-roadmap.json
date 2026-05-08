@@ -1,0 +1,6 @@
+{
+  "input": "Q3 roadmap: ship bouncer-mode UI, recovery flow, and the empty-wiki bootstrap. Q4 picks up the wiki-types creation form.",
+  "expected": ["product-roadmap"],
+  "forbidden": ["health", "travel"],
+  "notes": "Roadmap statement. Single-wiki landing."
+}

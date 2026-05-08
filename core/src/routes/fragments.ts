@@ -7,7 +7,8 @@ import { computeContentHash, findDuplicateFragment } from '../db/dedup.js'
 import { applyFragmentTitleDatePrefix } from '../lib/fragmentTitlePrefix.js'
 import { sessionMiddleware } from '../middleware/session.js'
 import { db } from '../db/client.js'
-import { fragments, entries, edges, wikis, people } from '../db/schema.js'
+import { fragments, entries, edges, wikis, people, edits, auditLog } from '../db/schema.js'
+import { nanoid } from '../lib/id.js'
 import { producer } from '../queue/producer.js'
 import { logger } from '../lib/logger.js'
 import { validationHook } from '../lib/validation.js'
@@ -197,9 +198,20 @@ fragmentsRouter.post(
     // Body is validated by Zod above (content + threadSlug both `min(1)`),
     // but core's tsconfig has `strict: false` which weakens Zod's narrowing
     // on optional vs required. Cast to the handler's signature explicitly.
+    // Stream C / C2: HTTP path is the web UI route; tag clientInfo as
+    // `{name: 'web'}` so the fragment audit_log detail mirrors the
+    // entries.source_client shape.
     const result = await handleLogFragment(
       deps,
-      body as { content: string; threadSlug: string; title?: string; tags?: string[] },
+      {
+        ...(body as {
+          content: string
+          threadSlug: string
+          title?: string
+          tags?: string[]
+        }),
+        sourceClient: { name: 'web' },
+      },
       userId
     )
     if (result.isError) {
@@ -316,13 +328,44 @@ fragmentsRouter.put('/:id', zValidator('json', updateFragmentBodySchema, validat
     .where(eq(fragments.lookupKey, id))
     .returning()
 
+  // D1' — emit an edit-history snapshot when content changed. The Stream A5
+  // GET /fragments/:id/history endpoint and Stream F4's evolution timeline
+  // both read from this table; without a row per PUT the visual is blank.
+  // Title-only edits don't snapshot — there's no diffable content delta to
+  // show on the timeline. Failure here is non-fatal: the fragment is already
+  // updated above and the audit row below still surfaces the edit.
+  let editId: string | null = null
+  if (body.content != null && body.content !== existing.content) {
+    editId = nanoid()
+    try {
+      await db.insert(edits).values({
+        id: editId,
+        objectType: 'fragment',
+        objectId: id,
+        type: 'edit',
+        content: existing.content ?? '',
+        contentBefore: existing.content ?? '',
+        contentAfter: body.content,
+        source: 'api',
+        diff: '',
+      })
+    } catch (err) {
+      log.warn({ fragmentKey: id, err }, 'failed to insert fragment edit snapshot')
+      editId = null
+    }
+  }
+
   await emitAuditEvent(db, {
     entityType: 'fragment',
     entityId: id,
-    eventType: 'edited',
+    eventType: 'fragment.updated',
     source: 'api',
     summary: 'Fragment updated',
-    detail: { fragmentKey: id, changedFields: Object.keys(updates).filter(k => k !== 'updatedAt') },
+    detail: {
+      fragmentKey: id,
+      changedFields: Object.keys(updates).filter((k) => k !== 'updatedAt'),
+      editId,
+    },
   })
 
   return c.json(fragmentResponseSchema.parse({ ...fragment, id: fragment.lookupKey }))
@@ -517,6 +560,110 @@ fragmentsRouter.post('/:id/reject', zValidator('json', fragmentReviewBodySchema,
   }
 
   return c.json({ ok: true, fragmentId: id, wikiId })
+})
+
+// ── GET /fragments/:id/history ─────────────────────────────────────────────
+//
+// Phase A5 — read side of the fragment evolution surface (Stream F4
+// renders this on the fragment detail page). Returns:
+//   - edits: rows from the `edits` table where object_type='fragment'
+//     and object_id=:id, ordered by editedAt desc
+//   - auditEvents: audit_log rows for the same fragment (entity_type
+//     ='fragment', entity_id=:id) so the timeline carries the
+//     classification / acceptance / deletion events alongside content
+//     edits
+//
+// The write side (creating `edits` rows on PUT /fragments/:id) is
+// owned by Stream D1' and lands later. Until that ships this endpoint
+// returns an empty `edits` array gracefully, the audit_log block still
+// renders the lifecycle events that already get written today
+// (created / classified / accepted / rejected / deleted).
+//
+// Auth: standard session via the router-wide sessionMiddleware. Single
+// tenant means "operator-only" is the same as "session-authenticated".
+fragmentsRouter.get('/:id/history', async (c) => {
+  const id = c.req.param('id')
+
+  // Verify the fragment exists; return 404 otherwise so the client
+  // does not render a timeline for a phantom row.
+  const [fragment] = await db
+    .select({ lookupKey: fragments.lookupKey })
+    .from(fragments)
+    .where(eq(fragments.lookupKey, id))
+    .limit(1)
+  if (!fragment) return c.json({ error: 'Fragment not found' }, 404)
+
+  // Pagination: cursor by editedAt desc. Plan asks for >50 rows to be
+  // rare but cheap to support; we accept ?cursor=<iso> and ?limit=
+  // (clamped 1..200, default 50).
+  const rawLimit = Number(c.req.query('limit') ?? '50')
+  const limit = Math.max(1, Math.min(200, Number.isFinite(rawLimit) ? rawLimit : 50))
+  const cursorIso = c.req.query('cursor')
+  const cursorDate = cursorIso ? new Date(cursorIso) : null
+
+  // edits table read. cursorDate restricts to rows strictly older than
+  // the cursor so the next page lines up without duplicate boundary
+  // rows. When the cursor is invalid (NaN) we just ignore it; the
+  // first page is the intended fallback.
+  const editRows = await db
+    .select({
+      id: edits.id,
+      type: edits.type,
+      content: edits.content,
+      source: edits.source,
+      diff: edits.diff,
+      editedAt: edits.timestamp,
+    })
+    .from(edits)
+    .where(
+      and(
+        eq(edits.objectType, 'fragment'),
+        eq(edits.objectId, id),
+        cursorDate && !Number.isNaN(cursorDate.getTime())
+          ? sql`${edits.timestamp} < ${cursorDate.toISOString()}`
+          : sql`true`,
+      ),
+    )
+    .orderBy(desc(edits.timestamp))
+    .limit(limit)
+
+  // audit_log read. Only the rows whose entity_type/entity_id matches;
+  // we deliberately do NOT pull in detail.fragmentKey-shaped rows
+  // because that scan requires JSONB containment over the full audit
+  // table and the volume does not justify it for the timeline view.
+  // Entries whose detail block carries a fragmentKey are surfaced via
+  // /admin/diagnose, not this endpoint.
+  const auditRows = await db
+    .select()
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.entityType, 'fragment'),
+        eq(auditLog.entityId, id),
+      ),
+    )
+    .orderBy(desc(auditLog.createdAt))
+    .limit(limit)
+
+  return c.json({
+    fragmentId: id,
+    edits: editRows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      content: r.content,
+      source: r.source,
+      diff: r.diff,
+      editedAt: r.editedAt.toISOString(),
+    })),
+    auditEvents: auditRows.map((r) => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+    })),
+    nextCursor:
+      editRows.length === limit
+        ? editRows[editRows.length - 1].editedAt.toISOString()
+        : null,
+  })
 })
 
 export { fragmentsRouter as fragmentsRoutes }

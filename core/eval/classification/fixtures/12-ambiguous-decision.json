@@ -1,0 +1,6 @@
+{
+  "input": "Decided to skip the gym tonight — too tired after the deploy. Sleep is the better recovery move.",
+  "expected": ["health"],
+  "forbidden": ["engineering-decisions", "policy-decisions"],
+  "notes": "Contains 'decided' (decision-flavoured) and 'deploy' (engineering-flavoured) but it's a health note."
+}

@@ -1,0 +1,7 @@
+{
+  "input": "Three things on the v1 ship list:\n\nFirst, the bouncer-mode UI surface — toggle plus pending-attachment triage. This is the biggest UX gap right now.\n\nSecond, the wiki-types creation form. The MCP tool exists but the web form is missing.\n\nThird, the empty-wiki bootstrap. New wikis with zero fragments need the description-as-embedding-seed pattern.",
+  "expectedCount": { "min": 3, "max": 4 },
+  "mustContain": ["bouncer-mode UI", "wiki-types creation form", "empty-wiki bootstrap"],
+  "mustNotContain": [],
+  "notes": "Numbered list with prose. Three distinct items — each its own fragment."
+}

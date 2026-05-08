@@ -1,0 +1,6 @@
+{
+  "input": "BullMQ scheduler runs three crons: midnight regen-batch, 15-minute embedding-retry, daily 03:00 prune-pipeline-events.",
+  "expected": ["engineering-decisions"],
+  "forbidden": ["health", "travel", "culinary", "finance"],
+  "notes": "Pure tech spec. Engineering only."
+}

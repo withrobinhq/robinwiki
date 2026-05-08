@@ -1,0 +1,6 @@
+{
+  "input": "Slept 7.5 hours last night. Resting HR 54. Mild headache in the afternoon — probably caffeine withdrawal.",
+  "expected": ["health"],
+  "forbidden": ["engineering-decisions", "policy-decisions"],
+  "notes": "Personal health log. Single-wiki, life-side."
+}

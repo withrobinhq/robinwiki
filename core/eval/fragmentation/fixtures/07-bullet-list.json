@@ -1,0 +1,7 @@
+{
+  "input": "Open questions for the Q3 roadmap:\n\n- Whether to ship the wiki-types creation form in v1 or defer to v1.5\n- Whether MCP token rotation should be opt-in or default-on\n- Whether the bouncer-mode UI ships before or after the recovery flow",
+  "expectedCount": { "min": 3, "max": 4 },
+  "mustContain": ["wiki-types creation form", "MCP token rotation", "bouncer-mode UI"],
+  "mustNotContain": [],
+  "notes": "Bullet list. Each bullet is its own claim — three fragments expected."
+}

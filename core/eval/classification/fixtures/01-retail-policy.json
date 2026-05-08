@@ -1,0 +1,6 @@
+{
+  "input": "The new policy applies to all retail customers starting Q3.",
+  "expected": ["retail-operations", "policy-decisions"],
+  "forbidden": ["health", "travel"],
+  "notes": "Cross-wiki landing — the recognition criterion case from Component #8."
+}

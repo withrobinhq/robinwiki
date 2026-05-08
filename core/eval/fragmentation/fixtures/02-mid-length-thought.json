@@ -1,0 +1,7 @@
+{
+  "input": "The new policy applies to all retail customers starting Q3.\n\nEnterprise customers are exempt for the first six months — sales already negotiated this in the existing contracts.\n\nWe need to update the help center docs and notify the support team before the rollout.",
+  "expectedCount": { "min": 3, "max": 4 },
+  "mustContain": ["retail customers", "enterprise customers", "help center"],
+  "mustNotContain": ["um", "you know"],
+  "notes": "Mid-length thought, three policy facets. One fragment per facet is the target shape."
+}

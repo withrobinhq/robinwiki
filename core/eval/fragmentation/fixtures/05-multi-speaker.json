@@ -1,0 +1,7 @@
+{
+  "input": "Andrew: We should ship the bouncer-mode UI before the wiki-types form.\n\nPhyl: Agreed, but the recovery flow has to land first or the security audit blocks us.\n\nAndrew: Right, recovery is the gating item. Bouncer-mode goes after.",
+  "expectedCount": { "min": 2, "max": 4 },
+  "mustContain": ["bouncer-mode UI", "recovery flow", "security audit"],
+  "mustNotContain": [],
+  "notes": "Two-speaker dialogue. Should NOT invent Persons — Andrew and Phyl are matcher-resolved."
+}

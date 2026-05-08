@@ -1,0 +1,6 @@
+{
+  "input": "Switched to whole-grain pasta — same comfort, better fiber profile. Two weeks in and digestion noticeably better.",
+  "expected": ["culinary", "health"],
+  "forbidden": ["finance", "travel"],
+  "notes": "Cross-wiki: dietary swap is both culinary and health."
+}

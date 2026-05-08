@@ -1,0 +1,6 @@
+{
+  "input": "Charged the Lisbon hotel deposit to the travel rewards card — earns 3x points on lodging.",
+  "expected": ["travel", "finance"],
+  "forbidden": ["health", "culinary"],
+  "notes": "Cross-wiki personal-life landing: travel + finance overlap."
+}

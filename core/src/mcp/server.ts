@@ -22,13 +22,17 @@ import { eq, and, isNull, inArray, sql } from 'drizzle-orm'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { listWikis, getWiki, getFragment, findPersonById, findPersonByQuery, listWikiTypes, briefPerson, resolveWikiBySlug } from './resolvers.js'
 import type { McpResolverDeps } from './resolvers.js'
-import { handleLogEntry, handleLogFragment, handleCreateWikiType, handleCreateWiki, handleEditWiki } from './handlers.js'
+import { handleLogEntry, handleLogFragment, handleCreateWikiType, handleCreateWiki, handleEditWiki, handleAttachFragments, handlePublishWiki, handleUnpublishWiki } from './handlers.js'
 import type { McpServerDeps } from './handlers.js'
-import { wikis, edges, auditLog, groups, groupWikis } from '../db/schema.js'
+import { wikis, wikiTypes, edges, auditLog, groups, groupWikis } from '../db/schema.js'
 import { hybridSearch } from '../lib/search.js'
 import { searchResponseSchema } from '../schemas/search.schema.js'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
 import { emitAuditEvent } from '../db/audit.js'
+import {
+  attachAliasesToServer as _attachAliasesToServer,
+  type CanonicalToolCallback,
+} from './alias-registry.js'
 
 export type { McpServerDeps }
 
@@ -48,8 +52,41 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     version: '1.0.0',
   })
 
+  // Stream I Phases 5+6 -- skill-pack alias registry. Capture every
+  // canonical tool's callback as it registers so the alias resolver
+  // can route alias calls (e.g. `/short-capture`) into the canonical
+  // implementation (e.g. `log_entry`) without re-importing handlers.
+  const canonicalCallbacks = new Map<string, CanonicalToolCallback>()
+  const _origRegisterTool = server.registerTool.bind(server)
+  server.registerTool = ((
+    name: string,
+    config: Parameters<typeof server.registerTool>[1],
+    cb: Parameters<typeof server.registerTool>[2]
+  ) => {
+    canonicalCallbacks.set(name, cb as unknown as CanonicalToolCallback)
+    return _origRegisterTool(name, config, cb)
+  }) as typeof server.registerTool
+  ;(server as unknown as { _canonicalCallbacks?: Map<string, CanonicalToolCallback> })._canonicalCallbacks =
+    canonicalCallbacks
+
   const resolverDeps: McpResolverDeps = {
     db: deps.db,
+  }
+
+  // ── MCP clientInfo handshake snapshot (Stream I Phase 2 + Stream C C2) ──
+  // Stamps every MCP write with `{ name, version }` of the originating
+  // client. The handshake completes during `server.connect(transport)`,
+  // *after* this factory returns, so the deps closure (constructed in
+  // `routes/mcp.ts`) reads it lazily via `getClientInfo()`. We bind that
+  // accessor to the underlying `Server` instance here so handlers and
+  // tool callbacks can both reach it without re-plumbing.
+  if (!deps.getClientInfo) {
+    deps.getClientInfo = () => {
+      const v = server.server.getClientVersion()
+      if (!v?.name) return undefined
+      const version = typeof v.version === 'string' ? v.version : undefined
+      return version ? { name: v.name, version } : { name: v.name }
+    }
   }
 
   /***********************************************************************
@@ -66,7 +103,11 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
       },
     },
     async ({ content, source }, extra) => {
-      return handleLogEntry(deps, { content, source }, extra.authInfo?.clientId as string)
+      return handleLogEntry(
+        deps,
+        { content, source, sourceClient: (deps.getClientInfo?.() as { [key: string]: unknown; name: string; version?: string } | undefined) ?? null },
+        extra.authInfo?.clientId as string
+      )
     }
   )
 
@@ -89,7 +130,7 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     async ({ content, threadSlug, title, tags }, extra) => {
       return handleLogFragment(
         deps,
-        { content, threadSlug, title, tags },
+        { content, threadSlug, title, tags, sourceClient: (deps.getClientInfo?.() as { [key: string]: unknown; name: string; version?: string } | undefined) ?? null },
         extra.authInfo?.clientId as string
       )
     }
@@ -141,6 +182,67 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     },
     async ({ wikiSlug, content }, extra) => {
       return handleEditWiki(deps, { wikiSlug, content }, extra.authInfo?.clientId as string)
+    }
+  )
+
+  server.registerTool(
+    'attach_fragments',
+    {
+      description:
+        'Attach existing fragments to a wiki by slug. Use when you have ' +
+        'fragments that already live in the second-brain and want to ' +
+        'route them into a specific wiki without re-creating their ' +
+        'content. Returns three lists: attached (newly linked), ' +
+        'alreadyAttached (no-op idempotent re-runs), and notFound ' +
+        '(slugs that did not resolve). Get fragment slugs from search, ' +
+        'list_wikis -> get_wiki, or get_fragment.',
+      inputSchema: {
+        wikiSlug: z.string().describe('Target wiki slug (from list_wikis or get_wiki)'),
+        fragmentSlugs: z
+          .array(z.string())
+          .min(1)
+          .describe('One or more fragment slugs to attach to the target wiki'),
+      },
+    },
+    async ({ wikiSlug, fragmentSlugs }, extra) => {
+      return handleAttachFragments(
+        deps,
+        { wikiSlug, fragmentSlugs },
+        extra.authInfo?.clientId as string
+      )
+    }
+  )
+
+  server.registerTool(
+    'publish_wiki',
+    {
+      description:
+        'Publish a wiki at a stable public URL. Returns the published ' +
+        'slug + origin -- combine them as `${origin}/p/${slug}` for the ' +
+        'shareable link. Idempotent: re-publishing keeps the same slug ' +
+        'until unpublish rotates it.',
+      inputSchema: {
+        wikiSlug: z.string().describe('Wiki slug to publish (from list_wikis or get_wiki)'),
+      },
+    },
+    async ({ wikiSlug }, extra) => {
+      return handlePublishWiki(deps, { wikiSlug }, extra.authInfo?.clientId as string)
+    }
+  )
+
+  server.registerTool(
+    'unpublish_wiki',
+    {
+      description:
+        'Revoke a published wiki. The current public slug is rotated ' +
+        '(nulled) so a future publish mints a fresh URL -- the previously ' +
+        'shared link stops resolving immediately.',
+      inputSchema: {
+        wikiSlug: z.string().describe('Wiki slug to unpublish'),
+      },
+    },
+    async ({ wikiSlug }, extra) => {
+      return handleUnpublishWiki(deps, { wikiSlug }, extra.authInfo?.clientId as string)
     }
   )
 
@@ -456,6 +558,64 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
       return handleCreateWikiType(deps, { slug, name, shortDescriptor, descriptor, prompt })
     }
   )
+
+  /***********************************************************************
+   * ## Skills (Stream C / C4)
+   ***********************************************************************/
+
+  server.registerTool(
+    'list_skills',
+    {
+      description:
+        'List skill wikis: the metadata index of every wiki stored under ' +
+        'the `skill` wiki_type. Returns slug, name, description, and version, ' +
+        'sorted by most-recently updated. Read-only; the wiki body is not ' +
+        'included (fetch it via `get_wiki` when needed). Useful when a Claude ' +
+        'session needs to discover which skills the user has captured into ' +
+        'their Robin (the Capture pack plus any user-authored skill wikis).',
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const rows = await deps.db
+          .select({
+            slug: wikis.slug,
+            name: wikis.name,
+            description: wikis.description,
+            lookupKey: wikis.lookupKey,
+            updatedAt: wikis.updatedAt,
+            // The wiki_types row carries the version the skill was based on
+            // (basedOnVersion). Surfaced as `version` for callers that
+            // want to detect drift against the YAML defaults.
+            version: wikiTypes.basedOnVersion,
+          })
+          .from(wikis)
+          .leftJoin(wikiTypes, eq(wikis.type, wikiTypes.slug))
+          .where(and(eq(wikis.type, 'skill'), isNull(wikis.deletedAt)))
+          .orderBy(sql`${wikis.updatedAt} DESC`)
+
+        const skills = rows.map((r) => ({
+          slug: r.slug,
+          name: r.name,
+          description: r.description,
+          lookupKey: r.lookupKey,
+          version: r.version ?? null,
+          updatedAt: r.updatedAt,
+        }))
+
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ skills }) }],
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }],
+          isError: true as const,
+        }
+      }
+    }
+  )
+
   /***********************************************************************
    * ## Timeline
    ***********************************************************************/
@@ -602,13 +762,20 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
           })
           .returning()
 
+        const ci = deps.getClientInfo?.()
         await emitAuditEvent(deps.db, {
           entityType: 'group',
           entityId: group.id,
           eventType: 'created',
           source: 'mcp',
           summary: `Group created: ${name}`,
-          detail: { groupId: group.id, slug },
+          detail: {
+            groupId: group.id,
+            slug,
+            ...(ci?.name
+              ? { source_client: ci.version ? { name: ci.name, version: ci.version } : { name: ci.name } }
+              : {}),
+          },
         })
 
         return { content: [{ type: 'text' as const, text: JSON.stringify(group) }] }
@@ -660,6 +827,22 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
           .values({ groupId, wikiId })
           .onConflictDoNothing()
 
+        const ci = deps.getClientInfo?.()
+        await emitAuditEvent(deps.db, {
+          entityType: 'group',
+          entityId: groupId,
+          eventType: 'wiki_added',
+          source: 'mcp',
+          summary: `Wiki added to group: ${wikiId} -> ${groupId}`,
+          detail: {
+            groupId,
+            wikiId,
+            ...(ci?.name
+              ? { source_client: ci.version ? { name: ci.name, version: ci.version } : { name: ci.name } }
+              : {}),
+          },
+        })
+
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ ok: true, groupId, wikiId }) }],
         }
@@ -674,4 +857,22 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
   )
 
   return server
+}
+
+/**
+ * Attach skill-pack aliases to a freshly-created MCP server. Called by
+ * `routes/mcp.ts` between `createMcpServer` and `server.connect` so the
+ * alias rows are visible on the very first `listTools` call from the
+ * client. Exposed as a separate async helper to keep the synchronous
+ * shape of `createMcpServer` (preserves the test harness).
+ */
+export async function attachAliases(
+  server: McpServer,
+  db: import('../db/client.js').DB
+): Promise<number> {
+  const map = (
+    server as unknown as { _canonicalCallbacks?: Map<string, CanonicalToolCallback> }
+  )._canonicalCallbacks
+  if (!map) return 0
+  return _attachAliasesToServer(server, db, map)
 }

@@ -107,8 +107,25 @@ export interface PrunePipelineEventsJob {
   enqueuedAt: string
 }
 
+/**
+ * Stream D / D5 — fragment-relationship backfill (#258). Computes
+ * FRAGMENT_RELATED_TO_FRAGMENT edges for fragments that were embedded
+ * before the related-edge logic landed. Runs nightly via cron and on
+ * demand via POST /admin/backfill/fragment-relationships.
+ */
+export interface FragmentRelationshipBackfillJob {
+  type: 'fragment-relationship-backfill'
+  jobId: string
+  triggeredBy: 'scheduler' | 'manual'
+  enqueuedAt: string
+}
+
 /** Job payloads dispatched by the scheduler worker (cron-driven). */
-export type SchedulerJob = RegenBatchJob | EmbeddingRetryJob | PrunePipelineEventsJob
+export type SchedulerJob =
+  | RegenBatchJob
+  | EmbeddingRetryJob
+  | PrunePipelineEventsJob
+  | FragmentRelationshipBackfillJob
 
 export type RobinJob =
   | ProvisionJob
@@ -119,6 +136,7 @@ export type RobinJob =
   | RegenBatchJob
   | EmbeddingRetryJob
   | PrunePipelineEventsJob
+  | FragmentRelationshipBackfillJob
 
 /** Producer wraps a job in this shape via signJob; worker strips it via verifyJob. */
 export type Signed<T> = T & { __sig: string }

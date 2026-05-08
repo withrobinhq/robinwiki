@@ -1,0 +1,6 @@
+{
+  "input": "Maxed out the IRA contribution for 2026. Rebalanced to 70/30 stocks/bonds.",
+  "expected": ["finance"],
+  "forbidden": ["health", "travel", "culinary"],
+  "notes": "Finance log. Single-wiki landing."
+}

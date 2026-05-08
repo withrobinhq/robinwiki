@@ -9,6 +9,7 @@ import {
   users,
   accounts,
   apiKeys,
+  configs,
   fragments,
   wikis,
   people,
@@ -22,6 +23,8 @@ import { validationHook } from '../lib/validation.js'
 import { getConfig, setConfig } from '../lib/config.js'
 import { logger } from '../lib/logger.js'
 import { emitAuditEvent } from '../db/audit.js'
+import { buildExportZip } from '../lib/export-zip.js'
+import { stream } from 'hono/streaming'
 import {
   userProfileResponseSchema,
   userStatsResponseSchema,
@@ -295,8 +298,33 @@ usersRouter.get('/activity', async (c) => {
   )
 })
 
-// POST /users/export — export all data as JSON
+// POST /users/export — export all data
+//
+// Default (no ?format or ?format=json) returns the legacy JSON shape that
+// existing API consumers and the OpenAPI manifest expect.
+//
+// ?format=zip streams a multi-file zip with markdown for wikis + entries,
+// JSON for fragments/people, and a graph.json built from the edges table.
+// See lib/export-zip.ts for the layout.
 usersRouter.post('/export', async (c) => {
+  const format = c.req.query('format')
+
+  if (format === 'zip') {
+    const archive = await buildExportZip()
+    c.header('Content-Type', 'application/zip')
+    c.header('Content-Disposition', 'attachment; filename="robin-export.zip"')
+    return stream(c, async (s) => {
+      // Bridge the Node Readable archive into hono's streaming response.
+      // Errors on the archive surface as a stream abort; the client sees a
+      // truncated download rather than a partial-success 200.
+      for await (const chunk of archive) {
+        await s.write(chunk as Uint8Array)
+      }
+    })
+  }
+
+  // Legacy JSON shape, kept verbatim so existing OpenAPI consumers don't
+  // see a behaviour change. The zip branch above is the canonical export.
   const [userWikis, userFragments, userPeople] = await Promise.all([
     db.select().from(wikis),
     db.select().from(fragments),
@@ -311,6 +339,53 @@ usersRouter.post('/export', async (c) => {
       people: userPeople,
     })
   )
+})
+
+// GET /users/providers - read-only listing of configured external providers
+//
+// Surfaces the OpenRouter-configured models per pipeline stage plus a
+// last-4-chars hint of the API key so the user can confirm "is this the
+// key I think it is" without ever exposing the full secret. Editing
+// happens via env vars; there is no mutation surface here by design
+// (per project memory: ports/URLs/runtime config live in env vars).
+usersRouter.get('/providers', async (c) => {
+  const apiKey = process.env.OPENROUTER_API_KEY ?? ''
+  // Last 4 chars only. Defensive: keys shorter than 4 chars get an empty
+  // hint so we can't accidentally surface the whole secret on a stub key.
+  const apiKeyHint = apiKey.length >= 8 ? `...${apiKey.slice(-4)}` : ''
+
+  const rows = await db
+    .select({ key: configs.key, value: configs.value, updatedAt: configs.updatedAt })
+    .from(configs)
+    .where(
+      and(
+        eq(configs.scope, 'system'),
+        eq(configs.kind, 'model_preference'),
+      ),
+    )
+
+  const stages: Record<string, { model: string; updatedAt: string | null }> = {}
+  for (const row of rows) {
+    if (typeof row.value === 'string') {
+      stages[row.key] = {
+        model: row.value,
+        updatedAt: row.updatedAt?.toISOString() ?? null,
+      }
+    }
+  }
+
+  return c.json({
+    provider: 'openrouter',
+    endpoint: 'https://openrouter.ai/api/v1',
+    apiKeyConfigured: !!apiKey,
+    apiKeyHint,
+    stages: {
+      extraction: stages.extraction ?? null,
+      classification: stages.classification ?? null,
+      wikiGeneration: stages.wiki_generation ?? null,
+      embedding: stages.embedding ?? null,
+    },
+  })
 })
 
 // DELETE /users/data — delete all content (keeps account intact)
@@ -341,6 +416,23 @@ usersRouter.post('/regenerate-mcp', async (c) => {
   return c.json(
     mcpEndpointResponseSchema.parse({ mcpEndpointUrl: `${appUrl}/mcp?token=${mcpToken}` })
   )
+})
+
+// GET /users/settings/outstanding — counters surfaced on the settings page.
+//
+// Stream D / D5 (#258): the "Run now" button calls
+// POST /admin/backfill/fragment-relationships, then re-fetches this endpoint
+// to refresh the displayed numbers. Wave A4's broader outstanding-counters
+// page reads from here as a single source of truth — extending this shape
+// is preferable to spinning up a parallel endpoint.
+usersRouter.get('/settings/outstanding', async (c) => {
+  const { getOutstandingBackfillState } = await import(
+    '../queue/fragment-relationship-backfill-worker.js'
+  )
+  const backfill = await getOutstandingBackfillState()
+  return c.json({
+    fragmentRelationshipBackfill: backfill,
+  })
 })
 
 // DELETE /users/account — delete user entirely

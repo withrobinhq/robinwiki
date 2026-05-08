@@ -15,6 +15,13 @@ export type WikiSettingsPrefill = {
   published?: boolean;
   /** Public published-wiki nanoid slug (when published) */
   publishedSlug?: string | null;
+  /**
+   * Origin recorded at publish time (Stream I Phase 4). Used to build
+   * a clickable absolute URL even when the user is browsing from a
+   * different host. Null on legacy rows -> the UI falls back to
+   * `window.location.origin`.
+   */
+  publishedOrigin?: string | null;
   /** Current collection memberships — feeds the Collections section in the modal. */
   collections?: Array<{ id: string; name: string; slug: string; color: string }>;
 };
