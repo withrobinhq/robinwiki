@@ -114,6 +114,36 @@ export const groups = pgTable(
   (t) => [uniqueIndex('groups_slug_uidx').on(t.slug)]
 )
 
+// ─── Skill-Pack Aliases (Stream I Phases 5+6 — server-side alias registry) ───
+//
+// Maps user-facing alias names (e.g. `/short-capture`) to canonical MCP
+// tool names (e.g. `log_entry`) plus optional default args. Populated
+// when a skill pack installs (Stream C) and consumed at MCP
+// tool-list time by the alias resolver in mcp/alias-registry.ts.
+
+export const skillPackAliases = pgTable(
+  'skill_pack_aliases',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
+    pack: text('pack').notNull(),
+    aliasName: text('alias_name').notNull(),
+    mcpToolName: text('mcp_tool_name').notNull(),
+    /**
+     * Optional JSON merged into the alias's call args before forwarding
+     * to the canonical tool. Lets a pack pre-bake (e.g.) `source: 'mcp'`
+     * or a default `wikiSlug` so the user types fewer words.
+     */
+    argsTemplate: jsonb('args_template').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex('skill_pack_aliases_pack_alias_uidx').on(t.pack, t.aliasName),
+    index('skill_pack_aliases_mcp_tool_idx').on(t.mcpToolName),
+  ]
+)
+
 // ─── Configs (normalized config store — single-user) ───
 
 export const configs = pgTable(
@@ -300,6 +330,14 @@ export const wikis = pgTable(
     published: boolean('published').notNull().default(false),
     publishedSlug: text('published_slug'),
     publishedAt: timestamp('published_at'),
+    /**
+     * Origin captured at publish time (e.g. `https://wiki.example.com`).
+     * Lets clients build an absolute public URL deterministically when
+     * the user is browsing on a different host than where the wiki was
+     * published. Nullable: legacy rows fall back to
+     * `window.location.origin` or `process.env.SERVER_PUBLIC_URL`.
+     */
+    publishedOrigin: text('published_origin'),
     regenerate: boolean('regenerate').notNull().default(true),
     bouncerMode: text('bouncer_mode').notNull().default('auto'), // 'auto' | 'review'
     embedding: vector('embedding', { dimensions: 1536 }),

@@ -38,6 +38,7 @@ import {
   createWikiBodySchema,
 } from '../schemas/wikis.schema.js'
 import { emitAuditEvent } from '../db/audit.js'
+import { publishWiki as publishWikiService, unpublishWiki as unpublishWikiService } from '../services/publish.js'
 import { timelineQuerySchema } from '../schemas/audit.schema.js'
 
 const log = logger.child({ component: 'wikis' })
@@ -564,74 +565,35 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
   return c.json(wikiResponseSchema.parse(prepareWiki(updated)))
 })
 
-// POST /wikis/:id/publish — publish wiki with stable nanoid slug
+// POST /wikis/:id/publish — delegates to services/publish so MCP and HTTP
+// share one code path (Stream I Phase 4).
 wikisRouter.post('/:id/publish', async (c) => {
   const id = c.req.param('id')
-  const [wiki] = await db.select().from(wikis).where(eq(wikis.lookupKey, id))
-  if (!wiki) return c.json({ error: 'Not found' }, 404)
+  const origin = (() => {
+    try {
+      return new URL(c.req.url).origin
+    } catch {
+      return process.env.SERVER_PUBLIC_URL ?? null
+    }
+  })()
 
-  if (!wiki.content) {
+  const result = await publishWikiService(db, id, { origin, source: 'api' })
+  if (result.ok === false) {
+    if (result.error === 'not-found') return c.json({ error: 'Not found' }, 404)
     return c.json({ error: 'Cannot publish a wiki with no content' }, 400)
   }
-
-  // Mint a fresh slug whenever publishedSlug IS NULL. Pairs with the
-  // unpublish handler which nulls the slug, so an unpublish/republish
-  // cycle always produces a new public URL (#audit-M2).
-  const slug = wiki.publishedSlug ?? nanoid24()
-  const [updated] = await db
-    .update(wikis)
-    .set({
-      published: true,
-      publishedSlug: slug,
-      publishedAt: wiki.publishedAt ?? new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(wikis.lookupKey, id))
-    .returning()
-
-  await emitAuditEvent(db, {
-    entityType: 'wiki',
-    entityId: id,
-    eventType: 'published',
-    source: 'api',
-    summary: `Wiki published: ${wiki.name}`,
-    detail: { wikiKey: id, publishedSlug: slug },
-  })
-
-  return c.json(publishWikiResponseSchema.parse(updated))
+  return c.json(publishWikiResponseSchema.parse(result.wiki))
 })
 
-// POST /wikis/:id/unpublish — unpublish wiki and rotate slug
+// POST /wikis/:id/unpublish — delegates to services/publish (Stream I Phase 4).
 wikisRouter.post('/:id/unpublish', async (c) => {
   const id = c.req.param('id')
-  const [wiki] = await db.select().from(wikis).where(eq(wikis.lookupKey, id))
-  if (!wiki) return c.json({ error: 'Not found' }, 404)
-
-  // Rotate publishedSlug on unpublish (#audit-M2). Preserving the slug
-  // across an unpublish/republish cycle reuses the original public URL,
-  // defeating the user's intent that "unpublish" revoke the link they
-  // shared. publishedAt is preserved — it records the historical
-  // first-publish time and downstream audit views read it.
-  const [updated] = await db
-    .update(wikis)
-    .set({
-      published: false,
-      publishedSlug: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(wikis.lookupKey, id))
-    .returning()
-
-  await emitAuditEvent(db, {
-    entityType: 'wiki',
-    entityId: id,
-    eventType: 'unpublished',
-    source: 'api',
-    summary: `Wiki unpublished: ${wiki.name}`,
-    detail: { wikiKey: id },
-  })
-
-  return c.json(publishWikiResponseSchema.parse(updated))
+  const result = await unpublishWikiService(db, id, { source: 'api' })
+  if (result.ok === false) {
+    if (result.error === 'not-found') return c.json({ error: 'Not found' }, 404)
+    return c.json({ error: 'Unpublish failed' }, 500)
+  }
+  return c.json(publishWikiResponseSchema.parse(result.wiki))
 })
 
 // POST /wikis/:id/regenerate — on-demand wiki regen, serialized via wikiRegenLock (#audit-M5)
