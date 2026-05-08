@@ -24,6 +24,7 @@ import { auditRoutes } from './routes/audit.js'
 import { aiPreferencesRoutes } from './routes/ai-preferences.js'
 import { aiModelsRoutes } from './routes/ai-models.js'
 import { publishedRoutes } from './routes/published.js'
+import { settingsRoutes } from './routes/settings.js'
 import { systemRoutes } from './routes/system.js'
 import { startWorkers } from './queue/worker.js'
 import {
@@ -233,6 +234,7 @@ app.route('/api/content', contentRoutes)
 app.route('/wiki-types', wikiTypesRoutes)
 app.route('/audit-log', auditRoutes)
 app.route('/ai', aiModelsRoutes)
+app.route('/settings', settingsRoutes)
 
 /***********************************************************************
  * ## Boot

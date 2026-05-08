@@ -46,6 +46,14 @@ export type { IngestAgents } from './agent-factory.js'
 export {
   createTypedCaller,
   createStringCaller,
+  withTypedUsage,
+  withStringUsage,
   AGENT_RETRY_CONFIG,
   AGENT_MODEL_SETTINGS,
+} from './agents/caller.js'
+export type {
+  UsageContext,
+  UsageRecord,
+  UsageRecorder,
+  WithUsageOptions,
 } from './agents/caller.js'

@@ -150,6 +150,14 @@ export const wikiTypes = pgTable('wiki_types', {
    * prompt-validation.ts. See regen.ts and routes/wiki-types.ts.
    */
   prompt: text('prompt').notNull().default(''),
+  /**
+   * Type-aware authoring instruction for the HyDE generator (Wave G,
+   * wiki_agent_schema kind='hyde_synthetic'). Loaded from the YAML
+   * spec's `internal_framing` field on bootstrap. Belief wikis get
+   * framed differently than Decision wikis. Nullable so legacy types
+   * without framing still load.
+   */
+  internalFraming: text('internal_framing'),
   isDefault: boolean('is_default').notNull().default(false),
   userModified: boolean('user_modified').notNull().default(false),
   basedOnVersion: integer('based_on_version').notNull().default(1),
@@ -194,6 +202,16 @@ export const entries = pgTable(
       channel?: string
       sessionId?: string
     }>(),
+    // Stream C / C2: MCP `clientInfo` payload (`{name, version, ...}`)
+    // for MCP captures, `{name: 'web'}` for web-UI captures, NULL for
+    // legacy rows or any caller that doesn't supply client identity.
+    // Migration 0007. Decision 2026-05-07: jsonb (carries optional
+    // `version` and any future MCP-spec fields without re-migrating).
+    sourceClient: jsonb('source_client').$type<{
+      name: string
+      version?: string
+      [key: string]: unknown
+    } | null>(),
     ingestStatus: text('ingest_status').notNull().default('pending'),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at'),
@@ -435,6 +453,54 @@ export const pipelineEvents = pgTable(
   ]
 )
 
+// ─── Usage Events (cost & spend, Component #4) ───
+//
+// Sibling of pipeline_events per A-game line 120 / RESEARCH §4.3. Every
+// OpenRouter call (mastra agent + embedding adapter) writes one row here
+// keyed by job_id so a single BullMQ job correlates: pipeline_events.job_id
+// for state, usage_events.job_id for cost. Cost is stored as
+// `cost_usd_micros` (1e-6 USD) so we never lose precision rounding to cents.
+export const usageEvents = pgTable(
+  'usage_events',
+  {
+    id: text('id').primaryKey(),
+    entryKey: text('entry_key'),
+    wikiKey: text('wiki_key'),
+    fragmentKey: text('fragment_key'),
+    userId: text('user_id'),
+    sourceClient: text('source_client'),
+    stage: text('stage').notNull(), // capture | fragment | classify | regen | embed
+    model: text('model').notNull(),
+    provider: text('provider').notNull(),
+    promptTokens: integer('prompt_tokens').notNull().default(0),
+    completionTokens: integer('completion_tokens').notNull().default(0),
+    totalTokens: integer('total_tokens').notNull().default(0),
+    costUsdMicros: integer('cost_usd_micros').notNull().default(0),
+    durationMs: integer('duration_ms'),
+    jobId: text('job_id'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('usage_events_user_id_created_at_idx').on(t.userId, t.createdAt),
+    index('usage_events_wiki_key_created_at_idx').on(t.wikiKey, t.createdAt),
+    index('usage_events_stage_created_at_idx').on(t.stage, t.createdAt),
+    index('usage_events_job_id_idx').on(t.jobId),
+  ]
+)
+
+// ─── App settings (single-tenant key/value store for budgets, etc.) ───
+//
+// Used by Phase A4 for storing budget caps (regen / embed / classify).
+// Keys are free-form strings; values are JSONB so a budget cap can be
+// `{ "limit_usd_micros": 10000000 }` and other settings can use other
+// shapes. Single-tenant — no user_id column.
+export const appSettings = pgTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull().$type<unknown>(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
 /**
  * Boot-time drift detection (#12). One-row-per-key store for migration
  * metadata. The boot path writes the SHA of `drizzle/migrations/meta/_journal.json`
@@ -470,3 +536,42 @@ export const apiKeys = pgTable('api_keys', {
   hint: text('hint').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
+
+// ─── Wiki Agent Schema (multi-row agent-facing retrieval surface — Wave G) ───
+
+/**
+ * Multi-row keyed by (wikiKey, kind). Each `kind` is a different
+ * representation pathway used during retrieval. v0.2.0 ships two kinds:
+ *
+ *   - `description`     direct embedding of `wikis.description`
+ *   - `hyde_synthetic`  LLM-generated hypothetical document, then embedded
+ *
+ * Future kinds (post-v0.2.0) compose into the same table with no schema
+ * change: `hyde_questions`, `expanded_keywords`, `retrieval_friendly_summary`,
+ * `archetype_brief`. See docs/architecture/wiki-agent-schema.md.
+ *
+ * `generator_version` bumps when the prompt template, framing, embedding
+ * model, or generator LLM changes. Backfill is incremental — wikis whose
+ * stored version trails the canonical version surface in /settings/outstanding.
+ *
+ * The composite PRIMARY KEY (wiki_key, kind) is declared in the migration
+ * (0005_wiki_agent_schema.sql); Drizzle's pg-core does not support
+ * multi-column PKs via the column-level `.primaryKey()` helper without
+ * raw SQL fallthrough, so we keep the constraint authoritative in the
+ * migration file. The kind index is declared here so drizzle-kit and the
+ * SQL stay in sync when future migrations diff against the schema.
+ */
+export const wikiAgentSchema = pgTable(
+  'wiki_agent_schema',
+  {
+    wikiKey: text('wiki_key')
+      .notNull()
+      .references(() => wikis.lookupKey, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    content: text('content').notNull(),
+    embedding: vector('embedding', { dimensions: 1536 }),
+    generatedAt: timestamp('generated_at').defaultNow().notNull(),
+    generatorVersion: text('generator_version').notNull(),
+  },
+  (t) => [index('wiki_agent_schema_kind_idx').on(t.kind)]
+)

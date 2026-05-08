@@ -35,7 +35,7 @@ export async function processRegenJob(job: RegenJob): Promise<JobResult> {
   })
 
   try {
-    const result = await regenerateWiki(db, job.objectKey)
+    const result = await regenerateWiki(db, job.objectKey, { jobId: job.jobId })
     const elapsed = Math.round(performance.now() - t0)
     log.info(
       { jobId: job.jobId, wikiKey: job.objectKey, fragmentCount: result.fragmentCount, ms: elapsed, timing: result.timing },

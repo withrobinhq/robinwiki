@@ -24,7 +24,7 @@ import { listWikis, getWiki, getFragment, findPersonById, findPersonByQuery, lis
 import type { McpResolverDeps } from './resolvers.js'
 import { handleLogEntry, handleLogFragment, handleCreateWikiType, handleCreateWiki, handleEditWiki } from './handlers.js'
 import type { McpServerDeps } from './handlers.js'
-import { wikis, edges, auditLog, groups, groupWikis } from '../db/schema.js'
+import { wikis, wikiTypes, edges, auditLog, groups, groupWikis } from '../db/schema.js'
 import { hybridSearch } from '../lib/search.js'
 import { searchResponseSchema } from '../schemas/search.schema.js'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
@@ -52,6 +52,26 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     db: deps.db,
   }
 
+  /**
+   * Stream C / C2: read MCP `clientInfo` (Implementation: `{name, version}`)
+   * from the underlying SDK Server. Returns null until the client has
+   * completed the `initialize` handshake. Persisted by the write
+   * handlers to `entries.source_client` (raw_sources) and to the
+   * fragment audit_log detail.
+   */
+  const readClientInfo = (): {
+    name: string
+    version?: string
+    [key: string]: unknown
+  } | null => {
+    const impl = server.server.getClientVersion()
+    if (!impl) return null
+    return {
+      name: impl.name,
+      ...(impl.version ? { version: impl.version } : {}),
+    }
+  }
+
   /***********************************************************************
    * ## Tools — Write operations
    ***********************************************************************/
@@ -66,7 +86,11 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
       },
     },
     async ({ content, source }, extra) => {
-      return handleLogEntry(deps, { content, source }, extra.authInfo?.clientId as string)
+      return handleLogEntry(
+        deps,
+        { content, source, sourceClient: readClientInfo() },
+        extra.authInfo?.clientId as string
+      )
     }
   )
 
@@ -89,7 +113,7 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     async ({ content, threadSlug, title, tags }, extra) => {
       return handleLogFragment(
         deps,
-        { content, threadSlug, title, tags },
+        { content, threadSlug, title, tags, sourceClient: readClientInfo() },
         extra.authInfo?.clientId as string
       )
     }
@@ -456,6 +480,64 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
       return handleCreateWikiType(deps, { slug, name, shortDescriptor, descriptor, prompt })
     }
   )
+
+  /***********************************************************************
+   * ## Skills (Stream C / C4)
+   ***********************************************************************/
+
+  server.registerTool(
+    'list_skills',
+    {
+      description:
+        'List skill wikis: the metadata index of every wiki stored under ' +
+        'the `skill` wiki_type. Returns slug, name, description, and version, ' +
+        'sorted by most-recently updated. Read-only; the wiki body is not ' +
+        'included (fetch it via `get_wiki` when needed). Useful when a Claude ' +
+        'session needs to discover which skills the user has captured into ' +
+        'their Robin (the Capture pack plus any user-authored skill wikis).',
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const rows = await deps.db
+          .select({
+            slug: wikis.slug,
+            name: wikis.name,
+            description: wikis.description,
+            lookupKey: wikis.lookupKey,
+            updatedAt: wikis.updatedAt,
+            // The wiki_types row carries the version the skill was based on
+            // (basedOnVersion). Surfaced as `version` for callers that
+            // want to detect drift against the YAML defaults.
+            version: wikiTypes.basedOnVersion,
+          })
+          .from(wikis)
+          .leftJoin(wikiTypes, eq(wikis.type, wikiTypes.slug))
+          .where(and(eq(wikis.type, 'skill'), isNull(wikis.deletedAt)))
+          .orderBy(sql`${wikis.updatedAt} DESC`)
+
+        const skills = rows.map((r) => ({
+          slug: r.slug,
+          name: r.name,
+          description: r.description,
+          lookupKey: r.lookupKey,
+          version: r.version ?? null,
+          updatedAt: r.updatedAt,
+        }))
+
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ skills }) }],
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }],
+          isError: true as const,
+        }
+      }
+    }
+  )
+
   /***********************************************************************
    * ## Timeline
    ***********************************************************************/

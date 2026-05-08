@@ -130,6 +130,18 @@ export interface PersistDeps {
   mergePersonAliases: (personKey: string, newAliases: string[]) => Promise<void>
   /** Optional callback fired after a new person is created (for audit logging). */
   onPersonCreated?: (personKey: string, name: string) => void
+  /**
+   * Optional Phase A3 hook. Fired once per embedText call inside persist
+   * with the input length and elapsed time so core can write a
+   * usage_events row with stage='embed'. Per-fragment context (fragmentKey)
+   * is available because the loop knows which fragment each vector is for.
+   */
+  onEmbedUsage?: (info: {
+    fragmentKey: string
+    inputChars: number
+    durationMs: number
+    success: boolean
+  }) => Promise<void> | void
   emitEvent: EmitEvent
   openRouterConfig: OpenRouterConfig
 }
