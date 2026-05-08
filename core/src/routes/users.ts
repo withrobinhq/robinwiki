@@ -418,6 +418,23 @@ usersRouter.post('/regenerate-mcp', async (c) => {
   )
 })
 
+// GET /users/settings/outstanding — counters surfaced on the settings page.
+//
+// Stream D / D5 (#258): the "Run now" button calls
+// POST /admin/backfill/fragment-relationships, then re-fetches this endpoint
+// to refresh the displayed numbers. Wave A4's broader outstanding-counters
+// page reads from here as a single source of truth — extending this shape
+// is preferable to spinning up a parallel endpoint.
+usersRouter.get('/settings/outstanding', async (c) => {
+  const { getOutstandingBackfillState } = await import(
+    '../queue/fragment-relationship-backfill-worker.js'
+  )
+  const backfill = await getOutstandingBackfillState()
+  return c.json({
+    fragmentRelationshipBackfill: backfill,
+  })
+})
+
 // DELETE /users/account — delete user entirely
 usersRouter.delete('/account', async (c) => {
   const userId = c.get('userId') as string

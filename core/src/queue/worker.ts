@@ -59,6 +59,7 @@ import { producer } from './producer.js'
 import { processRegenJob, processRegenBatchJob } from './regen-worker.js'
 import { processEmbeddingRetryJob } from './embedding-retry-worker.js'
 import { processPrunePipelineEventsJob } from './prune-pipeline-events-worker.js'
+import { processFragmentRelationshipBackfillJob } from './fragment-relationship-backfill-worker.js'
 import type { SchedulerJob } from '@robin/queue'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
 import { generateKeypair } from '../keypair.js'
@@ -734,6 +735,9 @@ async function dispatchSchedulerJob(job: SchedulerJob): Promise<JobResult> {
   if (job.type === 'regen-batch') return processRegenBatchJob(job)
   if (job.type === 'embedding-retry') return processEmbeddingRetryJob(job)
   if (job.type === 'prune-pipeline-events') return processPrunePipelineEventsJob(job)
+  if (job.type === 'fragment-relationship-backfill') {
+    return processFragmentRelationshipBackfillJob(job)
+  }
   // Unreachable given the SchedulerJob union; keep a loud log for safety.
   const exhaustive: never = job
   log.error({ job: exhaustive }, 'unknown scheduler job type')

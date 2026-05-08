@@ -1,0 +1,7 @@
+{
+  "input": "Initially I thought we should ship MCP token expiry in v1.\n\nActually, no — Andrew confirmed JWT is stable forever and revocation rides on mcpTokenVersion bump only.\n\nSo the v1 plan is no expiry, version-bump revocation only.",
+  "expectedCount": { "min": 1, "max": 3 },
+  "mustContain": ["JWT is stable forever", "mcpTokenVersion", "version-bump revocation"],
+  "mustNotContain": ["initially i thought"],
+  "notes": "Self-correction (changed mind mid-thought). The retracted claim should not become a standalone fragment."
+}

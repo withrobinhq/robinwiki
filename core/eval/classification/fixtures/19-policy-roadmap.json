@@ -1,0 +1,6 @@
+{
+  "input": "The data retention policy ships in v2 — 90-day raw_sources rolling window with opt-out. Roadmap-blocked on the legal review.",
+  "expected": ["policy-decisions", "product-roadmap"],
+  "forbidden": ["health", "culinary"],
+  "notes": "Policy + roadmap cross-landing. Two wikis."
+}

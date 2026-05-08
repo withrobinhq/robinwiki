@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { eq, inArray, or, sql } from 'drizzle-orm'
-import type { LinkJob } from '@robin/queue'
+import { QUEUE_NAMES, signJob, type LinkJob } from '@robin/queue'
 import { db } from '../db/client.js'
 import { fragments, entries, auditLog, pipelineEvents, usageEvents } from '../db/schema.js'
 import { producer } from '../queue/producer.js'
@@ -247,4 +247,41 @@ adminRoutes.get('/diagnose/:entryKey', async (c) => {
       createdAt: r.createdAt?.toISOString() ?? null,
     })),
   })
+})
+
+/**
+ * POST /admin/backfill/fragment-relationships
+ *
+ * Stream D / D5 (#258) — manual trigger for the fragment-relationship
+ * backfill worker. Enqueues a job onto the scheduler queue so the same
+ * worker that runs the cron handles the run; the cron path stays unchanged.
+ *
+ * Session-authenticated. Returns { enqueued, jobId } immediately — the
+ * actual O(n²) cosine sweep runs out-of-band on the scheduler worker.
+ *
+ * The /settings/outstanding endpoint surfaces the run state counter that
+ * the UI's "Run now" button reads.
+ */
+adminRoutes.post('/backfill/fragment-relationships', async (c) => {
+  const jobId = `fragment-relationship-backfill-${crypto.randomUUID()}`
+  const queue = producer.getQueue(QUEUE_NAMES.scheduler)
+
+  try {
+    await queue.add(
+      'fragment-relationship-backfill',
+      signJob({
+        type: 'fragment-relationship-backfill',
+        jobId,
+        triggeredBy: 'manual',
+        enqueuedAt: new Date().toISOString(),
+      }),
+      { jobId },
+    )
+    log.info({ jobId }, 'enqueued manual fragment-relationship backfill')
+    return c.json({ enqueued: true, jobId })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.error({ jobId, err: message }, 'failed to enqueue manual backfill')
+    return c.json({ enqueued: false, error: message }, 500)
+  }
 })

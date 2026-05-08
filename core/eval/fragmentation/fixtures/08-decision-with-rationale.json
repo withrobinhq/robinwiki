@@ -1,0 +1,7 @@
+{
+  "input": "Decided to retract the supersession primitive on 2026-05-07.\n\nThe migration cascade was too costly for v1 — three separate read paths (fragment detail, wiki regen, search) would all need to know about the supersedes_id column.\n\nEvolution will be captured via the existing edits table snapshots and audit_log emissions instead.",
+  "expectedCount": { "min": 2, "max": 4 },
+  "mustContain": ["retract", "supersession primitive", "migration cascade", "edits table"],
+  "mustNotContain": [],
+  "notes": "Decision + rationale. Decision and rationale should be separable fragments."
+}

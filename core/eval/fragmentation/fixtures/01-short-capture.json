@@ -1,0 +1,7 @@
+{
+  "input": "Auth tokens should rotate every 24 hours. Refresh tokens get a sliding 30-day window.\n\nCookie storage is fine for the SPA but mobile clients need a secure keychain.",
+  "expectedCount": { "min": 2, "max": 3 },
+  "mustContain": ["auth tokens", "refresh tokens", "mobile clients"],
+  "mustNotContain": ["i think", "kind of"],
+  "notes": "Short capture, two distinct claims. Tests the basic split."
+}

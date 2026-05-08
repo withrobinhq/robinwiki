@@ -50,6 +50,13 @@
       "when": 1778457602000,
       "tag": "0008_wikis_dirty_state_and_auto_regen",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778457602000,
+      "tag": "0009_edits_before_after_columns",
+      "breakpoints": true
     }
   ]
 }

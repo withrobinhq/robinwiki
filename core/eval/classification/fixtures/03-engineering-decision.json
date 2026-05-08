@@ -1,0 +1,6 @@
+{
+  "input": "Decided to use BullMQ for the queue layer — Redis is already a dependency and the API surface is closer to what the regen worker needs than what raw Redis Streams gives us.",
+  "expected": ["engineering-decisions"],
+  "forbidden": ["retail-operations", "customer-segments"],
+  "notes": "Engineering decision with rationale. Should land in engineering-decisions only."
+}

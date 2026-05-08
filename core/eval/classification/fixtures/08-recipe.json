@@ -1,0 +1,6 @@
+{
+  "input": "Tweaked the sourdough recipe — 80% hydration, overnight cold proof, scored deeper than usual. Best crumb yet.",
+  "expected": ["culinary"],
+  "forbidden": ["health", "engineering-decisions"],
+  "notes": "Cooking note. Single-wiki landing."
+}

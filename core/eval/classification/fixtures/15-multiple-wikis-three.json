@@ -1,0 +1,6 @@
+{
+  "input": "Q3 OKR: launch retail customer self-service portal. Engineering owns the backend, product owns the discovery flow, customer-segments team owns the rollout taxonomy.",
+  "expected": ["product-roadmap", "retail-operations", "customer-segments", "engineering-decisions"],
+  "forbidden": ["health", "travel"],
+  "notes": "Quadruple-wiki landing. Tests recall on rich cross-cutting statements."
+}

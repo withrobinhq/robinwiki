@@ -1,0 +1,7 @@
+{
+  "input": "The MCP JWT is stable forever — there's no expiry. Revocation is mcpTokenVersion bump only.",
+  "expectedCount": { "min": 1, "max": 2 },
+  "mustContain": ["MCP JWT", "stable forever"],
+  "mustNotContain": [],
+  "notes": "Single tightly-coupled claim. Over-fragmentation here splits 'no expiry' from its qualifier."
+}

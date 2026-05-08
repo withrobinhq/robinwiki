@@ -201,6 +201,12 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
         .set({ embedding: wikiVec })
         .where(eq(wikis.lookupKey, lookupKey))
 
+      // D6 (empty-wiki bootstrap) is deferred to a follow-up PR. Stream G's
+      // wiki_agent_schema table (PR #326) is the destination; this slice
+      // requires G to merge first so the schema is in main. Once G is in,
+      // a follow-up writes a kind='description' row here using G's shape
+      // (wiki_key + content + embedding + generator_version='hyde_v1').
+
       const candidates = await db
         .select({
           lookupKey: fragments.lookupKey,

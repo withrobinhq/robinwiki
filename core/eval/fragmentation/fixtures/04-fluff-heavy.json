@@ -1,0 +1,7 @@
+{
+  "input": "So I was thinking, you know, like, the migration process. Basically, we should probably move the auth schema first.\n\nI mean, it's kind of obvious in hindsight, but the dependency order matters a lot.\n\nUm, also, the indexes on the user table need to be rebuilt.",
+  "expectedCount": { "min": 2, "max": 3 },
+  "mustContain": ["auth schema first", "dependency order", "indexes"],
+  "mustNotContain": ["you know", "kind of obvious", "um", "basically"],
+  "notes": "Fluff-heavy capture. Tests the v6 fluff-stripping behaviour — filler must not survive."
+}

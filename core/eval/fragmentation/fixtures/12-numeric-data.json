@@ -1,0 +1,7 @@
+{
+  "input": "Embedding cost: $0.13 per million tokens at OpenAI's text-embedding-3-small.\n\nAt our current corpus growth rate (~10k fragments/month), monthly embedding spend is under $5.\n\nThe partial index on (deleted_at IS NULL AND embedding IS NULL) keeps the retry scan O(unembedded) regardless of corpus size.",
+  "expectedCount": { "min": 2, "max": 4 },
+  "mustContain": ["$0.13", "10k fragments/month", "partial index"],
+  "mustNotContain": [],
+  "notes": "Numeric facts. Each number anchors its own fragment — splitting must preserve the figure with its claim."
+}

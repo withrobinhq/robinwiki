@@ -1,0 +1,6 @@
+{
+  "input": "Enterprise customers split into two segments: legacy (signed before 2024) and new-form (signed after).",
+  "expected": ["customer-segments"],
+  "forbidden": ["health", "travel", "culinary"],
+  "notes": "Single-wiki landing. Customer segmentation is the obvious fit."
+}

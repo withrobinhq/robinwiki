@@ -8,6 +8,7 @@ import { applyFragmentTitleDatePrefix } from '../lib/fragmentTitlePrefix.js'
 import { sessionMiddleware } from '../middleware/session.js'
 import { db } from '../db/client.js'
 import { fragments, entries, edges, wikis, people, edits, auditLog } from '../db/schema.js'
+import { nanoid } from '../lib/id.js'
 import { producer } from '../queue/producer.js'
 import { logger } from '../lib/logger.js'
 import { validationHook } from '../lib/validation.js'
@@ -327,13 +328,44 @@ fragmentsRouter.put('/:id', zValidator('json', updateFragmentBodySchema, validat
     .where(eq(fragments.lookupKey, id))
     .returning()
 
+  // D1' — emit an edit-history snapshot when content changed. The Stream A5
+  // GET /fragments/:id/history endpoint and Stream F4's evolution timeline
+  // both read from this table; without a row per PUT the visual is blank.
+  // Title-only edits don't snapshot — there's no diffable content delta to
+  // show on the timeline. Failure here is non-fatal: the fragment is already
+  // updated above and the audit row below still surfaces the edit.
+  let editId: string | null = null
+  if (body.content != null && body.content !== existing.content) {
+    editId = nanoid()
+    try {
+      await db.insert(edits).values({
+        id: editId,
+        objectType: 'fragment',
+        objectId: id,
+        type: 'edit',
+        content: existing.content ?? '',
+        contentBefore: existing.content ?? '',
+        contentAfter: body.content,
+        source: 'api',
+        diff: '',
+      })
+    } catch (err) {
+      log.warn({ fragmentKey: id, err }, 'failed to insert fragment edit snapshot')
+      editId = null
+    }
+  }
+
   await emitAuditEvent(db, {
     entityType: 'fragment',
     entityId: id,
-    eventType: 'edited',
+    eventType: 'fragment.updated',
     source: 'api',
     summary: 'Fragment updated',
-    detail: { fragmentKey: id, changedFields: Object.keys(updates).filter(k => k !== 'updatedAt') },
+    detail: {
+      fragmentKey: id,
+      changedFields: Object.keys(updates).filter((k) => k !== 'updatedAt'),
+      editId,
+    },
   })
 
   return c.json(fragmentResponseSchema.parse({ ...fragment, id: fragment.lookupKey }))

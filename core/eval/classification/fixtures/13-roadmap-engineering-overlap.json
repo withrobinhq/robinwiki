@@ -1,0 +1,6 @@
+{
+  "input": "Decided to ship the wiki-types creation form in v1.5 instead of v1 — the MCP tool covers the use case for now and the web form complexity isn't worth blocking the freeze.",
+  "expected": ["engineering-decisions", "product-roadmap"],
+  "forbidden": ["health", "travel"],
+  "notes": "Cross-wiki: the decision is both engineering and roadmap-relevant."
+}

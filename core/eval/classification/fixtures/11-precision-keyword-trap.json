@@ -1,0 +1,6 @@
+{
+  "input": "Reading 'The Customer Funded Business' — interesting take on bootstrapped financing for early-stage retail.",
+  "expected": ["reading-list"],
+  "forbidden": ["customer-segments", "finance", "retail-operations"],
+  "notes": "Precision trap: contains 'customer', 'financing', 'retail' but it's a reading log. Description-as-signal must beat keyword match."
+}

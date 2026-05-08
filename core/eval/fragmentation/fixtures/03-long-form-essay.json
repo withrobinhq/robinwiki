@@ -1,0 +1,7 @@
+{
+  "input": "The fragmentation problem is fundamentally about atomicity. Each fragment should express exactly one claim — no more, no less.\n\nIf a fragment combines two claims, retrieval blurs them together and the user can't recognize either as their own thinking.\n\nIf a fragment splits a single claim, the surrounding context is lost and the claim becomes nonsensical on its own.\n\nThe practical heuristic is: can a reader understand this fragment without the others? If yes, it's atomic. If it leaves a dangling pronoun or an unresolved reference, it's split too far.\n\nPrompt-engineering this is harder than it looks because LLMs default to either over-fragmenting (every sentence becomes a fragment) or under-fragmenting (entire paragraphs collapse into one).\n\nThe fix is concrete examples in the prompt of both failure modes and the correct middle ground.",
+  "expectedCount": { "min": 5, "max": 8 },
+  "mustContain": ["atomicity", "one claim", "dangling pronoun", "over-fragmenting", "under-fragmenting"],
+  "mustNotContain": ["fundamentally"],
+  "notes": "Long-form essay. Tests the recognition criterion for non-trivial corpora."
+}

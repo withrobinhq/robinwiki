@@ -1,0 +1,7 @@
+{
+  "input": "The bouncer-mode design (#185) coordinates with the recovery-cookie work (#304) — both touch the auth middleware in core/src/middleware/session.ts.\n\nReview-mode wikis hold pending edges with deleted_at = now() until the user accepts via POST /fragments/:id/accept.",
+  "expectedCount": { "min": 2, "max": 3 },
+  "mustContain": ["bouncer-mode", "recovery-cookie", "review-mode wikis"],
+  "mustNotContain": [],
+  "notes": "Cross-references multiple GitHub issues. Should not split issue numbers from their context."
+}

@@ -1,0 +1,7 @@
+{
+  "input": "The wiki regen pipeline takes about 8 seconds for a 50-fragment wiki on production hardware.\n\nWe should consider streaming the wiki body back to the client instead of waiting for the full regen to complete.\n\nOpen question: does Stream G's hybrid search benefit from the streamed partial results, or does it need the final embedding before it can run?",
+  "expectedCount": { "min": 3, "max": 3 },
+  "mustContain": ["8 seconds", "streaming the wiki body", "hybrid search"],
+  "mustNotContain": [],
+  "notes": "Mix of fact, suggestion, and open question. Three distinct fragments — each is its own modal."
+}

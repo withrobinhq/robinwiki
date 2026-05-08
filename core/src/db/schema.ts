@@ -387,9 +387,27 @@ export const edits = pgTable(
     content: text('content').notNull(),
     source: text('source').notNull().default('user'),
     diff: text('diff').notNull().default(''),
+    // Stream D / D1' — fragment edit audit. PUT /fragments/:id writes the
+    // pre-edit content into `contentBefore` and the post-edit content into
+    // `contentAfter`. The existing wiki-edit pattern in content.ts still
+    // populates only `content`; both columns stay nullable so they coexist.
+    contentBefore: text('content_before'),
+    contentAfter: text('content_after'),
   },
   (t) => [index('edits_object_idx').on(t.objectType, t.objectId)]
 )
+
+// ─── Wiki Agent Schema (Stream D/G — machine-side retrieval index) ───
+//
+// Per-wiki rows describing what the machine indexes for retrieval.
+// `kind='description'` is the bootstrap signal populated from
+// wikis.description on wiki create (Stream D / D6). `kind='hyde_synthetic'`
+// is the synthetic question/answer pair Stream G writes when the wiki has
+// fragments to summarise. Unique (wiki_id, kind) so refreshing a kind is
+// an UPDATE, not a second INSERT.
+// `wikiAgentSchema` is owned by Stream G (PR #326). D6 empty-wiki bootstrap
+// is deferred to a follow-up PR after G merges, which will write the
+// kind='description' row from wikis.description into Stream G's schema.
 
 // ─── Edges ───
 

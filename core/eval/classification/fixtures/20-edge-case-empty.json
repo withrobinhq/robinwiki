@@ -1,0 +1,6 @@
+{
+  "input": "ok",
+  "expected": [],
+  "forbidden": ["health", "engineering-decisions", "policy-decisions", "retail-operations"],
+  "notes": "Edge case: too-short fragment. Should not classify into any wiki — bouncer-mode should reject."
+}

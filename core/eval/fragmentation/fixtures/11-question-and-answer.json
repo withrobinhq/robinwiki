@@ -1,0 +1,7 @@
+{
+  "input": "Why did we pick OpenRouter over direct OpenAI?\n\nOpenRouter gives us a single API surface across providers — switching from gpt-4o to claude-sonnet is a config change, not a code change. The per-token markup is acceptable at our volume.",
+  "expectedCount": { "min": 1, "max": 3 },
+  "mustContain": ["OpenRouter", "single API surface", "config change"],
+  "mustNotContain": [],
+  "notes": "Self-Q&A. The answer is the substantive content; the question can stay or fold."
+}
