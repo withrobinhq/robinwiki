@@ -4,7 +4,7 @@
 
 Talk to Robin through Claude Desktop, the web, or any MCP client. It listens, breaks what you say into atomic ideas, and files them into topic-clustered wikis you can search and edit. The point: capture without the friction of categorizing, then trust that whatever you said in March is one search away in November.
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/1hBtzC?referralCode=55-uGO&utm_medium=integration&utm_source=template&utm_campaign=github)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/robinwiki?referralCode=55-uGO&utm_medium=readme&utm_source=github&utm_campaign=deploy-button)
 
 ## Table of Contents
 
@@ -80,7 +80,7 @@ We've optimized deployments for Railway. Three strategies, in increasing order o
 
 ### Strategy 1 — Template
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/1hBtzC?referralCode=55-uGO&utm_medium=integration&utm_source=template&utm_campaign=github)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/robinwiki?referralCode=55-uGO&utm_medium=readme&utm_source=github&utm_campaign=deploy-button)
 
 Connects directly to upstream. Auto-updates whenever we push to `main`.
 **You can't customize the code, and your instance redeploys when we update upstream — including breaking changes.**
