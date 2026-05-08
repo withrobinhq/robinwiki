@@ -13,6 +13,7 @@ import {
   LogOut,
   Pencil,
   RefreshCw,
+  Network,
 } from "lucide-react";
 import { T, FONT } from "@/lib/typography";
 import { ModelSelector } from "@/components/ModelSelector";
@@ -42,7 +43,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { useStats } from "@/hooks/useStats";
 import { useLogout } from "@/hooks/useLogout";
 import { useChangePassword } from "@/hooks/useChangePassword";
-import { exportUserData, regenerateMcpEndpoint, revealUserKeypair } from "@/lib/api";
+import { regenerateMcpEndpoint, revealUserKeypair } from "@/lib/api";
 import { passwordPromptDialog } from "@/lib/passwordPromptDialog";
 
 const sectionLabel: CSSProperties = {
@@ -166,12 +167,29 @@ export default function ProfilePage() {
     URL.revokeObjectURL(url);
   };
 
+  const triggerBlobDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // The zip endpoint streams a binary archive. The generated SDK parses
+  // responses as JSON, so we hit the route directly with fetch and pull
+  // the body as a Blob.
   const handleExportData = async () => {
     try {
-      const { data } = await exportUserData({ credentials: "include" });
-      if (data) triggerJsonDownload(data, "robin-export.json");
+      const res = await fetch("/api/users/export?format=zip", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      triggerBlobDownload(blob, "robin-export.zip");
     } catch {
-      // silently fail — user sees no download
+      // silently fail; user sees no download
     }
   };
 
@@ -561,7 +579,7 @@ export default function ProfilePage() {
             <CardContent className="space-y-5">
               <ActionRow
                 title="Export all data"
-                description="Download all wikis and people as JSON"
+                description="Download wikis, entries, fragments, people, and graph as a zip"
                 icon={<Download className="size-4" strokeWidth={1.5} />}
                 onClick={handleExportData}
               />
@@ -570,6 +588,12 @@ export default function ProfilePage() {
                 description="Download your Ed25519 public and private key as JSON"
                 icon={<KeyRound className="size-4" strokeWidth={1.5} />}
                 onClick={handleExportKeypair}
+              />
+              <ActionRow
+                title="Data flow and providers"
+                description="See which external endpoints Robin's pipeline calls"
+                icon={<Network className="size-4" strokeWidth={1.5} />}
+                onClick={() => router.push("/settings/providers")}
               />
               {keypairError && (
                 <p style={{ ...T.micro, color: "var(--destructive)", margin: 0 }}>

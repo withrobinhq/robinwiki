@@ -33,6 +33,12 @@ vi.mock('@robin/agent', async (importOriginal) => {
       wikiWriter: {},
     })),
     createTypedCaller: vi.fn(() => fakeCallLlm),
+    // Phase A3: regen.ts switched from createTypedCaller to withTypedUsage
+    // for the wikiWriter call so cost telemetry can attach. Mock returns
+    // the same fakeCallLlm so existing assertions keep working; the usage
+    // record callback is never invoked in this mock path because the
+    // fake bypasses agent.generate() entirely.
+    withTypedUsage: vi.fn(() => fakeCallLlm),
     embedText: vi.fn(async () => null),
   }
 })

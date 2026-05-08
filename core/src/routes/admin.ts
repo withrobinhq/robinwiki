@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { eq, inArray, or, sql } from 'drizzle-orm'
 import type { LinkJob } from '@robin/queue'
 import { db } from '../db/client.js'
-import { fragments, entries, auditLog, pipelineEvents } from '../db/schema.js'
+import { fragments, entries, auditLog, pipelineEvents, usageEvents } from '../db/schema.js'
 import { producer } from '../queue/producer.js'
 import { logger } from '../lib/logger.js'
 import { sessionMiddleware } from '../middleware/session.js'
@@ -175,6 +175,45 @@ adminRoutes.get('/diagnose/:entryKey', async (c) => {
           .where(inArray(fragments.lookupKey, fragmentKeys))
       : []
 
+  // Phase A3 — usage_events rows for the same job_ids and entry_key.
+  // Surfaces alongside pipeline_events so an operator can see "this
+  // capture cost $0.0023 across 4 stages" in one place.
+  const usageRows = await db
+    .select()
+    .from(usageEvents)
+    .where(
+      or(
+        eq(usageEvents.entryKey, entryKey),
+        jobIds.length
+          ? sql`${usageEvents.jobId} = ANY(ARRAY[${sql.join(
+              jobIds.map((j) => sql`${j}`),
+              sql`, `
+            )}])`
+          : sql`false`,
+      ),
+    )
+    .orderBy(sql`${usageEvents.createdAt} DESC`)
+    .limit(500)
+
+  const usageTotals = usageRows.reduce(
+    (acc, r) => {
+      acc.totalTokens += r.totalTokens
+      acc.costUsdMicros += r.costUsdMicros
+      acc.byStage[r.stage] = acc.byStage[r.stage] ?? {
+        totalTokens: 0,
+        costUsdMicros: 0,
+      }
+      acc.byStage[r.stage].totalTokens += r.totalTokens
+      acc.byStage[r.stage].costUsdMicros += r.costUsdMicros
+      return acc
+    },
+    {
+      totalTokens: 0,
+      costUsdMicros: 0,
+      byStage: {} as Record<string, { totalTokens: number; costUsdMicros: number }>,
+    },
+  )
+
   return c.json({
     entryKey,
     entry: entryRow
@@ -193,6 +232,11 @@ adminRoutes.get('/diagnose/:entryKey', async (c) => {
       ...r,
       createdAt: r.createdAt.toISOString(),
     })),
+    usageEvents: usageRows.map((r) => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+    })),
+    usageTotals,
     fragments: fragmentRows.map((r) => ({
       lookupKey: r.lookupKey,
       slug: r.slug,

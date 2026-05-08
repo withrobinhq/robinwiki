@@ -23,11 +23,13 @@ import {
   createIngestAgents,
   embedText,
   DEFAULT_RESOLUTION_CONFIG,
-  createTypedCaller,
+  withTypedUsage,
   NoOpenRouterKeyError,
   type OpenRouterConfig,
   type ExtractionOrchestratorDeps,
   type LinkingOrchestratorDeps,
+  type UsageContext,
+  type UsageRecord,
 } from '@robin/agent'
 import {
   makeLookupKey,
@@ -52,6 +54,7 @@ import { resolveFragmentSlug } from '../db/slug.js'
 import { computeContentHash } from '../db/dedup.js'
 import { emitPipelineEvent, type PipelineStage } from '../db/pipeline-events.js'
 import { emitAuditEvent } from '../db/audit.js'
+import { emitUsageEvent } from '../db/usage-events.js'
 import { producer } from './producer.js'
 import { processRegenJob, processRegenBatchJob } from './regen-worker.js'
 import { processEmbeddingRetryJob } from './embedding-retry-worker.js'
@@ -78,6 +81,61 @@ function emitEvent(event: {
   metadata?: Record<string, unknown>
 }): Promise<void> {
   return emitPipelineEvent(db as never, event)
+}
+
+/**
+ * Build a usage recorder bound to the current OpenRouter config + job
+ * context. The returned recorder writes one usage_events row per
+ * agent.generate() call, keyed by job_id so cost rolls up alongside
+ * pipeline_events for the same job.
+ */
+function buildUsageRecorder(): (
+  context: UsageContext,
+  record: UsageRecord
+) => Promise<void> {
+  return async (context, record) => {
+    await emitUsageEvent(db as never, {
+      entryKey: context.entryKey ?? null,
+      wikiKey: context.wikiKey ?? null,
+      fragmentKey: context.fragmentKey ?? null,
+      userId: context.userId ?? null,
+      sourceClient: context.sourceClient ?? null,
+      stage: context.stage as
+        | 'capture'
+        | 'fragment'
+        | 'classify'
+        | 'regen'
+        | 'embed'
+        | 'search',
+      model: context.model,
+      promptTokens: record.promptTokens,
+      completionTokens: record.completionTokens,
+      durationMs: record.durationMs,
+      jobId: context.jobId ?? null,
+      metadata: record.metadata ?? null,
+    })
+  }
+}
+
+/**
+ * Resolve which model an agent slot maps to. Worker.ts wires four agent
+ * slots (fragmenter / entityExtractor / wikiClassifier / fragScorer) to
+ * the models in the OpenRouter config. The usage recorder needs the
+ * actual model id so the dashboard can attribute cost to the right row
+ * in the hardcoded pricing table (core/src/db/usage-events.ts).
+ */
+function modelForAgent(
+  config: OpenRouterConfig,
+  slot: 'fragmenter' | 'entityExtractor' | 'wikiClassifier' | 'fragScorer'
+): string {
+  switch (slot) {
+    case 'fragmenter':
+    case 'entityExtractor':
+      return config.models.extraction
+    case 'wikiClassifier':
+    case 'fragScorer':
+      return config.models.classification
+  }
 }
 
 async function insertEdgeRow(edge: Record<string, unknown>): Promise<void> {
@@ -137,6 +195,11 @@ async function processExtractionJob(job: ExtractionJob): Promise<JobResult> {
 
   // 2. Fresh Mastra agents per ingest run.
   const agents = createIngestAgents(openRouterConfig)
+  const recordUsage = buildUsageRecorder()
+  // Source client surfaced from the BullMQ payload (mcp.claude / web / api).
+  // Stamped on every usage_events row so the dashboard can break cost down
+  // by where the thought came from.
+  const sourceClient = job.source ?? null
 
   const deps: ExtractionOrchestratorDeps = {
     entryLock,
@@ -152,7 +215,17 @@ async function processExtractionJob(job: ExtractionJob): Promise<JobResult> {
       })
     },
     fragmentDeps: {
-      llmCall: createTypedCaller(agents.fragmenter, fragmentationSchema),
+      llmCall: withTypedUsage(fragmentationSchema, {
+        agent: agents.fragmenter,
+        record: recordUsage,
+        context: () => ({
+          stage: 'fragment',
+          jobId: job.jobId,
+          entryKey: job.entryKey,
+          sourceClient,
+          model: modelForAgent(openRouterConfig, 'fragmenter'),
+        }),
+      }),
       emitEvent,
     },
     entityExtractDeps: {
@@ -170,7 +243,17 @@ async function processExtractionJob(job: ExtractionJob): Promise<JobResult> {
           aliases: r.aliases ?? [],
         }))
       },
-      llmCall: createTypedCaller(agents.entityExtractor, peopleExtractionSchema),
+      llmCall: withTypedUsage(peopleExtractionSchema, {
+        agent: agents.entityExtractor,
+        record: recordUsage,
+        context: () => ({
+          stage: 'capture',
+          jobId: job.jobId,
+          entryKey: job.entryKey,
+          sourceClient,
+          model: modelForAgent(openRouterConfig, 'entityExtractor'),
+        }),
+      }),
       emitEvent,
       config: DEFAULT_RESOLUTION_CONFIG,
       makePeopleKey: () => makeLookupKey('person'),
@@ -178,6 +261,25 @@ async function processExtractionJob(job: ExtractionJob): Promise<JobResult> {
     persistDeps: {
       openRouterConfig,
       emitEvent,
+      // Phase A3 — embedding cost telemetry. The OpenRouter embedding
+      // endpoint does not return token counts; estimate from input chars
+      // (~4 chars/token rule of thumb). Stage='embed', fragmentKey set so
+      // /admin/diagnose can correlate per-fragment.
+      onEmbedUsage: async (info) => {
+        const estTokens = Math.ceil(info.inputChars / 4)
+        await emitUsageEvent(db as never, {
+          entryKey: job.entryKey,
+          fragmentKey: info.fragmentKey,
+          sourceClient,
+          stage: 'embed',
+          model: openRouterConfig.models.embedding,
+          promptTokens: estTokens,
+          completionTokens: 0,
+          durationMs: info.durationMs,
+          jobId: job.jobId,
+          metadata: { inputChars: info.inputChars, success: info.success, estimated: true },
+        })
+      },
       insertEntry: async (entry) => {
         const e = entry as Record<string, unknown>
         const content = (e.content as string) ?? ''
@@ -388,6 +490,7 @@ async function processLinkJob(job: LinkJob): Promise<JobResult> {
 
   const openRouterConfig = await loadOpenRouterConfig()
   const agents = createIngestAgents(openRouterConfig)
+  const recordUsage = buildUsageRecorder()
 
   const deps: LinkingOrchestratorDeps = {
     fragmentLock,
@@ -437,14 +540,47 @@ async function processLinkJob(job: LinkJob): Promise<JobResult> {
           .limit(1)
         return row?.name ?? null
       },
-      llmCall: createTypedCaller(agents.wikiClassifier, wikiClassificationSchema),
+      llmCall: withTypedUsage(wikiClassificationSchema, {
+        agent: agents.wikiClassifier,
+        record: recordUsage,
+        context: () => ({
+          stage: 'classify',
+          jobId: job.jobId,
+          entryKey: job.entryKey,
+          fragmentKey: job.fragmentKey,
+          model: modelForAgent(openRouterConfig, 'wikiClassifier'),
+        }),
+      }),
       emitEvent,
     },
     fragRelateDeps: {
       vectorSearch: async (content, limit) => {
+        const tEmbed0 = performance.now()
         const vec = await embedText(content, {
           apiKey: openRouterConfig.apiKey,
           model: openRouterConfig.models.embedding,
+        })
+        const embedMs = Math.round(performance.now() - tEmbed0)
+        // Phase A3 — embedding cost telemetry for the link path's
+        // vector-search probe. Stage='embed', token count estimated
+        // from input chars (~4 chars/token).
+        await emitUsageEvent(db as never, {
+          entryKey: job.entryKey,
+          fragmentKey: job.fragmentKey,
+          stage: 'embed',
+          model: openRouterConfig.models.embedding,
+          promptTokens: Math.ceil(content.length / 4),
+          completionTokens: 0,
+          durationMs: embedMs,
+          jobId: job.jobId,
+          metadata: {
+            inputChars: content.length,
+            success: vec !== null,
+            estimated: true,
+            substage: 'link-vectorsearch',
+          },
+        }).catch(() => {
+          // Cost-logging must not block the link worker.
         })
         if (!vec) return []
         const rows = await db
@@ -463,7 +599,17 @@ async function processLinkJob(job: LinkJob): Promise<JobResult> {
           .limit(1)
         return row?.title ?? null
       },
-      llmCall: createTypedCaller(agents.fragScorer, fragmentRelevanceSchema),
+      llmCall: withTypedUsage(fragmentRelevanceSchema, {
+        agent: agents.fragScorer,
+        record: recordUsage,
+        context: () => ({
+          stage: 'classify',
+          jobId: job.jobId,
+          entryKey: job.entryKey,
+          fragmentKey: job.fragmentKey,
+          model: modelForAgent(openRouterConfig, 'fragScorer'),
+        }),
+      }),
       emitEvent,
     },
     insertEdge: async (edge: Record<string, unknown>) => {
