@@ -37,6 +37,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "Robin Wiki",
   description: "Your personal knowledge base",
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({
