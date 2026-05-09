@@ -1,7 +1,28 @@
-import { loadWikiClassificationSpec } from '@robin/shared'
+import { loadWikiClassificationSpec, type CitationSpan } from '@robin/shared'
 import type { StageResult, WikiClassifyDeps, WikiClassifyResult } from './types.js'
 
 const THRESHOLD = Number(process.env.WIKI_CLASSIFY_THRESHOLD) || 0.65
+
+/**
+ * Drop spans whose `text` does not match `fragmentContent.slice(start, end)`.
+ * The contract with Marcel is that offsets are zero-based, half-open, and
+ * the literal text is verbatim from the fragment. Anything that doesn't
+ * round-trip is the LLM hallucinating offsets, so we discard rather than
+ * persist a misleading span. Returns undefined when nothing survives.
+ */
+function validateSpans(
+  spans: CitationSpan[] | undefined,
+  fragmentContent: string
+): CitationSpan[] | undefined {
+  if (!spans || spans.length === 0) return undefined
+  const valid: CitationSpan[] = []
+  for (const span of spans) {
+    if (span.start < 0 || span.end > fragmentContent.length || span.start >= span.end) continue
+    if (fragmentContent.slice(span.start, span.end) !== span.text) continue
+    valid.push(span)
+  }
+  return valid.length > 0 ? valid : undefined
+}
 
 /**
  * Wiki classification stage.
@@ -62,7 +83,11 @@ export async function wikiClassify(
 
   const wikiEdges = result.assignments
     .filter((a) => a.confidence >= THRESHOLD)
-    .map((a) => ({ wikiKey: a.wikiKey, score: a.confidence }))
+    .map((a) => ({
+      wikiKey: a.wikiKey,
+      score: a.confidence,
+      citationSpans: validateSpans(a.citationSpans, input.fragmentContent),
+    }))
 
   await deps.emitEvent({
     entryKey: input.entryKey,
@@ -85,6 +110,7 @@ export async function wikiClassify(
         wikiKey: a.wikiKey,
         confidence: a.confidence,
         reasoning: a.reasoning,
+        citationSpans: validateSpans(a.citationSpans, input.fragmentContent),
       })),
     },
     durationMs: performance.now() - start,
