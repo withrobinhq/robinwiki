@@ -1,5 +1,4 @@
-// TODO(sub-agent-D): uncomment once EgoGraphEditorial.tsx lands.
-// export { EgoGraphEditorial } from "./EgoGraphEditorial";
+export { EgoGraphEditorial } from "./EgoGraphEditorial";
 
 export type {
   EgoNode,
