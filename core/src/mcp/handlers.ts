@@ -57,8 +57,11 @@ import {
 import type { McpResolverDeps } from './resolvers.js'
 import { DEFAULT_RESOLUTION_CONFIG, embedText } from '@robin/agent'
 import type { KnownPerson } from '@robin/agent'
+import { resolveAndWriteRelationship } from '../lib/people/relationship-resolver.js'
+import type { RelationshipInput } from '../lib/people/relationship-resolver.js'
+import { resolvePersonSlug } from '../db/slug.js'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
-import { eq, and, isNull, inArray, ne } from 'drizzle-orm'
+import { eq, and, isNull, inArray, ne, sql } from 'drizzle-orm'
 import { nanoid } from '../lib/id.js'
 import { logger } from '../lib/logger.js'
 import { emitAuditEvent } from '../db/audit.js'
@@ -1316,6 +1319,462 @@ export async function handleRegenNow(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     log.error({ err, userId }, 'mcp regen_now failed')
+    return {
+      content: [{ type: 'text' as const, text: `Error: ${message}` }],
+      isError: true as const,
+    }
+  }
+}
+
+/***********************************************************************
+ * Stream P (#PEOPLE-EXTRACT-Q) — Person CRUD MCP tools
+ ***********************************************************************/
+
+const MAX_NAME_LEN = 200
+
+function appendContextNote(
+  current: { entries: Array<{ note: string; addedAt: string; source: string }> } | null,
+  note: string,
+  source: string
+): { entries: Array<{ note: string; addedAt: string; source: string }> } {
+  const entries = current?.entries ?? []
+  return {
+    entries: [
+      ...entries,
+      { note: note.trim(), addedAt: new Date().toISOString(), source },
+    ],
+  }
+}
+
+/**
+ * Handle the `create_person` MCP tool call.
+ *
+ * @summary Operator-or-AI-agent flow for intentional Person creation.
+ * Always lands the row with status='verified' and created_via='mcp_create',
+ * so MCP creation is the explicit "I know who this is" path that bypasses
+ * the quarantine queue. The quarantine queue is reserved for auto-extraction.
+ */
+export async function handleCreatePerson(
+  deps: McpServerDeps,
+  input: {
+    canonicalName: string
+    aliases?: string[]
+    relationship?: string
+    isOwner?: boolean
+    metadata?: {
+      relationships?: RelationshipInput[]
+      notes?: string
+    }
+  },
+  userId: string | undefined
+) {
+  if (!userId) {
+    return {
+      content: [{ type: 'text' as const, text: 'Error: not authenticated' }],
+      isError: true as const,
+    }
+  }
+  const trimmed = input.canonicalName?.trim() ?? ''
+  if (!trimmed) {
+    return {
+      content: [{ type: 'text' as const, text: 'Error: canonicalName is required' }],
+      isError: true as const,
+    }
+  }
+  if (trimmed.length > MAX_NAME_LEN) {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Error: canonicalName exceeds ${MAX_NAME_LEN} chars`,
+        },
+      ],
+      isError: true as const,
+    }
+  }
+
+  try {
+    // Idempotency: existing canonical name match returns that person.
+    const lower = trimmed.toLowerCase()
+    const [existing] = await deps.db
+      .select({ lookupKey: peopleTable.lookupKey, slug: peopleTable.slug })
+      .from(peopleTable)
+      .where(
+        and(
+          sql`lower(${peopleTable.canonicalName}) = ${lower}`,
+          isNull(peopleTable.deletedAt)
+        )
+      )
+      .limit(1)
+
+    if (existing) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              lookupKey: existing.lookupKey,
+              slug: existing.slug,
+              canonicalName: trimmed,
+              status: 'verified',
+              alreadyExists: true,
+              warning: `Person "${trimmed}" already exists`,
+              resolvedRelationships: [],
+              pendingRelationships: [],
+            }),
+          },
+        ],
+      }
+    }
+
+    const lookupKey = makeLookupKey('person')
+    const slug = await resolvePersonSlug(deps.db, generateSlug(trimmed))
+    const aliases = (input.aliases ?? [])
+      .map((a) => a.trim())
+      .filter((a) => a && a.toLowerCase() !== lower)
+    const contextNotes = input.metadata?.notes
+      ? appendContextNote(null, input.metadata.notes, 'mcp_create')
+      : null
+
+    await deps.db.insert(peopleTable).values({
+      lookupKey,
+      slug,
+      name: trimmed,
+      canonicalName: trimmed,
+      relationship: input.relationship?.trim() ?? '',
+      aliases,
+      verified: true,
+      isOwner: input.isOwner === true,
+      status: 'verified',
+      createdVia: 'mcp_create',
+      contextNotes,
+      state: 'RESOLVED',
+    })
+
+    const resolvedRelationships: Array<unknown> = []
+    const pendingRelationships: Array<unknown> = []
+    for (const rel of input.metadata?.relationships ?? []) {
+      const out = await resolveAndWriteRelationship(deps.db, lookupKey, rel)
+      if (out.resolved) resolvedRelationships.push(out.resolved)
+      if (out.pending) pendingRelationships.push(out.pending)
+    }
+
+    await emitAuditEvent(deps.db, {
+      entityType: 'person',
+      entityId: lookupKey,
+      eventType: 'created',
+      source: 'mcp',
+      summary: `Person created via MCP: ${trimmed}`,
+      detail: {
+        personKey: lookupKey,
+        canonicalName: trimmed,
+        status: 'verified',
+        createdVia: 'mcp_create',
+      },
+    })
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            lookupKey,
+            slug,
+            canonicalName: trimmed,
+            status: 'verified',
+            resolvedRelationships,
+            pendingRelationships,
+          }),
+        },
+      ],
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.error({ err, userId }, 'mcp create_person failed')
+    return {
+      content: [{ type: 'text' as const, text: `Error: ${message}` }],
+      isError: true as const,
+    }
+  }
+}
+
+/**
+ * Handle the `update_person` MCP tool call.
+ *
+ * @summary Apply field updates to an existing Person row. Aliases and
+ * notes append unless `replaceAliases` is set. Pending persons stay
+ * pending unless the caller passes `promoteFromQuarantine: true` —
+ * adding context is a recognition signal but the operator must opt
+ * in before the row becomes graph-visible.
+ */
+export async function handleUpdatePerson(
+  deps: McpServerDeps,
+  input: {
+    personLookupKey: string
+    updates: {
+      canonicalName?: string
+      aliases?: string[]
+      notes?: string
+      relationships?: RelationshipInput[]
+    }
+    options?: {
+      promoteFromQuarantine?: boolean
+      replaceAliases?: boolean
+    }
+  },
+  userId: string | undefined
+) {
+  if (!userId) {
+    return {
+      content: [{ type: 'text' as const, text: 'Error: not authenticated' }],
+      isError: true as const,
+    }
+  }
+  if (!input.personLookupKey?.trim()) {
+    return {
+      content: [{ type: 'text' as const, text: 'Error: personLookupKey is required' }],
+      isError: true as const,
+    }
+  }
+
+  try {
+    const [person] = await deps.db
+      .select()
+      .from(peopleTable)
+      .where(
+        and(
+          eq(peopleTable.lookupKey, input.personLookupKey.trim()),
+          isNull(peopleTable.deletedAt)
+        )
+      )
+      .limit(1)
+    if (!person) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Error: person "${input.personLookupKey}" not found` },
+        ],
+        isError: true as const,
+      }
+    }
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() }
+    const updatedFields: string[] = []
+
+    if (input.updates.canonicalName !== undefined) {
+      const next = input.updates.canonicalName.trim()
+      if (next && next !== person.canonicalName) {
+        updates.canonicalName = next
+        updates.name = next
+        updatedFields.push('canonicalName')
+      }
+    }
+    if (input.updates.aliases !== undefined) {
+      const incoming = input.updates.aliases.map((a) => a.trim()).filter(Boolean)
+      if (input.options?.replaceAliases) {
+        updates.aliases = incoming
+        updatedFields.push('aliases')
+      } else {
+        const existing = person.aliases ?? []
+        const seen = new Set(existing.map((a) => a.toLowerCase()))
+        const merged = [...existing]
+        for (const a of incoming) {
+          if (!seen.has(a.toLowerCase())) {
+            seen.add(a.toLowerCase())
+            merged.push(a)
+          }
+        }
+        if (merged.length !== existing.length) {
+          updates.aliases = merged
+          updatedFields.push('aliases')
+        }
+      }
+    }
+    if (input.updates.notes !== undefined && input.updates.notes.trim()) {
+      const next = appendContextNote(
+        person.contextNotes ?? null,
+        input.updates.notes,
+        'mcp_update'
+      )
+      updates.contextNotes = next
+      updatedFields.push('notes')
+    }
+
+    let promoted = false
+    if (
+      input.options?.promoteFromQuarantine === true &&
+      person.status === 'pending'
+    ) {
+      updates.status = 'verified'
+      updates.verified = true
+      updates.createdVia = person.createdVia ?? 'mcp_update'
+      updatedFields.push('status')
+      promoted = true
+    }
+
+    if (Object.keys(updates).length > 1) {
+      await deps.db
+        .update(peopleTable)
+        .set(updates)
+        .where(eq(peopleTable.lookupKey, person.lookupKey))
+    }
+
+    const resolvedRelationships: Array<unknown> = []
+    const pendingRelationships: Array<unknown> = []
+    for (const rel of input.updates.relationships ?? []) {
+      const out = await resolveAndWriteRelationship(deps.db, person.lookupKey, rel)
+      if (out.resolved) resolvedRelationships.push(out.resolved)
+      if (out.pending) pendingRelationships.push(out.pending)
+    }
+
+    await emitAuditEvent(deps.db, {
+      entityType: 'person',
+      entityId: person.lookupKey,
+      eventType: promoted ? 'promoted' : 'edited',
+      source: 'mcp',
+      summary: promoted
+        ? `Person promoted from quarantine: ${person.canonicalName}`
+        : `Person updated via MCP: ${person.canonicalName}`,
+      detail: {
+        personKey: person.lookupKey,
+        updatedFields,
+        promoted,
+      },
+    })
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            lookupKey: person.lookupKey,
+            status: (updates.status as string | undefined) ?? person.status,
+            updatedFields,
+            resolvedRelationships,
+            pendingRelationships,
+            promoted,
+          }),
+        },
+      ],
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.error({ err, userId }, 'mcp update_person failed')
+    return {
+      content: [{ type: 'text' as const, text: `Error: ${message}` }],
+      isError: true as const,
+    }
+  }
+}
+
+/**
+ * Handle the `add_relationship` MCP tool call.
+ *
+ * @summary Companion tool to {@link handleCreatePerson} and
+ * {@link handleUpdatePerson} — write a single edge between two
+ * existing entities. Idempotent: re-running on the same triple is a
+ * no-op.
+ */
+export async function handleAddRelationship(
+  deps: McpServerDeps,
+  input: {
+    source: string
+    target: string
+    type: 'KNOWS' | 'RELATED_TO' | 'WORKS_AT' | 'AFFILIATED_WITH'
+    attrs?: { note?: string; sourceFragmentId?: string }
+  },
+  userId: string | undefined
+) {
+  if (!userId) {
+    return {
+      content: [{ type: 'text' as const, text: 'Error: not authenticated' }],
+      isError: true as const,
+    }
+  }
+  const sourceTrim = input.source?.trim() ?? ''
+  if (!sourceTrim.startsWith('person:')) {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: 'Error: source must be in form person:<key>',
+        },
+      ],
+      isError: true as const,
+    }
+  }
+  const sourceKey = sourceTrim.slice('person:'.length)
+  const [sourcePerson] = await deps.db
+    .select({ lookupKey: peopleTable.lookupKey })
+    .from(peopleTable)
+    .where(
+      and(eq(peopleTable.lookupKey, sourceKey), isNull(peopleTable.deletedAt))
+    )
+    .limit(1)
+  if (!sourcePerson) {
+    return {
+      content: [
+        { type: 'text' as const, text: `Error: source person "${sourceKey}" not found` },
+      ],
+      isError: true as const,
+    }
+  }
+
+  try {
+    const rel = (input.type === 'KNOWS' || input.type === 'RELATED_TO'
+      ? { type: input.type, target: input.target, ...(input.attrs ?? {}) }
+      : { type: input.type, target: input.target, ...(input.attrs ?? {}) }) as RelationshipInput
+
+    const out = await resolveAndWriteRelationship(deps.db, sourceKey, rel)
+    if (out.pending) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              ok: false,
+              reason: out.pending.reason,
+              target: out.pending.target,
+            }),
+          },
+        ],
+        isError: true as const,
+      }
+    }
+    if (!out.resolved) {
+      return {
+        content: [{ type: 'text' as const, text: 'Error: relationship not resolved' }],
+        isError: true as const,
+      }
+    }
+
+    await emitAuditEvent(deps.db, {
+      entityType: 'person',
+      entityId: sourceKey,
+      eventType: 'relationship_added',
+      source: 'mcp',
+      summary: `Relationship ${out.resolved.edgeType} added`,
+      detail: {
+        edgeId: out.resolved.edgeId,
+        edgeType: out.resolved.edgeType,
+        target: out.resolved.target,
+      },
+    })
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            edgeId: out.resolved.edgeId,
+            edgeType: out.resolved.edgeType,
+            exists: false,
+          }),
+        },
+      ],
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.error({ err, userId }, 'mcp add_relationship failed')
     return {
       content: [{ type: 'text' as const, text: `Error: ${message}` }],
       isError: true as const,
