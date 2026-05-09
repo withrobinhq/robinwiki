@@ -63,24 +63,27 @@ import { applyFragmentTitleDatePrefix } from '../lib/fragmentTitlePrefix.js'
 const log = logger.child({ component: 'mcp' })
 
 /**
- * Read the MCP `clientInfo` snapshot off the deps and shape it for
- * `auditLog.detail.source_client` on entity types that have no dedicated
- * column (fragment, wiki, wiki_type, group). For raw_source entries the
- * value lands on `entries.source_client` directly via the row insert, so
- * the audit detail does not carry it.
+ * Read the MCP `clientInfo` snapshot off the deps and flatten it to the
+ * canonical text label used by the dedicated `source_client` columns on
+ * fragments, wikis, wiki_types, and groups (Stream V, migration 0015).
  *
- * Returns `undefined` if the deps don't carry the accessor (legacy
- * callers, tests) or if the handshake has not yet populated client info.
- * The caller spreads the result into the audit detail object so non-MCP
- * writes don't pick up a junk-drawer key.
+ * Stream V finished the column migration that v0.2.1 started for entries.
+ * Each surface table now carries its own `source_client text` column, so
+ * we flatten the handshake `{name, version}` object to a single text
+ * value (we use `name` because it is the stable identifier; version
+ * would explode cardinality without meaningfully improving queries).
+ *
+ * Returns `null` when no handshake has populated client info (legacy
+ * callers, tests, the SDK never delivering an `initialize` payload).
+ * Callers persist the value on the entity row, not in audit detail.
  */
-function readSourceClient(deps: McpServerDeps): McpClientInfo | undefined {
+function readSourceClient(deps: McpServerDeps): string | null {
   try {
     const info = deps.getClientInfo?.()
-    if (!info?.name) return undefined
-    return info.version ? { name: info.name, version: info.version } : { name: info.name }
+    if (!info?.name) return null
+    return info.name
   } catch {
-    return undefined
+    return null
   }
 }
 
@@ -121,10 +124,12 @@ export interface McpServerDeps {
   /**
    * Lazy accessor for the MCP `clientInfo` handshake. Returns `undefined`
    * before the transport handshake completes (or for non-MCP callers in
-   * tests). Persisted onto `entries.source_client` for raw_source rows
-   * (column write), and onto `audit_log.detail.source_client` for entity
-   * types that have no dedicated column (fragment, wiki, wiki_type,
-   * group).
+   * tests). After Stream V (migration 0015) every surface row that
+   * carries provenance writes the client name to its own `source_client`
+   * column, so the value lands on the entity row regardless of entity
+   * type. Entries store the full `{name, version}` jsonb object; the
+   * other tables (fragments, wikis, wiki_types, groups) store the
+   * flattened name string for queryability.
    */
   getClientInfo?: () => McpClientInfo | undefined
 }
@@ -261,11 +266,12 @@ export async function handleLogFragment(
     title?: string
     tags?: string[]
     /**
-     * MCP `clientInfo` payload (Stream C / C2). The fragments table has
-     * no `source_client` column (migration 0007 only added it to
-     * `raw_sources`), so the value is recorded in the fragment's
-     * audit_log `detail` jsonb instead. Keeps the per-event traceability
-     * without expanding the schema beyond C2 scope.
+     * MCP `clientInfo` payload (Stream C / C2). After Stream V the
+     * fragments table carries its own `source_client text` column
+     * (migration 0015), so the flattened client name lands on the
+     * fragment row at insert time. Audit detail no longer duplicates
+     * the value. Accepts the historical `{name, version}` shape so
+     * callers stay backward-compatible while we drain to text.
      */
     sourceClient?: { name: string; version?: string; [key: string]: unknown } | null
   },
@@ -371,6 +377,15 @@ export async function handleLogFragment(
     const fragSlug = await resolveFragmentSlug(deps.db, generateSlug(title))
     const now = new Date()
 
+    // Stream V: stamp the fragment row with the originating client name
+    // (text column on fragments). Prefer the explicit `input.sourceClient`
+    // when callers shape it directly, otherwise fall back to the lazy
+    // MCP handshake accessor. Result is a flat string so operators can
+    // GROUP BY source_client without unpacking jsonb.
+    const fragmentSourceClient =
+      (typeof input.sourceClient?.name === 'string' && input.sourceClient.name) ||
+      readSourceClient(deps)
+
     // Insert fragment row
     await deps.db.insert(fragmentsTable).values({
       lookupKey: fragKey,
@@ -382,6 +397,7 @@ export async function handleLogFragment(
       state: 'RESOLVED',
       content: trimmed,
       dedupHash: hash,
+      sourceClient: fragmentSourceClient,
     })
 
     // Insert FRAGMENT_IN_WIKI edge
@@ -447,22 +463,20 @@ export async function handleLogFragment(
       .set({ state: 'PENDING', updatedAt: now })
       .where(eq(wikisTable.lookupKey, threadResult.lookupKey))
 
-    const sourceClient = readSourceClient(deps)
     await emitAuditEvent(deps.db, {
       entityType: 'fragment',
       entityId: fragKey,
       eventType: 'created',
       source: 'mcp',
       summary: `Fragment created: ${title}`,
+      // Stream V: fragments now own a dedicated `source_client` column,
+      // populated above by the row insert. Audit detail no longer
+      // carries the value, so consumers should query the fragment row
+      // (or join via entityId) for provenance.
       detail: {
         fragmentKey: fragKey,
         wikiKey: threadResult.lookupKey,
         threadSlug: threadResult.slug,
-        // C2: fragments table has no source_client column; the audit
-        // detail carries the MCP clientInfo for parity with entries.
-        // Stream I plumbs clientInfo via deps.getClientInfo() so callers
-        // that don't pass input.sourceClient still get audit signal.
-        sourceClient: input.sourceClient ?? sourceClient ?? null,
       },
     })
 
@@ -550,6 +564,11 @@ export async function handleCreateWikiType(
 
     const prompt = input.prompt?.trim() || `You are Quill. Generate a ${input.name.trim()} document.`
 
+    // Stream V (migration 0015): wiki_types carries its own source_client
+    // column, written at insert time so the row records which surface
+    // created the type. Audit detail no longer mirrors the value.
+    const sourceClient = readSourceClient(deps)
+
     const [created] = await deps.db
       .insert(wikiTypesTable)
       .values({
@@ -560,10 +579,10 @@ export async function handleCreateWikiType(
         prompt,
         isDefault: false,
         userModified: true,
+        sourceClient,
       })
       .returning()
 
-    const sourceClient = readSourceClient(deps)
     await emitAuditEvent(deps.db, {
       entityType: 'wiki_type',
       entityId: slug,
@@ -573,7 +592,6 @@ export async function handleCreateWikiType(
       detail: {
         slug,
         name: input.name.trim(),
-        ...(sourceClient ? { source_client: sourceClient } : {}),
       },
     })
 
@@ -678,6 +696,12 @@ export async function handleCreateWiki(
     }
     const resolvedType = row.slug
 
+    // Stream V (migration 0015): wikis owns its own source_client column.
+    // Stamp the originating MCP client name on the row so provenance
+    // queries can read directly from `wikis` instead of unpacking the
+    // audit_log detail jsonb.
+    const sourceClient = readSourceClient(deps)
+
     await deps.db.insert(wikisTable).values({
       lookupKey,
       slug: finalSlug,
@@ -686,6 +710,7 @@ export async function handleCreateWiki(
       type: resolvedType,
       state: 'PENDING',
       prompt: '',
+      sourceClient,
     })
 
     // Embed the wiki at create time. Without this, freshly-created wikis are
@@ -712,7 +737,6 @@ export async function handleCreateWiki(
       )
     }
 
-    const sourceClient = readSourceClient(deps)
     await emitAuditEvent(deps.db, {
       entityType: 'wiki',
       entityId: lookupKey,
@@ -723,7 +747,6 @@ export async function handleCreateWiki(
         wikiKey: lookupKey,
         type: resolvedType,
         inferred: false,
-        ...(sourceClient ? { source_client: sourceClient } : {}),
       },
     })
 
@@ -808,10 +831,20 @@ export async function handleEditWiki(
 
     const previousContent = wiki.content || ''
 
+    // Stream V (migration 0015): refresh the wiki's source_client column
+    // to record the most recent editing surface. NULL when the
+    // handshake has not surfaced a name (legacy SDK clients) so we do
+    // not clobber a previously stamped value with junk.
+    const sourceClient = readSourceClient(deps)
+
     // Update canonical content
     await deps.db
       .update(wikisTable)
-      .set({ content: input.content, updatedAt: new Date() })
+      .set({
+        content: input.content,
+        updatedAt: new Date(),
+        ...(sourceClient ? { sourceClient } : {}),
+      })
       .where(eq(wikisTable.lookupKey, wiki.lookupKey))
 
     // Store previous content as edit record (diff computation deferred)
@@ -825,7 +858,6 @@ export async function handleEditWiki(
       source: 'mcp',
     })
 
-    const sourceClient = readSourceClient(deps)
     await emitAuditEvent(deps.db, {
       entityType: 'wiki',
       entityId: wiki.lookupKey,
@@ -835,7 +867,6 @@ export async function handleEditWiki(
       detail: {
         wikiKey: wiki.lookupKey,
         wikiSlug: wiki.slug,
-        ...(sourceClient ? { source_client: sourceClient } : {}),
       },
     })
 
@@ -873,8 +904,9 @@ export async function handleEditWiki(
  *   `onConflictDoNothing` so re-running the call is a no-op.
  * - Marks the wiki PENDING so the next regen rebuilds with the new
  *   members included.
- * - Emits one audit row per attached fragment with `source_client`
- *   stamped from the MCP handshake (Phase 2).
+ * - Emits one audit row per attached fragment. The fragment's
+ *   originating `source_client` lives on the fragment row (Stream V,
+ *   migration 0015) so the audit detail no longer carries it.
  *
  * Returns `{ wikiKey, wikiSlug, attached, alreadyAttached, notFound }`.
  */
@@ -935,7 +967,6 @@ export async function handleAttachFragments(
 
     const attached: string[] = []
     const alreadyAttached: string[] = []
-    const sourceClient = readSourceClient(deps)
 
     for (const [slug, fragKey] of found.entries()) {
       // Detect already-attached so the caller can distinguish a
@@ -984,7 +1015,6 @@ export async function handleAttachFragments(
           fragmentSlug: slug,
           wikiKey: wikiResult.lookupKey,
           wikiSlug: wikiResult.slug,
-          ...(sourceClient ? { source_client: sourceClient } : {}),
         },
       })
     }
@@ -1059,11 +1089,9 @@ export async function handlePublishWiki(
     }
 
     const origin = process.env.SERVER_PUBLIC_URL?.trim() || null
-    const sourceClient = readSourceClient(deps)
     const result = await publishWikiService(deps.db, wikiResult.lookupKey, {
       origin,
       source: 'mcp',
-      sourceClient,
     })
     if (result.ok === false) {
       const message =
@@ -1131,10 +1159,8 @@ export async function handleUnpublishWiki(
       }
     }
 
-    const sourceClient = readSourceClient(deps)
     const result = await unpublishWikiService(deps.db, wikiResult.lookupKey, {
       source: 'mcp',
-      sourceClient,
     })
     if (result.ok === false) {
       return {
@@ -1247,7 +1273,11 @@ export async function handleRegenNow(
 
     const { jobId, queuedAt } = await enqueueWikiRegen(wiki.lookupKey, 'manual')
 
-    const sourceClient = readSourceClient(deps)
+    // Stream V: regen does not change wiki authorship, so we drop the
+    // per-event `source_client` audit stamp. The wiki's own
+    // source_client column holds the authoring surface; the audit row's
+    // `source: 'mcp'` field already records that this regen was kicked
+    // by the MCP surface.
     await emitAuditEvent(deps.db, {
       entityType: 'wiki',
       entityId: wiki.lookupKey,
@@ -1259,7 +1289,6 @@ export async function handleRegenNow(
         wikiSlug: wiki.slug,
         jobId,
         triggeredBy: 'manual',
-        ...(sourceClient ? { source_client: sourceClient } : {}),
       },
     })
 

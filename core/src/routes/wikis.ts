@@ -180,6 +180,11 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
       type: wikiType,
       state: 'PENDING',
       prompt: body.prompt ?? '',
+      // Stream V (migration 0015): web-UI captures stamp the wiki row
+      // with `source_client = 'web'` so retrospective queries can break
+      // creates down by surface without unpacking audit_log.detail.
+      // Mirrors the pattern entries.ts uses for raw_sources.source_client.
+      sourceClient: 'web',
     })
     .returning()
 
@@ -569,6 +574,11 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
   if (nameChanged || descriptionChanged) {
     updates.embedding = null
   }
+
+  // Stream V (migration 0015): record the most recent editing surface
+  // on the wiki row. Web-UI edits stamp 'web' so audit consumers can
+  // tell the row was last touched through the HTTP route, not MCP.
+  updates.sourceClient = 'web'
 
   const [updated] = await db
     .update(wikis)

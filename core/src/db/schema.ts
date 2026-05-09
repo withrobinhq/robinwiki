@@ -108,6 +108,10 @@ export const groups = pgTable(
     icon: text('icon').notNull().default(''),
     color: text('color').notNull().default(''),
     description: text('description').notNull().default(''),
+    // Stream V (migration 0015): client identifier for the surface that
+    // created the row. Replaces the previous audit_log.detail.source_client
+    // stamp so the value is queryable per row instead of buried in JSON.
+    sourceClient: text('source_client'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
@@ -191,6 +195,10 @@ export const wikiTypes = pgTable('wiki_types', {
   isDefault: boolean('is_default').notNull().default(false),
   userModified: boolean('user_modified').notNull().default(false),
   basedOnVersion: integer('based_on_version').notNull().default(1),
+  // Stream V (migration 0015): client identifier for the surface that
+  // created or last edited the row. Replaces the audit_log.detail.source_client
+  // stamp so the value is queryable per row.
+  sourceClient: text('source_client'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
@@ -271,6 +279,10 @@ export const fragments = pgTable(
     embeddingAttemptCount: integer('embedding_attempt_count').notNull().default(0),
     embeddingLastAttemptAt: timestamp('embedding_last_attempt_at'),
     searchVector: tsvector('search_vector'),
+    // Stream V (migration 0015): client identifier for the surface that
+    // created the fragment. Replaces audit_log.detail.source_client so the
+    // value is queryable per row.
+    sourceClient: text('source_client'),
   },
   (t) => [
     uniqueIndex('fragments_slug_uidx').on(t.slug),
@@ -359,6 +371,10 @@ export const wikis = pgTable(
       .$type<WikiCitationDeclaration[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    // Stream V (migration 0015): client identifier for the surface that
+    // created or last edited the wiki. Replaces audit_log.detail.source_client
+    // so the value is queryable per row.
+    sourceClient: text('source_client'),
   },
   (t) => [
     uniqueIndex('wikis_slug_uidx').on(t.slug).where(sql`${t.deletedAt} IS NULL`),
