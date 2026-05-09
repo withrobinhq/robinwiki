@@ -3,10 +3,10 @@ import { eq, and, isNull, sql } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import { wikis, edges, fragments } from '../db/schema.js'
 import { regenerateWiki } from '../lib/regen.js'
-import { producer } from './producer.js'
 import { logger } from '../lib/logger.js'
 import { emitAuditEvent } from '../db/audit.js'
 import { emitPipelineEvent } from '../db/pipeline-events.js'
+import { enqueueWikiRegen, filterDebouncedWikiKeys, regenDebounceMs } from './regen-debounce.js'
 
 const log = logger.child({ component: 'regen-worker' })
 
@@ -85,7 +85,12 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
   log.info({ jobId: job.jobId }, 'processing regen batch job')
 
   try {
-    const candidateKeys = new Set<string>()
+    // Reasons 1 and 2 are ingest-driven and pay LLM cost for ground that
+    // shifts under them when fragments are still arriving -- gate via
+    // the per-wiki debounce (#QA Issue 6, 2026-05-08). Reasons 3 and 4
+    // are recovery and explicit-cadence paths, so they bypass.
+    const debounceCandidates = new Set<string>()
+    const bypassCandidates = new Set<string>()
 
     // ── Reason 1: Unfiled fragments exist → regen ALL wikis (mechanism #1 classifies them) ──
     const [unfiledCount] = await db
@@ -109,7 +114,7 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
         .select({ lookupKey: wikis.lookupKey })
         .from(wikis)
         .where(and(isNull(wikis.deletedAt), eq(wikis.regenerate, true)))
-      for (const r of rows) candidateKeys.add(r.lookupKey)
+      for (const r of rows) debounceCandidates.add(r.lookupKey)
       log.info({ unfiled: unfiledCount?.count, wikis: rows.length }, 'batch: unfiled fragments → regen-enabled wikis')
     }
 
@@ -133,7 +138,7 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
         )
       )
       .groupBy(wikis.lookupKey)
-    for (const r of wikisWithNewFragments) candidateKeys.add(r.lookupKey)
+    for (const r of wikisWithNewFragments) debounceCandidates.add(r.lookupKey)
     if (wikisWithNewFragments.length > 0) {
       log.info({ count: wikisWithNewFragments.length }, 'batch: wikis with new fragments since last rebuild')
     }
@@ -141,6 +146,8 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
     // ── Reason 3: Wikis stuck in non-RESOLVED state ──
     // Respect the LINKING lock: only pick up LINKING wikis if they've been
     // stuck for over 15 minutes (stale lock from a crashed worker).
+    // Recovery path -- bypasses debounce; a stuck wiki should not wait
+    // on quiet-window heuristics.
     const stuckWikis = await db
       .select({ lookupKey: wikis.lookupKey })
       .from(wikis)
@@ -151,7 +158,7 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
           sql`(${wikis.state} != 'LINKING' OR ${wikis.updatedAt} < NOW() - INTERVAL '15 minutes')`,
         )
       )
-    for (const r of stuckWikis) candidateKeys.add(r.lookupKey)
+    for (const r of stuckWikis) bypassCandidates.add(r.lookupKey)
     if (stuckWikis.length > 0) {
       log.info({ count: stuckWikis.length }, 'batch: wikis in non-RESOLVED state')
     }
@@ -160,6 +167,8 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
     // Andrew lock #259: midnight cron sweeps wikis the user has explicitly
     // opted into auto-regen for, where new fragments have landed since the
     // last regen (lifecycle_state='learning' is the dirty-state tag from E8).
+    // Explicit-cadence path -- bypasses debounce; the cron firing is the
+    // intended trigger.
     const autoRegenWikis = await db
       .select({ lookupKey: wikis.lookupKey })
       .from(wikis)
@@ -170,10 +179,29 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
           eq(wikis.lifecycleState, 'learning')
         )
       )
-    for (const r of autoRegenWikis) candidateKeys.add(r.lookupKey)
+    for (const r of autoRegenWikis) bypassCandidates.add(r.lookupKey)
     if (autoRegenWikis.length > 0) {
       log.info({ count: autoRegenWikis.length }, 'batch: auto-regen wikis with learning state')
     }
+
+    // Filter ingest-driven candidates against the per-wiki quiet window.
+    // Anything still chatty drops out -- the next batch tick re-evaluates.
+    const debounceCandidateList = Array.from(debounceCandidates)
+    const { eligible: debouncePassed, debounced } = await filterDebouncedWikiKeys(
+      db,
+      debounceCandidateList
+    )
+
+    if (debounced.length > 0) {
+      log.info(
+        { count: debounced.length, debounceMs: regenDebounceMs() },
+        'batch: wikis still inside debounce window, deferring regen'
+      )
+    }
+
+    // Bypass set wins: a wiki that is also stuck or auto-regen-due
+    // should not be silenced by the debounce on the same row.
+    const candidateKeys = new Set<string>([...debouncePassed, ...bypassCandidates])
 
     // ── Enqueue individual regen jobs (capped at BATCH_LIMIT) ──
     // Per-item failures previously logged a warn and disappeared (#273) — the
@@ -185,14 +213,7 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
     let failed = 0
     for (const wikiKey of wikiKeysToRegen) {
       try {
-        await producer.enqueueRegen({
-          type: 'regen',
-          jobId: crypto.randomUUID(),
-          objectKey: wikiKey,
-          objectType: 'wiki',
-          triggeredBy: 'scheduler',
-          enqueuedAt: new Date().toISOString(),
-        })
+        await enqueueWikiRegen(wikiKey, 'scheduler')
         enqueued++
       } catch (err) {
         failed++
@@ -210,7 +231,17 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
     }
 
     log.info(
-      { jobId: job.jobId, enqueued, failed, hasUnfiled, candidates: candidateKeys.size, capped: wikiKeysToRegen.length },
+      {
+        jobId: job.jobId,
+        enqueued,
+        failed,
+        hasUnfiled,
+        debounceCandidates: debounceCandidates.size,
+        debouncePassed: debouncePassed.length,
+        debounced: debounced.length,
+        bypass: bypassCandidates.size,
+        capped: wikiKeysToRegen.length,
+      },
       'regen batch completed'
     )
 
