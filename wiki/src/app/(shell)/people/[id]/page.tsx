@@ -23,6 +23,7 @@ import { usePerson } from "@/hooks/usePerson";
 import { useQueryClient } from "@tanstack/react-query";
 import PersonSettingsModal from "@/components/layout/PersonSettingsModal";
 import { updatePerson } from "@/lib/api";
+import { QuarantineTopbar } from "@/components/wiki/QuarantineTopbar";
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -298,8 +299,21 @@ export default function WikiPeoplePage() {
     } catch { /* local state already saved */ }
   };
 
+  // Stream U: pending persons are extractor candidates the operator has
+  // not approved yet. Stream P adds the `status` field on the person row
+  // ('pending' | 'verified' | 'rejected'). When pending we render a
+  // full-width quarantine banner above the page so the operator can
+  // approve or reject inline. The cast is intentional — Stream P will
+  // regenerate the SDK once it merges, after which the cast can come off.
+  const personStatus = (person as unknown as { status?: 'pending' | 'verified' | 'rejected' })
+    .status;
+  const isPending = personStatus === 'pending';
+
   return (
     <>
+    {isPending ? (
+      <QuarantineTopbar personKey={person.lookupKey} personName={person.name} />
+    ) : null}
     <Link href="/wiki" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--wiki-count)", textDecoration: "none", marginBottom: 12 }}>
       <ArrowLeft size={14} strokeWidth={1.5} />
       <span style={{ ...T.micro }}>Back</span>
