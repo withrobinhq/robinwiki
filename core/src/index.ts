@@ -151,10 +151,11 @@ const faviconBuf = readFileSync(new URL('../favicon.ico', import.meta.url))
  * surface matches that constant — adding a route here without updating
  * PUBLIC_ROUTES (or self-applying session middleware) fails the test.
  *
- * Two narrow exceptions self-apply session middleware INSIDE this block and
- * are NOT in PUBLIC_ROUTES:
+ * Three narrow exceptions self-apply session middleware INSIDE this block
+ * and are NOT in PUBLIC_ROUTES:
  *   - /admin/*        (adminRoutes.use('*', sessionMiddleware))
  *   - /admin/queues/* (app.use('/admin/queues/*', sessionMiddleware) below)
+ *   - /admin/graph/*  (adminGraphStatsRoutes.use('*', sessionMiddleware))
  ***********************************************************************/
 
 // Backend-root landing page. Users who deploy via Railway and click the
