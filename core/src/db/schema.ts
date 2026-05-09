@@ -593,7 +593,7 @@ export const apiKeys = pgTable('api_keys', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
-// ─── Scheduled Jobs (issue #322 — heartbeat surface for periodic workers) ───
+// ─── Scheduled Jobs (issue #322, heartbeat surface for periodic workers) ───
 //
 // One row per named scheduled job. The daily prune-pipeline-events worker,
 // the (future) HyDE backfill, fragment-relationship backfill and any other
