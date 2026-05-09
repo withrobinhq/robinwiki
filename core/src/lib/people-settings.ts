@@ -1,6 +1,7 @@
 import { eq, isNull, sql } from 'drizzle-orm'
 import { appSettings, people } from '../db/schema.js'
 import type { DB } from '../db/client.js'
+import { emitAuditEvent } from '../db/audit.js'
 import type { KnownPerson } from '@robin/agent'
 
 /**
@@ -113,5 +114,20 @@ export async function insertExtractedPerson(
       state: 'PENDING',
     })
     .onConflictDoNothing()
+
+  await emitAuditEvent(db, {
+    entityType: 'person',
+    entityId: input.lookupKey,
+    eventType: 'created',
+    source: 'system',
+    summary: `Person ${input.status === 'pending' ? 'queued for review' : 'created'}: ${trimmed}`,
+    detail: {
+      personKey: input.lookupKey,
+      canonicalName: trimmed,
+      status: input.status,
+      createdVia: input.createdVia,
+      extractedFromFragmentId: input.extractedFromFragmentId,
+    },
+  })
   void isNull // silence unused import in tighter compile modes
 }
