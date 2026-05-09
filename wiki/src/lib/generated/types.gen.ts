@@ -274,6 +274,10 @@ export type ThreadResponseSchema = {
     publishedSlug?: string;
     publishedOrigin?: string;
     collections?: Array<WikiCollectionSchema>;
+    autoregen?: boolean;
+    dirtySince?: string;
+    editorialState?: EditorialStateSchema;
+    agentSchemaStatus?: AgentSchemaStatusSchema;
 };
 
 export type ThreadWithWikiResponseSchema = {
@@ -304,6 +308,9 @@ export type ThreadWithWikiResponseSchema = {
     publishedSlug?: string;
     publishedOrigin?: string;
     collections?: Array<WikiCollectionSchema>;
+    autoregen?: boolean;
+    dirtySince?: string;
+    editorialState?: EditorialStateSchema;
     wikiContent: string;
 };
 
@@ -336,6 +343,10 @@ export type ThreadListResponseSchema = {
         publishedSlug?: string;
         publishedOrigin?: string;
         collections?: Array<WikiCollectionSchema>;
+        autoregen?: boolean;
+        dirtySince?: string;
+        editorialState?: EditorialStateSchema;
+        agentSchemaStatus?: AgentSchemaStatusSchema;
     }>;
 };
 
@@ -367,6 +378,9 @@ export type WikiDetailResponseSchema = {
     publishedSlug?: string;
     publishedOrigin?: string;
     collections?: Array<WikiCollectionSchema>;
+    autoregen?: boolean;
+    dirtySince?: string;
+    editorialState?: EditorialStateSchema;
     wikiContent: string;
     fragments: Array<{
         id: string;
@@ -398,7 +412,7 @@ export type PublishWikiResponseSchema = {
     publishedSlug: string;
     publishedOrigin: string;
     publishedAt: string;
-    regenerate: boolean;
+    autoregen: boolean;
 };
 
 export type PublicWikiResponseSchema = {
@@ -411,14 +425,18 @@ export type PublicWikiResponseSchema = {
     sections?: Array<WikiSectionSchema>;
 };
 
-export type ToggleRegenerateBodySchema = {
-    regenerate: boolean;
+export type AutoRegenBodySchema = {
+    autoregen: boolean;
 };
 
-export type ToggleRegenerateResponseSchema = {
+export type AutoRegenResponseSchema = {
     id: string;
-    regenerate: boolean;
+    autoregen: boolean;
 };
+
+export type EditorialStateSchema = 'empty' | 'learning' | 'dreaming' | 'filed';
+
+export type AgentSchemaStatusSchema = 'complete' | 'missing_description' | 'missing_hyde' | 'missing_both';
 
 export type UpdateProgressBodySchema = {
     milestones: Array<{
@@ -1161,32 +1179,32 @@ export type ToggleBouncerModeResponses = {
 
 export type ToggleBouncerModeResponse = ToggleBouncerModeResponses[keyof ToggleBouncerModeResponses];
 
-export type ToggleRegenerateData = {
-    body: ToggleRegenerateBodySchema;
+export type ToggleAutoRegenData = {
+    body: AutoRegenBodySchema;
     path: {
         id: string;
     };
     query?: never;
-    url: '/wikis/{id}/regenerate';
+    url: '/wikis/{id}/auto-regen';
 };
 
-export type ToggleRegenerateErrors = {
+export type ToggleAutoRegenErrors = {
     /**
      * Not found
      */
     404: ErrorResponseSchema;
 };
 
-export type ToggleRegenerateError = ToggleRegenerateErrors[keyof ToggleRegenerateErrors];
+export type ToggleAutoRegenError = ToggleAutoRegenErrors[keyof ToggleAutoRegenErrors];
 
-export type ToggleRegenerateResponses = {
+export type ToggleAutoRegenResponses = {
     /**
-     * Updated regenerate flag
+     * Updated autoregen flag
      */
-    200: ToggleRegenerateResponseSchema;
+    200: AutoRegenResponseSchema;
 };
 
-export type ToggleRegenerateResponse = ToggleRegenerateResponses[keyof ToggleRegenerateResponses];
+export type ToggleAutoRegenResponse = ToggleAutoRegenResponses[keyof ToggleAutoRegenResponses];
 
 export type RegenerateWikiData = {
     body?: never;
@@ -1198,10 +1216,6 @@ export type RegenerateWikiData = {
 };
 
 export type RegenerateWikiErrors = {
-    /**
-     * Regeneration disabled
-     */
-    400: ErrorResponseSchema;
     /**
      * Not found
      */
@@ -2034,6 +2048,93 @@ export type RetryStuckFragmentsResponses = {
 };
 
 export type RetryStuckFragmentsResponse = RetryStuckFragmentsResponses[keyof RetryStuckFragmentsResponses];
+
+export type GetBackfillAuditData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/backfill/audit';
+};
+
+export type GetBackfillAuditResponses = {
+    /**
+     * Gap report and last-audit timestamp
+     */
+    200: {
+        wikiAgentSchema: {
+            missingDescription: Array<string>;
+            missingHyde: Array<string>;
+        };
+        generatedAt: string;
+        lastAuditAt: string | null;
+    };
+};
+
+export type GetBackfillAuditResponse = GetBackfillAuditResponses[keyof GetBackfillAuditResponses];
+
+export type TriggerWikiAgentSchemaBackfillData = {
+    body?: {
+        /**
+         * Optional: scope the run to a single wiki by lookup key
+         */
+        wikiKey?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/admin/backfill/wiki-agent-schema';
+};
+
+export type TriggerWikiAgentSchemaBackfillErrors = {
+    /**
+     * Runner threw
+     */
+    500: ErrorResponseSchema;
+};
+
+export type TriggerWikiAgentSchemaBackfillError = TriggerWikiAgentSchemaBackfillErrors[keyof TriggerWikiAgentSchemaBackfillErrors];
+
+export type TriggerWikiAgentSchemaBackfillResponses = {
+    /**
+     * Backfill result
+     */
+    200: {
+        jobId: string;
+        scope: 'all' | 'single';
+        wikiKey?: string | null;
+        ok: number;
+        failed: number;
+        scanned: number;
+        durationMs: number;
+    };
+};
+
+export type TriggerWikiAgentSchemaBackfillResponse = TriggerWikiAgentSchemaBackfillResponses[keyof TriggerWikiAgentSchemaBackfillResponses];
+
+export type GetBackfillRunsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/backfill/runs';
+};
+
+export type GetBackfillRunsResponses = {
+    /**
+     * Recent scheduled-job runs
+     */
+    200: {
+        runs: Array<{
+            jobName: string;
+            lastRunAt: string;
+            lastRunStatus: string;
+            lastRunMeta?: {
+                [key: string]: unknown;
+            } | null;
+            lastRunDurationMs?: number | null;
+        }>;
+    };
+};
+
+export type GetBackfillRunsResponse = GetBackfillRunsResponses[keyof GetBackfillRunsResponses];
 
 export type McpTransportData = {
     body?: never;

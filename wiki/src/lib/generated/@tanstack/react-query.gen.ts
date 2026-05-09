@@ -3,8 +3,8 @@
 import { type DefaultError, type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { acceptFragment, createEntry, createFragment, createWikiType, deleteUserAccount, deleteUserData, exportUserData, getAuditLog, getContent, getEntry, getFragment, getGraph, getHealth, getOpenApiSpec, getPerson, getPublishedWiki, getRelationships, getThread, getUserActivity, getUserKeypair, getUserProfile, getUserStats, getWiki, getWikiEditHistory, getWikiTimeline, getWikiType, listEntries, listEntryFragments, listFragments, listPeople, listWikis, listWikiTypes, markOnboarded, mcpTransport, mergeThreads, mergeWikis, type Options, publishWiki, regenerateMcpEndpoint, regeneratePerson, regenerateThread, regenerateWiki, rejectFragment, retryStuckFragments, revealUserKeypair, search, setupWikiTypes, toggleBouncerMode, toggleRegenerate, unpublishWiki, updateContent, updateFragment, updatePerson, updateThread, updateWiki, updateWikiProgress, updateWikiType } from '../sdk.gen';
-import type { AcceptFragmentData, AcceptFragmentError, AcceptFragmentResponse, CreateEntryData, CreateEntryError, CreateEntryResponse, CreateFragmentData, CreateFragmentError, CreateFragmentResponse, CreateWikiTypeData, CreateWikiTypeError, CreateWikiTypeResponse, DeleteUserAccountData, DeleteUserAccountResponse, DeleteUserDataData, DeleteUserDataResponse, ExportUserDataData, ExportUserDataResponse, GetAuditLogData, GetAuditLogResponse, GetContentData, GetContentError, GetContentResponse, GetEntryData, GetEntryError, GetEntryResponse, GetFragmentData, GetFragmentError, GetFragmentResponse, GetGraphData, GetGraphResponse, GetHealthData, GetOpenApiSpecData, GetPersonData, GetPersonError, GetPersonResponse, GetPublishedWikiData, GetPublishedWikiError, GetPublishedWikiResponse, GetRelationshipsData, GetRelationshipsError, GetRelationshipsResponse, GetThreadData, GetThreadError, GetThreadResponse, GetUserActivityData, GetUserActivityResponse, GetUserKeypairData, GetUserKeypairError, GetUserKeypairResponse, GetUserProfileData, GetUserProfileError, GetUserProfileResponse, GetUserStatsData, GetUserStatsResponse, GetWikiData, GetWikiEditHistoryData, GetWikiEditHistoryError, GetWikiEditHistoryResponse, GetWikiError, GetWikiResponse, GetWikiTimelineData, GetWikiTimelineError, GetWikiTimelineResponse, GetWikiTypeData, GetWikiTypeError, GetWikiTypeResponse, ListEntriesData, ListEntriesResponse, ListEntryFragmentsData, ListEntryFragmentsError, ListEntryFragmentsResponse, ListFragmentsData, ListFragmentsResponse, ListPeopleData, ListPeopleResponse, ListWikisData, ListWikisResponse, ListWikiTypesData, ListWikiTypesResponse, MarkOnboardedData, MarkOnboardedResponse, McpTransportData, McpTransportError, MergeThreadsData, MergeThreadsError, MergeWikisData, MergeWikisError, PublishWikiData, PublishWikiError, PublishWikiResponse, RegenerateMcpEndpointData, RegenerateMcpEndpointError, RegenerateMcpEndpointResponse, RegeneratePersonData, RegeneratePersonError, RegeneratePersonResponse, RegenerateThreadData, RegenerateThreadError, RegenerateThreadResponse, RegenerateWikiData, RegenerateWikiError, RegenerateWikiResponse, RejectFragmentData, RejectFragmentError, RejectFragmentResponse, RetryStuckFragmentsData, RetryStuckFragmentsResponse, RevealUserKeypairData, RevealUserKeypairError, RevealUserKeypairResponse, SearchData, SearchError, SearchResponse, SetupWikiTypesData, ToggleBouncerModeData, ToggleBouncerModeError, ToggleBouncerModeResponse, ToggleRegenerateData, ToggleRegenerateError, ToggleRegenerateResponse, UnpublishWikiData, UnpublishWikiError, UnpublishWikiResponse, UpdateContentData, UpdateContentError, UpdateContentResponse, UpdateFragmentData, UpdateFragmentError, UpdateFragmentResponse, UpdatePersonData, UpdatePersonError, UpdatePersonResponse, UpdateThreadData, UpdateThreadError, UpdateThreadResponse, UpdateWikiData, UpdateWikiError, UpdateWikiProgressData, UpdateWikiProgressError, UpdateWikiProgressResponse, UpdateWikiResponse, UpdateWikiTypeData, UpdateWikiTypeError, UpdateWikiTypeResponse } from '../types.gen';
+import { acceptFragment, createEntry, createFragment, createWikiType, deleteUserAccount, deleteUserData, exportUserData, getAuditLog, getBackfillAudit, getBackfillRuns, getContent, getEntry, getFragment, getGraph, getHealth, getOpenApiSpec, getPerson, getPublishedWiki, getRelationships, getThread, getUserActivity, getUserKeypair, getUserProfile, getUserStats, getWiki, getWikiEditHistory, getWikiTimeline, getWikiType, listEntries, listEntryFragments, listFragments, listPeople, listWikis, listWikiTypes, markOnboarded, mcpTransport, mergeThreads, mergeWikis, type Options, publishWiki, regenerateMcpEndpoint, regeneratePerson, regenerateThread, regenerateWiki, rejectFragment, retryStuckFragments, revealUserKeypair, search, setupWikiTypes, toggleAutoRegen, toggleBouncerMode, triggerWikiAgentSchemaBackfill, unpublishWiki, updateContent, updateFragment, updatePerson, updateThread, updateWiki, updateWikiProgress, updateWikiType } from '../sdk.gen';
+import type { AcceptFragmentData, AcceptFragmentError, AcceptFragmentResponse, CreateEntryData, CreateEntryError, CreateEntryResponse, CreateFragmentData, CreateFragmentError, CreateFragmentResponse, CreateWikiTypeData, CreateWikiTypeError, CreateWikiTypeResponse, DeleteUserAccountData, DeleteUserAccountResponse, DeleteUserDataData, DeleteUserDataResponse, ExportUserDataData, ExportUserDataResponse, GetAuditLogData, GetAuditLogResponse, GetBackfillAuditData, GetBackfillAuditResponse, GetBackfillRunsData, GetBackfillRunsResponse, GetContentData, GetContentError, GetContentResponse, GetEntryData, GetEntryError, GetEntryResponse, GetFragmentData, GetFragmentError, GetFragmentResponse, GetGraphData, GetGraphResponse, GetHealthData, GetOpenApiSpecData, GetPersonData, GetPersonError, GetPersonResponse, GetPublishedWikiData, GetPublishedWikiError, GetPublishedWikiResponse, GetRelationshipsData, GetRelationshipsError, GetRelationshipsResponse, GetThreadData, GetThreadError, GetThreadResponse, GetUserActivityData, GetUserActivityResponse, GetUserKeypairData, GetUserKeypairError, GetUserKeypairResponse, GetUserProfileData, GetUserProfileError, GetUserProfileResponse, GetUserStatsData, GetUserStatsResponse, GetWikiData, GetWikiEditHistoryData, GetWikiEditHistoryError, GetWikiEditHistoryResponse, GetWikiError, GetWikiResponse, GetWikiTimelineData, GetWikiTimelineError, GetWikiTimelineResponse, GetWikiTypeData, GetWikiTypeError, GetWikiTypeResponse, ListEntriesData, ListEntriesResponse, ListEntryFragmentsData, ListEntryFragmentsError, ListEntryFragmentsResponse, ListFragmentsData, ListFragmentsResponse, ListPeopleData, ListPeopleResponse, ListWikisData, ListWikisResponse, ListWikiTypesData, ListWikiTypesResponse, MarkOnboardedData, MarkOnboardedResponse, McpTransportData, McpTransportError, MergeThreadsData, MergeThreadsError, MergeWikisData, MergeWikisError, PublishWikiData, PublishWikiError, PublishWikiResponse, RegenerateMcpEndpointData, RegenerateMcpEndpointError, RegenerateMcpEndpointResponse, RegeneratePersonData, RegeneratePersonError, RegeneratePersonResponse, RegenerateThreadData, RegenerateThreadError, RegenerateThreadResponse, RegenerateWikiData, RegenerateWikiError, RegenerateWikiResponse, RejectFragmentData, RejectFragmentError, RejectFragmentResponse, RetryStuckFragmentsData, RetryStuckFragmentsResponse, RevealUserKeypairData, RevealUserKeypairError, RevealUserKeypairResponse, SearchData, SearchError, SearchResponse, SetupWikiTypesData, ToggleAutoRegenData, ToggleAutoRegenError, ToggleAutoRegenResponse, ToggleBouncerModeData, ToggleBouncerModeError, ToggleBouncerModeResponse, TriggerWikiAgentSchemaBackfillData, TriggerWikiAgentSchemaBackfillError, TriggerWikiAgentSchemaBackfillResponse, UnpublishWikiData, UnpublishWikiError, UnpublishWikiResponse, UpdateContentData, UpdateContentError, UpdateContentResponse, UpdateFragmentData, UpdateFragmentError, UpdateFragmentResponse, UpdatePersonData, UpdatePersonError, UpdatePersonResponse, UpdateThreadData, UpdateThreadError, UpdateThreadResponse, UpdateWikiData, UpdateWikiError, UpdateWikiProgressData, UpdateWikiProgressError, UpdateWikiProgressResponse, UpdateWikiResponse, UpdateWikiTypeData, UpdateWikiTypeError, UpdateWikiTypeResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -422,12 +422,12 @@ export const toggleBouncerModeMutation = (options?: Partial<Options<ToggleBounce
 };
 
 /**
- * Toggle regenerate flag on a wiki
+ * Toggle autoregen flag on a wiki
  */
-export const toggleRegenerateMutation = (options?: Partial<Options<ToggleRegenerateData>>): UseMutationOptions<ToggleRegenerateResponse, ToggleRegenerateError, Options<ToggleRegenerateData>> => {
-    const mutationOptions: UseMutationOptions<ToggleRegenerateResponse, ToggleRegenerateError, Options<ToggleRegenerateData>> = {
+export const toggleAutoRegenMutation = (options?: Partial<Options<ToggleAutoRegenData>>): UseMutationOptions<ToggleAutoRegenResponse, ToggleAutoRegenError, Options<ToggleAutoRegenData>> => {
+    const mutationOptions: UseMutationOptions<ToggleAutoRegenResponse, ToggleAutoRegenError, Options<ToggleAutoRegenData>> = {
         mutationFn: async (fnOptions) => {
-            const { data } = await toggleRegenerate({
+            const { data } = await toggleAutoRegen({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
@@ -1118,6 +1118,59 @@ export const retryStuckFragmentsMutation = (options?: Partial<Options<RetryStuck
     };
     return mutationOptions;
 };
+
+export const getBackfillAuditQueryKey = (options?: Options<GetBackfillAuditData>) => createQueryKey('getBackfillAudit', options);
+
+/**
+ * Read-only gap audit for wiki_agent_schema rows
+ */
+export const getBackfillAuditOptions = (options?: Options<GetBackfillAuditData>) => queryOptions<GetBackfillAuditResponse, DefaultError, GetBackfillAuditResponse, ReturnType<typeof getBackfillAuditQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getBackfillAudit({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getBackfillAuditQueryKey(options)
+});
+
+/**
+ * Trigger the wiki_agent_schema description-row backfill
+ */
+export const triggerWikiAgentSchemaBackfillMutation = (options?: Partial<Options<TriggerWikiAgentSchemaBackfillData>>): UseMutationOptions<TriggerWikiAgentSchemaBackfillResponse, TriggerWikiAgentSchemaBackfillError, Options<TriggerWikiAgentSchemaBackfillData>> => {
+    const mutationOptions: UseMutationOptions<TriggerWikiAgentSchemaBackfillResponse, TriggerWikiAgentSchemaBackfillError, Options<TriggerWikiAgentSchemaBackfillData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await triggerWikiAgentSchemaBackfill({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const getBackfillRunsQueryKey = (options?: Options<GetBackfillRunsData>) => createQueryKey('getBackfillRuns', options);
+
+/**
+ * Last-run telemetry for backfill and embedding-related jobs
+ */
+export const getBackfillRunsOptions = (options?: Options<GetBackfillRunsData>) => queryOptions<GetBackfillRunsResponse, DefaultError, GetBackfillRunsResponse, ReturnType<typeof getBackfillRunsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getBackfillRuns({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getBackfillRunsQueryKey(options)
+});
 
 /**
  * MCP Streamable HTTP transport (JWT)
