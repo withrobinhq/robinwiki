@@ -668,64 +668,6 @@ export async function ensureAgentSchema(
   return result
 }
 
-// ── Legacy exports (Step 1 of Stream S) ───────────────────────────────────
-//
-// These wrappers keep the existing call sites compiling while Step 1
-// lands the helper. Step 2 of the same stream replaces every caller with
-// a direct `ensureAgentSchema` invocation and deletes these wrappers.
-// Do not introduce new callers.
-
-/** @deprecated use ensureAgentSchema with mode='create' or 'refresh'. */
-export async function upsertDescriptionAgentSchemaRow(
-  database: DB,
-  wikiKey: string,
-  description: string,
-  embedding: number[],
-): Promise<void> {
-  await upsertDescriptionRow(database, wikiKey, description, embedding, GENERATOR_VERSION)
-}
-
-/** @deprecated use ensureAgentSchema with mode='refresh' (alsoStaleHyde=true). */
-export async function deleteHydeAgentSchemaRow(
-  database: DB,
-  wikiKey: string,
-): Promise<void> {
-  await deleteHydeRow(database, wikiKey)
-}
-
-interface LegacyGenerateArgs {
-  wikiKey: string
-  orConfig: OpenRouterConfig
-  hydeCaller: HydeCaller
-}
-
-interface LegacyGenerateResult {
-  wroteDescription: boolean
-  wroteHyde: boolean
-  version: string
-  totalMs: number
-}
-
-/** @deprecated use ensureAgentSchema with mode='regen-bump'. */
-export async function generateWikiAgentSchema(
-  database: DB,
-  args: LegacyGenerateArgs,
-): Promise<LegacyGenerateResult> {
-  const t0 = performance.now()
-  const out = await ensureAgentSchema(database, args.wikiKey, {
-    mode: 'regen-bump',
-    orConfig: args.orConfig,
-    hydeCaller: args.hydeCaller,
-    context: { source: 'system' },
-  })
-  return {
-    wroteDescription: out.written.description,
-    wroteHyde: out.written.hyde_synthetic,
-    version: GENERATOR_VERSION,
-    totalMs: performance.now() - t0,
-  }
-}
-
 /**
  * Count rows in wiki_agent_schema whose generator_version trails the
  * canonical version. Used by /settings/outstanding to surface backfill

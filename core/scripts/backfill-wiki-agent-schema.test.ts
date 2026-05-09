@@ -1,11 +1,11 @@
-// Backfill script logic test (#69 D6 follow-up).
+// Backfill script logic test (#69 D6 follow-up; Stream S decouple).
 //
 // The script delegates to findWikisMissingDescriptionRow + embedText +
-// upsertDescriptionAgentSchemaRow. Asserting the contract here:
+// ensureAgentSchema(mode='backfill'). Asserting the contract here:
 //   - dry-run does NOT load OpenRouter config
 //   - dry-run does NOT call embedText
-//   - dry-run does NOT call upsert
-//   - the live path loads config, embeds, and upserts each target
+//   - dry-run does NOT call ensureAgentSchema
+//   - the live path loads config, embeds, and calls ensureAgentSchema for each target
 //   - idempotency: a clean instance (empty target list) is a no-op
 //
 // We don't shell out to the script as a process; we re-implement its
@@ -14,7 +14,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const findMock = vi.fn()
-const upsertMock = vi.fn().mockResolvedValue(undefined)
+const ensureMock = vi.fn().mockResolvedValue({
+  wikiKey: '',
+  mode: 'backfill',
+  written: { description: true, hyde_synthetic: false },
+  staled: { hyde_synthetic: false },
+  shortCircuited: false,
+})
 const embedMock = vi.fn()
 const loadConfigMock = vi.fn()
 
@@ -23,7 +29,7 @@ vi.mock('@robin/agent', () => ({
 }))
 vi.mock('../src/lib/wiki-agent-schema.js', () => ({
   findWikisMissingDescriptionRow: (...args: unknown[]) => findMock(...args),
-  upsertDescriptionAgentSchemaRow: (...args: unknown[]) => upsertMock(...args),
+  ensureAgentSchema: (...args: unknown[]) => ensureMock(...args),
 }))
 vi.mock('../src/lib/openrouter-config.js', () => ({
   loadOpenRouterConfig: () => loadConfigMock(),
@@ -45,7 +51,8 @@ interface Target {
   description: string
 }
 
-// Re-implementation of the script's inner loop (matches scripts/backfill-wiki-agent-schema.ts).
+// Re-implementation of the script's inner loop (matches scripts/backfill-wiki-agent-schema.ts
+// via core/src/lib/backfill-runner.ts).
 async function runBackfill(opts: { dryRun: boolean; limit?: number }): Promise<{
   ok: number
   failed: number
@@ -78,7 +85,13 @@ async function runBackfill(opts: { dryRun: boolean; limit?: number }): Promise<{
         model: config!.models.embedding,
       })
       if (vec) {
-        await upsertMock(undefined, target.wikiKey, target.description, vec)
+        await ensureMock(undefined, target.wikiKey, {
+          mode: 'backfill',
+          description: target.description,
+          precomputedEmbedding: vec,
+          orConfig: config,
+          context: { source: 'system', triggeredBy: 'backfill' },
+        })
         ok++
       } else {
         failed++
@@ -93,7 +106,13 @@ async function runBackfill(opts: { dryRun: boolean; limit?: number }): Promise<{
 
 beforeEach(() => {
   findMock.mockReset()
-  upsertMock.mockReset().mockResolvedValue(undefined)
+  ensureMock.mockReset().mockResolvedValue({
+    wikiKey: '',
+    mode: 'backfill',
+    written: { description: true, hyde_synthetic: false },
+    staled: { hyde_synthetic: false },
+    shortCircuited: false,
+  })
   embedMock.mockReset()
   loadConfigMock.mockReset()
   loadConfigMock.mockResolvedValue({
@@ -102,8 +121,8 @@ beforeEach(() => {
   })
 })
 
-describe('backfill-wiki-agent-schema (#69 D6)', () => {
-  it('writes a kind=description row for each target via the helper', async () => {
+describe('backfill-wiki-agent-schema (#69 D6, Stream S)', () => {
+  it("calls ensureAgentSchema(mode='backfill') for each target", async () => {
     findMock
       .mockResolvedValueOnce([
         { wikiKey: 'wiki1', description: 'desc one' },
@@ -117,22 +136,26 @@ describe('backfill-wiki-agent-schema (#69 D6)', () => {
     const result = await runBackfill({ dryRun: false })
 
     expect(result).toEqual({ ok: 2, failed: 0, scanned: 2 })
-    expect(upsertMock).toHaveBeenCalledTimes(2)
-    expect(upsertMock.mock.calls[0]).toEqual([undefined, 'wiki1', 'desc one', [0.1]])
-    expect(upsertMock.mock.calls[1]).toEqual([undefined, 'wiki2', 'desc two', [0.2]])
+    expect(ensureMock).toHaveBeenCalledTimes(2)
+    expect(ensureMock.mock.calls[0][1]).toBe('wiki1')
+    expect(ensureMock.mock.calls[0][2].mode).toBe('backfill')
+    expect(ensureMock.mock.calls[0][2].description).toBe('desc one')
+    expect(ensureMock.mock.calls[0][2].precomputedEmbedding).toEqual([0.1])
+    expect(ensureMock.mock.calls[1][1]).toBe('wiki2')
+    expect(ensureMock.mock.calls[1][2].precomputedEmbedding).toEqual([0.2])
   })
 
-  it('idempotency: empty target list is a no-op (no LLM, no upsert)', async () => {
+  it('idempotency: empty target list is a no-op (no LLM, no helper call)', async () => {
     findMock.mockResolvedValue([])
 
     const result = await runBackfill({ dryRun: false })
 
     expect(result).toEqual({ ok: 0, failed: 0, scanned: 0 })
-    expect(upsertMock).not.toHaveBeenCalled()
+    expect(ensureMock).not.toHaveBeenCalled()
     expect(embedMock).not.toHaveBeenCalled()
   })
 
-  it('dry-run does not call embedText, helper, or load config', async () => {
+  it('dry-run does not call embedText, ensureAgentSchema, or load config', async () => {
     findMock
       .mockResolvedValueOnce([{ wikiKey: 'wiki1', description: 'd' }])
       .mockResolvedValue([])
@@ -142,7 +165,7 @@ describe('backfill-wiki-agent-schema (#69 D6)', () => {
     expect(result).toEqual({ ok: 1, failed: 0, scanned: 1 })
     expect(loadConfigMock).not.toHaveBeenCalled()
     expect(embedMock).not.toHaveBeenCalled()
-    expect(upsertMock).not.toHaveBeenCalled()
+    expect(ensureMock).not.toHaveBeenCalled()
   })
 
   it('counts a failure when embed returns null and continues', async () => {
@@ -159,8 +182,8 @@ describe('backfill-wiki-agent-schema (#69 D6)', () => {
     const result = await runBackfill({ dryRun: false })
 
     expect(result).toEqual({ ok: 1, failed: 1, scanned: 2 })
-    expect(upsertMock).toHaveBeenCalledTimes(1)
-    expect(upsertMock.mock.calls[0][1]).toBe('wiki-good')
+    expect(ensureMock).toHaveBeenCalledTimes(1)
+    expect(ensureMock.mock.calls[0][1]).toBe('wiki-good')
   })
 
   it('respects --limit by stopping after N targets', async () => {
@@ -174,6 +197,6 @@ describe('backfill-wiki-agent-schema (#69 D6)', () => {
     const result = await runBackfill({ dryRun: false, limit: 1 })
 
     expect(result).toEqual({ ok: 1, failed: 0, scanned: 1 })
-    expect(upsertMock).toHaveBeenCalledTimes(1)
+    expect(ensureMock).toHaveBeenCalledTimes(1)
   })
 })

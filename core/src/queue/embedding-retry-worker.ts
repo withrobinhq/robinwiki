@@ -14,11 +14,10 @@ import { emitPipelineEvent } from '../db/pipeline-events.js'
 import { emitAuditEvent } from '../db/audit.js'
 import { emitUsageEvent } from '../db/usage-events.js'
 import {
+  ensureAgentSchema,
   findWikisMissingDescriptionRow,
   findWikisMissingHydeRow,
-  generateWikiAgentSchema,
   resolveRetrievalIndexModel,
-  upsertDescriptionAgentSchemaRow,
 } from '../lib/wiki-agent-schema.js'
 
 const log = logger.child({ component: 'embedding-retry' })
@@ -283,20 +282,25 @@ const AGENT_SCHEMA_HYDE_BATCH = 5
 
 /**
  * Heal the agent_schema rows for wikis that were missed by create-time or
- * edit-time write paths (#69 D6). Two passes per tick:
+ * edit-time write paths (#69 D6). Two passes per tick, each routed
+ * through `ensureAgentSchema` with mode='heal' so the writer-registry
+ * invariant holds:
  *
  *   1. Description heal: any wiki whose kind='description' row is missing
- *      or has a NULL embedding gets re-embedded and upserted.
+ *      or has a NULL embedding gets re-embedded and upserted. The pass
+ *      passes the precomputed embedding so the helper does not also try
+ *      the HyDE call (no hydeCaller given).
  *   2. HyDE heal: any wiki missing a kind='hyde_synthetic' row gets the
- *      LLM HyDE pipeline run via generateWikiAgentSchema, which is
- *      idempotent on (wiki_key, kind, generator_version).
+ *      LLM HyDE pipeline run, plus opportunistically the description row
+ *      if also missing.
  *
  * Both passes are bounded by their batch caps. A failure on one wiki does
  * not stop the rest of the pass; we log and continue.
  */
 async function healAgentSchemaRows(
   embedConfig: { apiKey: string; model: string },
-  config: Awaited<ReturnType<typeof loadOpenRouterConfig>>
+  config: Awaited<ReturnType<typeof loadOpenRouterConfig>>,
+  jobId: string,
 ): Promise<{
   description: { scanned: number; ok: number; failed: number }
   hyde: { scanned: number; ok: number; failed: number }
@@ -307,16 +311,24 @@ async function healAgentSchemaRows(
   for (const target of descTargets) {
     try {
       const vec = await embedText(target.description, embedConfig)
-      if (vec) {
-        await upsertDescriptionAgentSchemaRow(db, target.wikiKey, target.description, vec)
-        descOk++
-      } else {
+      if (!vec) {
         descFailed++
         log.warn(
           { wikiKey: target.wikiKey },
           'agent_schema description heal: embed returned null',
         )
+        continue
       }
+      const result = await ensureAgentSchema(db, target.wikiKey, {
+        mode: 'heal',
+        description: target.description,
+        precomputedEmbedding: vec,
+        orConfig: config,
+        // Intentionally no hydeCaller: this pass only heals description.
+        context: { source: 'system', jobId, triggeredBy: 'embedding-retry' },
+      })
+      if (result.written.description) descOk++
+      else descFailed++
     } catch (err) {
       descFailed++
       log.warn(
@@ -331,7 +343,7 @@ async function healAgentSchemaRows(
   let hydeFailed = 0
 
   // Lazily build the HyDE caller; if no targets, save the agent construction.
-  let hydeCaller: ((prompt: string) => Promise<string | null>) | null = null
+  let hydeCaller: ((prompt: string, model: string) => Promise<string | null>) | null = null
   if (hydeTargets.length > 0) {
     const hydeModel = resolveRetrievalIndexModel(config)
     const hydeAgent = createHydeAgent(config, hydeModel)
@@ -345,12 +357,13 @@ async function healAgentSchemaRows(
   for (const wikiKey of hydeTargets) {
     if (!hydeCaller) break
     try {
-      const result = await generateWikiAgentSchema(db, {
-        wikiKey,
+      const result = await ensureAgentSchema(db, wikiKey, {
+        mode: 'heal',
         orConfig: config,
-        hydeCaller: async (prompt) => hydeCaller!(prompt),
+        hydeCaller,
+        context: { source: 'system', jobId, triggeredBy: 'embedding-retry' },
       })
-      if (result.wroteHyde) hydeOk++
+      if (result.written.hyde_synthetic) hydeOk++
       else hydeFailed++
     } catch (err) {
       hydeFailed++
@@ -433,7 +446,7 @@ export async function processEmbeddingRetryJob(
       hyde: { scanned: 0, ok: 0, failed: 0 },
     }
     try {
-      agentSchemaResult = await healAgentSchemaRows(embedConfig, config)
+      agentSchemaResult = await healAgentSchemaRows(embedConfig, config, job.jobId)
     } catch (err) {
       log.warn(
         { jobId: job.jobId, error: err instanceof Error ? err.message : String(err) },

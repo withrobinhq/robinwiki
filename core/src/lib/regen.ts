@@ -44,7 +44,7 @@ import { nanoid } from './id.js'
 import { logger } from './logger.js'
 import { emitAuditEvent } from '../db/audit.js'
 import {
-  generateWikiAgentSchema,
+  ensureAgentSchema,
   resolveRetrievalIndexModel,
 } from './wiki-agent-schema.js'
 import { emitUsageEvent } from '../db/usage-events.js'
@@ -1031,8 +1031,8 @@ export async function regenerateWiki(
       const hydeModel = resolveRetrievalIndexModel(orConfig)
       const hydeAgent = createHydeAgent(orConfig, hydeModel)
       const hydeStringCaller = createStringCaller(hydeAgent)
-      await generateWikiAgentSchema(database, {
-        wikiKey,
+      await ensureAgentSchema(database, wikiKey, {
+        mode: 'regen-bump',
         orConfig,
         // Adapter from agent-schema's HydeCaller to the string-caller the
         // Mastra agent exposes. The model arg is captured at agent-build
@@ -1041,6 +1041,11 @@ export async function regenerateWiki(
         hydeCaller: async (prompt) => {
           const text = await hydeStringCaller('', prompt)
           return text ?? null
+        },
+        context: {
+          source: 'system',
+          jobId: regenJobId ?? null,
+          triggeredBy: 'regen',
         },
       })
     } catch (err) {

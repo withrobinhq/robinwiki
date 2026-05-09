@@ -15,10 +15,7 @@ import { nanoid24 } from '../lib/id.js'
 import { regenerateWiki } from '../lib/regen.js'
 import { editorialStateOf } from '../lib/wiki-editorial-state.js'
 import { loadAgentSchemaStatusByWiki } from '../lib/backfill-runner.js'
-import {
-  upsertDescriptionAgentSchemaRow,
-  deleteHydeAgentSchemaRow,
-} from '../lib/wiki-agent-schema.js'
+import { ensureAgentSchema } from '../lib/wiki-agent-schema.js'
 import { wikiRegenLock } from '../db/locks.js'
 import { buildSidecar } from '../lib/wikiSidecar.js'
 import { makeSidecarDeps } from '../lib/wikiSidecarDeps.js'
@@ -238,16 +235,16 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
       // The hyde_synthetic row is deferred to the heal worker because HyDE
       // is an LLM round-trip we will not block POST on.
       try {
-        await upsertDescriptionAgentSchemaRow(
-          db,
-          lookupKey,
-          body.description ?? '',
-          wikiVec
-        )
+        await ensureAgentSchema(db, lookupKey, {
+          mode: 'create',
+          description: body.description ?? '',
+          precomputedEmbedding: wikiVec,
+          context: { source: 'api' },
+        })
       } catch (err) {
         log.warn(
           { wikiKey: lookupKey, err },
-          'failed to seed description agent_schema row at create — heal worker will retry'
+          'failed to seed description agent_schema row at create, heal worker will retry'
         )
       }
 
@@ -626,7 +623,7 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
   // search keeps using a representation that matches the current text.
   // The description-kind row gets re-embedded synchronously (cheap, one
   // embedding call) and upserted in place. The hyde_synthetic row, which
-  // grounds itself on the description, gets deleted; the heal worker
+  // grounds itself on the description, gets staled; the heal worker
   // re-creates it on the next tick. We do not run the LLM HyDE call here
   // because PUT is a request-path handler and a 3 to 8s LLM round-trip is
   // unacceptable latency.
@@ -634,21 +631,26 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
     try {
       const orConfig = await loadOpenRouterConfig()
       const newDescription = updated.description ?? ''
+      let descVec: number[] | null = null
       if (newDescription.trim().length > 0) {
-        const descVec = await embedText(newDescription, {
+        descVec = await embedText(newDescription, {
           apiKey: orConfig.apiKey,
           model: orConfig.models.embedding,
         })
-        if (descVec) {
-          await upsertDescriptionAgentSchemaRow(db, id, newDescription, descVec)
-        } else {
+        if (!descVec) {
           log.warn(
             { wikiKey: id },
             'description embed returned null on edit, heal worker will retry'
           )
         }
       }
-      await deleteHydeAgentSchemaRow(db, id)
+      await ensureAgentSchema(db, id, {
+        mode: 'refresh',
+        description: newDescription,
+        precomputedEmbedding: descVec ?? undefined,
+        alsoStaleHyde: true,
+        context: { source: 'api' },
+      })
     } catch (err) {
       log.warn(
         { wikiKey: id, err },
