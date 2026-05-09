@@ -3555,6 +3555,10 @@
           "prompt": {
             "type": "string"
           },
+          "structure": {
+            "type": "string",
+            "default": ""
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -3719,6 +3723,10 @@
           },
           "prompt": {
             "type": "string"
+          },
+          "structure": {
+            "type": "string",
+            "default": ""
           },
           "state": {
             "type": "string",
@@ -4062,6 +4070,10 @@
           },
           "prompt": {
             "type": "string"
+          },
+          "structure": {
+            "type": "string",
+            "default": ""
           },
           "state": {
             "type": "string",
