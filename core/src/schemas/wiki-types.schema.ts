@@ -42,6 +42,12 @@ export const wikiTypeItemResponseSchema = z.object({
   displayOrder: z.number().int(),
   promptYaml: z.string(),
   defaultYaml: z.string(),
+  // Surfaced so the AddWiki settings modal can render the type's structure
+  // as the placeholder, showing the user what they would be overriding
+  // instead of a generic structure example. Pairs with defaultSystemMessage
+  // for the Tone & Voice field.
+  defaultStructure: z.string().default(''),
+  defaultSystemMessage: z.string().default(''),
   userModified: z.boolean(),
   basedOnVersion: z.number().int(),
   inputVariables: z.array(

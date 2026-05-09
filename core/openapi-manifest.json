@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "generatedAt": "2026-05-09T09:20:37.521Z",
+    "generatedAt": "2026-05-09T13:50:09.424Z",
     "description": "Route + JSON Schema manifest for OpenAPI generation. Feed to /apidoc.",
     "schemaCount": 64,
     "routeCount": 58
@@ -2194,6 +2194,9 @@
             },
             "prompt": {
               "type": "string"
+            },
+            "structure": {
+              "type": "string"
             }
           },
           "required": [
@@ -2219,6 +2222,9 @@
               "type": "string"
             },
             "prompt": {
+              "type": "string"
+            },
+            "structure": {
               "type": "string"
             },
             "autoregen": {
@@ -2257,6 +2263,10 @@
             },
             "prompt": {
               "type": "string"
+            },
+            "structure": {
+              "type": "string",
+              "default": ""
             },
             "state": {
               "type": "string",
@@ -2450,6 +2460,10 @@
             },
             "prompt": {
               "type": "string"
+            },
+            "structure": {
+              "type": "string",
+              "default": ""
             },
             "state": {
               "type": "string",
@@ -2653,6 +2667,10 @@
                   "prompt": {
                     "type": "string"
                   },
+                  "structure": {
+                    "type": "string",
+                    "default": ""
+                  },
                   "state": {
                     "type": "string",
                     "enum": [
@@ -2852,6 +2870,10 @@
             },
             "prompt": {
               "type": "string"
+            },
+            "structure": {
+              "type": "string",
+              "default": ""
             },
             "state": {
               "type": "string",
