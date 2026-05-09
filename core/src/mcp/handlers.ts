@@ -1152,6 +1152,47 @@ export async function handleUnpublishWiki(
 }
 
 /**
+ * Handle the `regen_status` MCP tool call.
+ *
+ * @summary Read-only snapshot of the regen worker's live state. Pairs
+ * with the per-wiki debounce as the "regen happening now" indicator
+ * QA Issue 6 (2026-05-08) called for: without a surface like this the
+ * regen cost is invisible to the user.
+ *
+ * Returns three views:
+ *   - `inFlight`: BullMQ active/waiting/delayed regen jobs
+ *   - `debounced`: wikis the worker is currently holding off on,
+ *     with eta_to_eligible_ms
+ *   - `recent`: last N pipeline_events entries for stage='regen'
+ */
+export async function handleRegenStatus(
+  deps: McpServerDeps,
+  input: { recentLimit?: number },
+  userId: string | undefined
+) {
+  if (!userId) {
+    return {
+      content: [{ type: 'text' as const, text: 'Error: not authenticated' }],
+      isError: true as const,
+    }
+  }
+  try {
+    const { getRegenStatus } = await import('../queue/regen-debounce.js')
+    const snapshot = await getRegenStatus(deps.db, { recentLimit: input.recentLimit })
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(snapshot) }],
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.error({ err, userId }, 'mcp regen_status failed')
+    return {
+      content: [{ type: 'text' as const, text: `Error: ${message}` }],
+      isError: true as const,
+    }
+  }
+}
+
+/**
  * Handle the `regen_now` MCP tool call.
  *
  * @summary On-demand regen for a single wiki, bypassing the per-wiki

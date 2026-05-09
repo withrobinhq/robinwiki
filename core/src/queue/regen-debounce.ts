@@ -25,9 +25,10 @@
  * @see {@link handleRegenNow} -- on-demand bypass for the MCP tool
  ***********************************************************************/
 
-import { eq, and, isNull, inArray, sql } from 'drizzle-orm'
+import { eq, and, isNull, inArray, sql, desc } from 'drizzle-orm'
+import { QUEUE_NAMES } from '@robin/queue'
 import type { DB } from '../db/client.js'
-import { wikis, edges } from '../db/schema.js'
+import { wikis, edges, fragments, pipelineEvents } from '../db/schema.js'
 import { producer } from './producer.js'
 
 /**
@@ -162,4 +163,179 @@ export async function resolveWikiForRegen(
     .where(and(eq(wikis.slug, trimmed), isNull(wikis.deletedAt)))
     .limit(1)
   return bySlug ?? null
+}
+
+/**
+ * Snapshot of the regen worker's current state, surfaced via the
+ * `regen_status` MCP tool. QA Issue 6's closing line: "add a 'regen
+ * happening now' indicator". Without this surface the user only
+ * notices regen via UI chip flicker; the cost is otherwise invisible.
+ */
+export interface RegenStatusSnapshot {
+  inFlight: { jobId: string; wikiKey: string; startedAt: string | null; triggeredBy: 'scheduler' | 'manual' | null }[]
+  debounced: { wikiKey: string; lastEdgeAt: string; etaToEligibleMs: number }[]
+  recent: { wikiKey: string | null; jobId: string; status: 'started' | 'completed' | 'failed'; startedAt: string; durationMs: number | null }[]
+  debounceMs: number
+}
+
+interface RegenJobPayload {
+  __sig?: string
+  type?: string
+  jobId?: string
+  objectKey?: string
+  triggeredBy?: 'scheduler' | 'manual'
+}
+
+/**
+ * Build a regen-status snapshot. Reads:
+ *   1. BullMQ active + waiting jobs on the regen queue (in-flight).
+ *   2. Wikis whose most-recent fragment edge falls inside the debounce
+ *      window (deferred regen candidates).
+ *   3. Recent `pipeline_events` rows scoped to `stage='regen'` for the
+ *      success-rate / latency view.
+ *
+ * No expensive aggregations -- this is a status pull, not a report.
+ */
+export async function getRegenStatus(
+  db: DB,
+  options: { recentLimit?: number } = {}
+): Promise<RegenStatusSnapshot> {
+  const recentLimit = Math.max(1, Math.min(options.recentLimit ?? 10, 100))
+
+  // ── 1. In-flight regen jobs (BullMQ) ─────────────────────────────────
+  // `getJobs` over active+waiting+delayed gives the live picture without
+  // needing any persistence layer. Failures here log-and-continue so
+  // status pulls degrade gracefully when redis blips.
+  const inFlight: RegenStatusSnapshot['inFlight'] = []
+  try {
+    const queue = producer.getQueue(QUEUE_NAMES.regen)
+    const jobs = await queue.getJobs(['active', 'waiting', 'delayed'], 0, 50)
+    for (const job of jobs) {
+      const data = job.data as RegenJobPayload
+      const wikiKey = data?.objectKey ?? ''
+      const jobId = (job.id as string) ?? data?.jobId ?? ''
+      const startedAt = job.processedOn ? new Date(job.processedOn).toISOString() : null
+      inFlight.push({
+        jobId,
+        wikiKey,
+        startedAt,
+        triggeredBy: data?.triggeredBy ?? null,
+      })
+    }
+  } catch {
+    // Redis unreachable -- inFlight stays empty. Caller can still use
+    // the rest of the snapshot.
+  }
+
+  // ── 2. Debounced wikis ───────────────────────────────────────────────
+  // Mirror the batch worker's Reason 1 + 2 candidate set, then run it
+  // through filterDebouncedWikiKeys. The user-visible "what's it waiting
+  // on?" view.
+  const debounced: RegenStatusSnapshot['debounced'] = []
+  try {
+    const debounceCandidates = new Set<string>()
+
+    const [unfiledCount] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(fragments)
+      .where(
+        and(
+          isNull(fragments.deletedAt),
+          sql`${fragments.embedding} IS NOT NULL`,
+          sql`${fragments.lookupKey} NOT IN (
+            SELECT src_id FROM edges
+            WHERE edge_type = 'FRAGMENT_IN_WIKI' AND deleted_at IS NULL
+          )`
+        )
+      )
+    if ((unfiledCount?.count ?? 0) > 0) {
+      const rows = await db
+        .select({ lookupKey: wikis.lookupKey })
+        .from(wikis)
+        .where(and(isNull(wikis.deletedAt), eq(wikis.regenerate, true)))
+      for (const r of rows) debounceCandidates.add(r.lookupKey)
+    }
+
+    const wikisWithNewFragments = await db
+      .select({ lookupKey: wikis.lookupKey })
+      .from(wikis)
+      .innerJoin(
+        edges,
+        and(
+          eq(edges.dstId, wikis.lookupKey),
+          eq(edges.edgeType, 'FRAGMENT_IN_WIKI'),
+          isNull(edges.deletedAt)
+        )
+      )
+      .where(
+        and(
+          isNull(wikis.deletedAt),
+          eq(wikis.regenerate, true),
+          sql`${edges.createdAt} > COALESCE(${wikis.lastRebuiltAt}, '1970-01-01'::timestamptz)`
+        )
+      )
+      .groupBy(wikis.lookupKey)
+    for (const r of wikisWithNewFragments) debounceCandidates.add(r.lookupKey)
+
+    const { debounced: deferred } = await filterDebouncedWikiKeys(
+      db,
+      Array.from(debounceCandidates)
+    )
+    for (const d of deferred) {
+      debounced.push({
+        wikiKey: d.wikiKey,
+        lastEdgeAt: d.lastEdgeAt.toISOString(),
+        etaToEligibleMs: d.etaMs,
+      })
+    }
+  } catch {
+    // DB blip -- debounced stays empty rather than failing the whole call.
+  }
+
+  // ── 3. Recent regen events ───────────────────────────────────────────
+  // Pull the last N completed/failed/started rows for stage='regen'.
+  // The existing index `pipeline_events_status_stage_idx` makes this
+  // cheap. Pair started + completed by jobId for duration display.
+  const recent: RegenStatusSnapshot['recent'] = []
+  try {
+    const rows = await db
+      .select({
+        jobId: pipelineEvents.jobId,
+        status: pipelineEvents.status,
+        createdAt: pipelineEvents.createdAt,
+        metadata: pipelineEvents.metadata,
+      })
+      .from(pipelineEvents)
+      .where(eq(pipelineEvents.stage, 'regen'))
+      .orderBy(desc(pipelineEvents.createdAt))
+      .limit(recentLimit * 4)
+
+    // Group by jobId, keep the latest status for each (rows already
+    // ordered desc).
+    const seen = new Map<string, typeof rows[number]>()
+    for (const r of rows) {
+      if (!seen.has(r.jobId)) seen.set(r.jobId, r)
+      if (seen.size >= recentLimit) break
+    }
+    for (const r of seen.values()) {
+      const meta = (r.metadata ?? {}) as { wikiKey?: string; durationMs?: number }
+      const status = r.status as 'started' | 'completed' | 'failed'
+      recent.push({
+        wikiKey: meta.wikiKey ?? null,
+        jobId: r.jobId,
+        status,
+        startedAt: r.createdAt.toISOString(),
+        durationMs: typeof meta.durationMs === 'number' ? meta.durationMs : null,
+      })
+    }
+  } catch {
+    // Same fail-open posture.
+  }
+
+  return {
+    inFlight,
+    debounced,
+    recent,
+    debounceMs: regenDebounceMs(),
+  }
 }
