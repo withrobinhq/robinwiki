@@ -68,6 +68,7 @@ import { processPrunePipelineEventsJob } from './prune-pipeline-events-worker.js
 import { processFragmentRelationshipBackfillJob } from './fragment-relationship-backfill-worker.js'
 import type { SchedulerJob } from '@robin/queue'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
+import { hybridSearch } from '../lib/search.js'
 import { generateKeypair } from '../keypair.js'
 import { logger } from '../lib/logger.js'
 import { clearKidCache } from '../mcp/jwt.js'
@@ -520,13 +521,26 @@ async function processLinkJob(job: LinkJob): Promise<JobResult> {
       await emitAuditEvent(db as never, params)
     },
     wikiClassifyDeps: {
-      searchCandidates: async (_content, limit) => {
-        const rows = await db
-          .select({ lookupKey: wikis.lookupKey })
-          .from(wikis)
-          .where(isNull(wikis.deletedAt))
-          .limit(limit)
-        return rows.map((r) => ({ wikiKey: r.lookupKey, score: 0 }))
+      // Forward classifier candidate selection. Earlier versions did a
+      // bare LIMIT-N SELECT here, which discarded the fragment content
+      // and handed Marcel a fixed first-N set in heap order. That broke
+      // long-tail wikis: anything outside the Postgres-default first 10
+      // never reached classification, regardless of topical fit. (#364)
+      //
+      // We now use the same hybridSearch path as regen.ts and the MCP /
+      // HTTP search surfaces, scoped to the wiki table so the BM25 lane
+      // and the description / hyde_synthetic vector lanes both vote on
+      // candidate ranking.
+      searchCandidates: async (content, limit) => {
+        const results = await hybridSearch(db, content, {
+          limit,
+          tables: ['wiki'],
+          embedConfig: {
+            apiKey: openRouterConfig.apiKey,
+            model: openRouterConfig.models.embedding,
+          },
+        })
+        return results.map((r) => ({ wikiKey: r.id, score: r.score }))
       },
       loadThreads: async (wikiKeys) => {
         if (wikiKeys.length === 0) return []
