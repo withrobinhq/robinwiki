@@ -567,6 +567,41 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
     .where(eq(wikis.lookupKey, id))
     .returning()
 
+  // Refresh the agent_schema rows when the description changes so hybrid
+  // search keeps using a representation that matches the current text.
+  // The description-kind row gets re-embedded synchronously (cheap, one
+  // embedding call) and upserted in place. The hyde_synthetic row, which
+  // grounds itself on the description, gets deleted; the heal worker
+  // re-creates it on the next tick. We do not run the LLM HyDE call here
+  // because PUT is a request-path handler and a 3 to 8s LLM round-trip is
+  // unacceptable latency.
+  if (descriptionChanged) {
+    try {
+      const orConfig = await loadOpenRouterConfig()
+      const newDescription = updated.description ?? ''
+      if (newDescription.trim().length > 0) {
+        const descVec = await embedText(newDescription, {
+          apiKey: orConfig.apiKey,
+          model: orConfig.models.embedding,
+        })
+        if (descVec) {
+          await upsertDescriptionAgentSchemaRow(db, id, newDescription, descVec)
+        } else {
+          log.warn(
+            { wikiKey: id },
+            'description embed returned null on edit, heal worker will retry'
+          )
+        }
+      }
+      await deleteHydeAgentSchemaRow(db, id)
+    } catch (err) {
+      log.warn(
+        { wikiKey: id, err },
+        'failed to refresh agent_schema rows on description edit, heal worker will retry'
+      )
+    }
+  }
+
   const typeTransition = body.type != null && body.type !== existing.type
     ? { from: existing.type, to: body.type }
     : undefined
