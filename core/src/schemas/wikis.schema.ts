@@ -80,6 +80,8 @@ export const wikiDetailResponseSchema = wikiResponseSchema.extend({
     z.object({
       id: lookupKeySchema,
       name: z.string(),
+      // Stream P quarantine status; default 'verified' for legacy rows.
+      status: z.enum(['verified', 'pending', 'rejected']).default('verified'),
     })
   ),
   refs: wikiRefsMapSchema.default({}),

@@ -63,16 +63,35 @@ peopleRouter.get('/', async (c) => {
   const limit = query.success ? query.data.limit : 50
   const offset = query.success ? query.data.offset : 0
 
+  // Stream P quarantine: GET /people defaults to status='verified'.
+  // Pass ?status=pending to load the triage queue, ?status=all to
+  // see every row regardless of status (used by admin tooling).
+  const statusFilter = c.req.query('status') ?? 'verified'
+  const where =
+    statusFilter === 'all'
+      ? isNull(people.deletedAt)
+      : statusFilter === 'pending'
+        ? and(isNull(people.deletedAt), sql`${people.status} = 'pending'`)
+        : statusFilter === 'rejected'
+          ? and(isNull(people.deletedAt), sql`${people.status} = 'rejected'`)
+          : and(isNull(people.deletedAt), sql`${people.status} = 'verified'`)
+
   const rows = await db
     .select()
     .from(people)
-    .where(isNull(people.deletedAt))
+    .where(where)
     .orderBy(people.name)
     .limit(limit)
     .offset(offset)
 
   return c.json(
-    personListResponseSchema.parse({ people: rows.map((r) => ({ ...r, id: r.lookupKey })) })
+    personListResponseSchema.parse({
+      people: rows.map((r) => ({
+        ...r,
+        id: r.lookupKey,
+        status: (r as unknown as { status?: string }).status ?? 'verified',
+      })),
+    })
   )
 })
 

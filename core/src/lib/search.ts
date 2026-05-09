@@ -142,13 +142,19 @@ async function bm25SearchTable(
   // pass each tag as its own parameter and bind them inside an
   // EXISTS over jsonb_array_elements_text — equivalent to
   // `tags ?| array[...]` (UNION) but bind-safe.
+  // Stream P quarantine: pending persons are EXCLUDED from hybrid
+  // search entirely (no marker, just absent). Verified-only filter
+  // attaches when the search lane is the person table.
+  const personStatusFilter =
+    tableType === 'person' ? sql` AND ${people.status} = 'verified'` : sql``
+
   const whereClause =
     tags && tableType === 'fragment'
       ? sql`${meta.deletedAtCol} IS NULL AND ${meta.searchVectorCol} @@ ${tsQuery} AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(${fragments.tags}) AS t(elem) WHERE t.elem IN (${sql.join(
           tags.map((tag) => sql`${tag}`),
           sql`, `
         )}))`
-      : sql`${meta.deletedAtCol} IS NULL AND ${meta.searchVectorCol} @@ ${tsQuery}`
+      : sql`${meta.deletedAtCol} IS NULL AND ${meta.searchVectorCol} @@ ${tsQuery}${personStatusFilter}`
 
   const rows = await database
     .select({
@@ -204,13 +210,17 @@ async function vectorSearchTable(
     tagsFilter && tagsFilter.length > 0 ? tagsFilter : null
   if (tags && tableType !== 'fragment') return []
 
+  // Stream P quarantine: pending persons stay out of vector search too.
+  const personStatusFilter =
+    tableType === 'person' ? sql` AND ${people.status} = 'verified'` : sql``
+
   const whereClause =
     tags && tableType === 'fragment'
       ? sql`${meta.deletedAtCol} IS NULL AND ${meta.embeddingCol} IS NOT NULL AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(${fragments.tags}) AS t(elem) WHERE t.elem IN (${sql.join(
           tags.map((tag) => sql`${tag}`),
           sql`, `
         )}))`
-      : sql`${meta.deletedAtCol} IS NULL AND ${meta.embeddingCol} IS NOT NULL`
+      : sql`${meta.deletedAtCol} IS NULL AND ${meta.embeddingCol} IS NOT NULL${personStatusFilter}`
 
   const rows = await database
     .select({

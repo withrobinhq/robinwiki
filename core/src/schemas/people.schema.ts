@@ -13,6 +13,9 @@ export const personResponseSchema = z.object({
   aliases: z.array(z.string()),
   verified: z.boolean(),
   state: objectStateSchema,
+  // Stream P quarantine status. Default 'verified' so legacy clients
+  // and pre-migration rows continue to parse cleanly.
+  status: z.enum(['verified', 'pending', 'rejected']).default('verified'),
   lastRebuiltAt: z.coerce.date().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
@@ -79,6 +82,11 @@ export const mergePersonBodySchema = z.object({
 
 export const personListQuerySchema = paginationQuerySchema.extend({
   offset: z.coerce.number().int().min(0).default(0),
+  // Stream P quarantine filter. Default 'verified' (graph-visible only).
+  status: z
+    .enum(['verified', 'pending', 'rejected', 'all'])
+    .optional()
+    .default('verified'),
 })
 
 export { queuedResponseSchema as personRegenerateResponseSchema }
