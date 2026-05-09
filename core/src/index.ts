@@ -37,6 +37,7 @@ import { producer } from './queue/producer.js'
 import { QUEUE_NAMES } from '@robin/queue'
 import { bullBoardApp } from './routes/bull-board.js'
 import { adminRoutes } from './routes/admin.js'
+import { adminBackfillRoutes } from './routes/admin/backfill.js'
 import { adminPeopleRoutes } from './routes/admin/people.js'
 import { authRecoverRoutes } from './routes/auth-recover.js'
 import {
@@ -208,6 +209,7 @@ app.get('/favicon.ico', (c) =>
 // app.route('/internal', internalRoutes)
 app.route('/admin/people', adminPeopleRoutes)
 app.route('/admin', adminRoutes)
+app.route('/admin/backfill', adminBackfillRoutes)
 app.route('/auth', authRecoverRoutes)
 app.route('/published', publishedRoutes)
 app.route('/system', systemRoutes)

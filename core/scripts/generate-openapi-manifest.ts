@@ -49,6 +49,7 @@ import {
   autoRegenBodySchema,
   autoRegenResponseSchema,
   editorialStateSchema,
+  agentSchemaStatusSchema,
   updateProgressBodySchema,
   updateProgressResponseSchema,
   // wiki types
@@ -133,6 +134,7 @@ const schemaRegistry: Record<string, ZodType> = {
   autoRegenBodySchema,
   autoRegenResponseSchema,
   editorialStateSchema,
+  agentSchemaStatusSchema,
   updateProgressBodySchema,
   updateProgressResponseSchema,
   // wiki types
@@ -285,6 +287,9 @@ const routes: RouteSpec[] = [
 
   // ── Admin ────────────────────────────────────────────────────────────────
   { method: 'POST', path: '/admin/retry-stuck', operationId: 'retryStuckFragments', summary: 'Re-enqueue stuck PENDING fragments', tags: ['Admin'], auth: 'none', responses: { '200': { description: 'Re-enqueue results', schemaName: 'retryStuckResponseSchema' } } },
+  { method: 'GET', path: '/admin/backfill/audit', operationId: 'getBackfillAudit', summary: 'Read-only gap audit for wiki_agent_schema rows', tags: ['Admin'], auth: 'session', responses: { '200': { description: 'Gap report and last-audit timestamp' } } },
+  { method: 'POST', path: '/admin/backfill/wiki-agent-schema', operationId: 'triggerWikiAgentSchemaBackfill', summary: 'Trigger the wiki_agent_schema description-row backfill', tags: ['Admin'], auth: 'session', responses: { '200': { description: 'Backfill result' }, '500': { description: 'Runner threw', schemaName: 'errorResponseSchema' } } },
+  { method: 'GET', path: '/admin/backfill/runs', operationId: 'getBackfillRuns', summary: 'Last-run telemetry for backfill and embedding-related jobs', tags: ['Admin'], auth: 'session', responses: { '200': { description: 'Recent scheduled-job runs' } } },
 
   // ── MCP ──────────────────────────────────────────────────────────────────
   { method: 'POST', path: '/mcp', operationId: 'mcpTransport', summary: 'MCP Streamable HTTP transport (JWT)', tags: ['MCP'], auth: 'jwt', responses: { '200': { description: 'MCP protocol response' }, '401': { description: 'Invalid token', schemaName: 'errorResponseSchema' } } },

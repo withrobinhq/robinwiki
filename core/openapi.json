@@ -2230,102 +2230,81 @@
         }
       }
     },
-    "/admin/people": {
+    "/admin/backfill/audit": {
       "get": {
-        "operationId": "listAdminPeople",
-        "summary": "List people by status (Stream P)",
-        "description": "Triage list. Defaults to status=pending so the admin UI can render the quarantine queue without a query string.",
+        "operationId": "getBackfillAudit",
+        "summary": "Read-only gap audit for wiki_agent_schema rows",
         "tags": [
           "Admin"
         ],
         "security": [
           {
             "cookieAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": ["pending", "verified", "rejected"],
-              "default": "pending"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "integer", "minimum": 0, "default": 0 }
-          },
-          {
-            "name": "since",
-            "in": "query",
-            "required": false,
-            "schema": { "type": "string", "format": "date-time" }
           }
         ],
         "responses": {
           "200": {
-            "description": "Persons list with total"
+            "description": "Gap report and last-audit timestamp",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "wikiAgentSchema",
+                    "generatedAt",
+                    "lastAuditAt"
+                  ],
+                  "properties": {
+                    "wikiAgentSchema": {
+                      "type": "object",
+                      "required": [
+                        "missingDescription",
+                        "missingHyde"
+                      ],
+                      "properties": {
+                        "missingDescription": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "missingHyde": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "generatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "lastAuditAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
-    "/admin/people/{lookupKey}/approve": {
+    "/admin/backfill/wiki-agent-schema": {
       "post": {
-        "operationId": "approvePendingPerson",
-        "summary": "Approve a pending person (Stream P)",
-        "description": "Flips the row to status='verified'. Existing edges become fully involved with no backfill.",
+        "operationId": "triggerWikiAgentSchemaBackfill",
+        "summary": "Trigger the wiki_agent_schema description-row backfill",
         "tags": [
           "Admin"
         ],
         "security": [
           {
             "cookieAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "lookupKey",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "200": { "description": "Person approved" },
-          "404": { "description": "Person not found" }
-        }
-      }
-    },
-    "/admin/people/{lookupKey}/reject": {
-      "post": {
-        "operationId": "rejectPendingPerson",
-        "summary": "Reject a pending person (Stream P)",
-        "description": "Default: status='rejected'. With { hardDelete: true } the row and edges are deleted.",
-        "tags": [
-          "Admin"
-        ],
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "lookupKey",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string" }
           }
         ],
         "requestBody": {
@@ -2335,15 +2314,140 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "hardDelete": { "type": "boolean", "default": false }
+                  "wikiKey": {
+                    "type": "string",
+                    "description": "Optional: scope the run to a single wiki by lookup key"
+                  }
                 }
               }
             }
           }
         },
         "responses": {
-          "200": { "description": "Person rejected" },
-          "404": { "description": "Person not found" }
+          "200": {
+            "description": "Backfill result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "jobId",
+                    "scope",
+                    "ok",
+                    "failed",
+                    "scanned",
+                    "durationMs"
+                  ],
+                  "properties": {
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "single"
+                      ]
+                    },
+                    "wikiKey": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "ok": {
+                      "type": "integer"
+                    },
+                    "failed": {
+                      "type": "integer"
+                    },
+                    "scanned": {
+                      "type": "integer"
+                    },
+                    "durationMs": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Runner threw",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/backfill/runs": {
+      "get": {
+        "operationId": "getBackfillRuns",
+        "summary": "Last-run telemetry for backfill and embedding-related jobs",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent scheduled-job runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "runs"
+                  ],
+                  "properties": {
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "jobName",
+                          "lastRunAt",
+                          "lastRunStatus"
+                        ],
+                        "properties": {
+                          "jobName": {
+                            "type": "string"
+                          },
+                          "lastRunAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "lastRunStatus": {
+                            "type": "string"
+                          },
+                          "lastRunMeta": {
+                            "type": [
+                              "object",
+                              "null"
+                            ]
+                          },
+                          "lastRunDurationMs": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -3451,10 +3555,6 @@
           "prompt": {
             "type": "string"
           },
-          "structure": {
-            "type": "string",
-            "default": ""
-          },
           "state": {
             "type": "string",
             "enum": [
@@ -3573,6 +3673,9 @@
           "editorialState": {
             "$ref": "#/components/schemas/editorialStateSchema",
             "default": "empty"
+          },
+          "agentSchemaStatus": {
+            "$ref": "#/components/schemas/agentSchemaStatusSchema"
           }
         },
         "required": [
@@ -3616,10 +3719,6 @@
           },
           "prompt": {
             "type": "string"
-          },
-          "structure": {
-            "type": "string",
-            "default": ""
           },
           "state": {
             "type": "string",
@@ -3910,6 +4009,9 @@
                 "editorialState": {
                   "$ref": "#/components/schemas/editorialStateSchema",
                   "default": "empty"
+                },
+                "agentSchemaStatus": {
+                  "$ref": "#/components/schemas/agentSchemaStatusSchema"
                 }
               },
               "required": [
@@ -3960,10 +4062,6 @@
           },
           "prompt": {
             "type": "string"
-          },
-          "structure": {
-            "type": "string",
-            "default": ""
           },
           "state": {
             "type": "string",
@@ -4315,6 +4413,15 @@
       "editorialStateSchema": {
         "type": "string",
         "enum": ["empty", "learning", "dreaming", "filed"]
+      },
+      "agentSchemaStatusSchema": {
+        "type": "string",
+        "enum": [
+          "complete",
+          "missing_description",
+          "missing_hyde",
+          "missing_both"
+        ]
       },
       "updateProgressBodySchema": {
         "type": "object",
