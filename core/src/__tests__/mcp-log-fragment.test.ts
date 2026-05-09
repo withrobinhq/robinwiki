@@ -203,7 +203,15 @@ describe('handleLogFragment', () => {
         .fn()
         .mockResolvedValue([{ lookupKey: personKey, canonicalName: 'Marcus', aliases: [] }]),
       entityExtractCall: vi.fn().mockResolvedValue({
-        people: [{ mention: 'Marcus', inferredName: 'Marcus', matchedKey: personKey }],
+        people: [
+          {
+            mention: 'Marcus',
+            inferredName: 'Marcus',
+            matchedKey: personKey,
+            confidence: 0.95,
+            sourceSpan: 'Marcus helped with form',
+          },
+        ],
       }),
     })
 
@@ -221,6 +229,13 @@ describe('handleLogFragment', () => {
     const personEdge = edgeRows.find((e) => e.edgeType === 'FRAGMENT_MENTIONS_PERSON')
     expect(personEdge).toBeDefined()
     expect(personEdge?.dstId).toBe(personKey)
+    // H2 (#329): every FRAGMENT_MENTIONS_PERSON write stamps the
+    // mention surface form, source span, and extractor confidence.
+    expect(personEdge?.attrs).toMatchObject({
+      mention: 'Marcus',
+      sourceSpan: 'Marcus helped with form',
+      confidence: 0.95,
+    })
   })
 
   it('proceeds when entity extraction throws (fail-open)', async () => {

@@ -179,7 +179,7 @@ export async function entityExtract(
   const newPeople: EntityExtractResult['newPeople'] = []
   const peopleMap = new Map<string, string>()
   const newAliases = new Map<string, string[]>()
-  const matchedExtractions: Array<{ mention: string; sourceSpan: string }> = []
+  const matchedExtractions: EntityExtractResult['extractions'] = []
   let unmatchedDropped = 0
   let createdPersons = 0
 
@@ -226,9 +226,20 @@ export async function entityExtract(
       createdPersons++
     }
     peopleMap.set(outcome.mention, outcome.lookupKey)
+    // H2 (#329): confidence is only present on `matched`/`pending`
+    // outcomes (the LLM reported a score for those buckets).
+    // `created_pending`/`created_verified` come from the candidate
+    // bucket where the matcher synthesised a row, so we record 1.0
+    // for newly minted persons (the row exists because we believed
+    // the candidate, full stop).
+    const confidence =
+      outcome.kind === 'matched' || outcome.kind === 'pending'
+        ? outcome.confidence
+        : 1
     matchedExtractions.push({
       mention: outcome.mention,
       sourceSpan: outcome.sourceSpan.text,
+      confidence,
     })
   }
 
