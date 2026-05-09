@@ -306,11 +306,12 @@ export const wikis = pgTable(
     structure: text('structure').notNull().default(''),
     lastRebuiltAt: timestamp('last_rebuilt_at'),
     /**
-     * Auto-regen toggle (migration 0014, was `auto_regen`). When true, the
-     * midnight batch worker rewrites this wiki on its scheduled tick. Also
-     * gates the ingest-driven Reasons 1 and 2 in the regen worker as of
-     * v0.2.2 (T4-bundle): autoregen is now the sole regen gate, replacing
-     * the dropped `regenerate` flag. Default false, opt-in per wiki.
+     * Auto-regen toggle (migration 0014 renamed the column to one word).
+     * When true, the midnight batch worker rewrites this wiki on its
+     * scheduled tick. Also gates the ingest-driven Reasons 1 and 2 in the
+     * regen worker as of v0.2.2 (T4-bundle): autoregen is now the sole
+     * regen gate, replacing the dropped `regenerate` flag. Default false,
+     * opt-in per wiki.
      */
     autoregen: boolean('autoregen').notNull().default(false),
     /**

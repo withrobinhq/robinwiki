@@ -74,7 +74,8 @@ vi.mock('../db/schema.js', () => ({
   wikis: {
     lookupKey: 'wikis.lookupKey',
     deletedAt: 'wikis.deletedAt',
-    regenerate: 'wikis.regenerate',
+    autoregen: 'wikis.autoregen',
+    dirtySince: 'wikis.dirtySince',
     state: 'wikis.state',
     updatedAt: 'wikis.updatedAt',
     lastRebuiltAt: 'wikis.lastRebuiltAt',
@@ -103,12 +104,19 @@ describe('processRegenBatchJob — per-item enqueue failure (#273)', () => {
   })
 
   it('emits a regen_batch_item_failed audit row when a single wiki enqueue rejects', async () => {
-    // Stage: unfiled count → 0 (no unfiled), new-frag wikis → two candidates,
-    // stuck wikis → 0.
+    // Stage: unfiled count to 0 (no unfiled, Reason 1 skipped), Reason 2
+    // returns two candidates, Reason 3 + Reason 4 return zero, debounce
+    // filter returns both eligible (dirty_since older than 5min window).
+    const oldDirty = new Date(Date.now() - 10 * 60_000)
     stageDbResponses([
-      [{ count: 0 }],                                                 // unfiled count
-      [{ lookupKey: 'wiki-good' }, { lookupKey: 'wiki-bad' }],        // wikis with new fragments (groupBy)
-      [],                                                              // stuck wikis
+      [{ count: 0 }],                                                  // unfiled count
+      [{ lookupKey: 'wiki-good' }, { lookupKey: 'wiki-bad' }],         // Reason 2: autoregen+dirty wikis
+      [],                                                              // Reason 3: stuck wikis
+      [],                                                              // Reason 4: autoregen+learning wikis
+      [
+        { wikiKey: 'wiki-good', dirtySince: oldDirty },
+        { wikiKey: 'wiki-bad', dirtySince: oldDirty },
+      ],                                                               // filterDebouncedWikiKeys (reads wikis.dirty_since)
     ])
 
     // First wiki succeeds, second one fails.
@@ -148,10 +156,13 @@ describe('processRegenBatchJob — per-item enqueue failure (#273)', () => {
   })
 
   it('does NOT emit any regen_batch_item_failed audit when every enqueue succeeds', async () => {
+    const oldDirty = new Date(Date.now() - 10 * 60_000)
     stageDbResponses([
       [{ count: 0 }],
       [{ lookupKey: 'wiki-good' }],
       [],
+      [],
+      [{ wikiKey: 'wiki-good', dirtySince: oldDirty }],
     ])
     mockEnqueueRegen.mockResolvedValue(undefined)
 

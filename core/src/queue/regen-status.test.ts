@@ -69,12 +69,11 @@ vi.mock('../db/schema.js', () => ({
     lookupKey: 'wikis.lookupKey',
     slug: 'wikis.slug',
     deletedAt: 'wikis.deletedAt',
-    regenerate: 'wikis.regenerate',
+    autoregen: 'wikis.autoregen',
+    dirtySince: 'wikis.dirtySince',
     state: 'wikis.state',
     updatedAt: 'wikis.updatedAt',
     lastRebuiltAt: 'wikis.lastRebuiltAt',
-    autoRegen: 'wikis.autoRegen',
-    lifecycleState: 'wikis.lifecycleState',
   },
   edges: {
     dstId: 'edges.dstId',
@@ -124,10 +123,10 @@ describe('getRegenStatus - snapshot assembly', () => {
     stageDbResponses([
       // unfiled count
       [{ count: 0 }],
-      // wikis with new fragments (innerJoin path)
+      // wikis with dirty_since set (Reason 2 candidates)
       [{ lookupKey: 'wiki-debounced' }],
-      // filterDebouncedWikiKeys edges query
-      [{ wikiKey: 'wiki-debounced', lastEdgeAt: fresh }],
+      // filterDebouncedWikiKeys reads wikis.dirty_since
+      [{ wikiKey: 'wiki-debounced', dirtySince: fresh }],
       // pipelineEvents.recent
       [
         {

@@ -605,10 +605,11 @@ describe('regenerateWiki — sidecar persistence', () => {
 
 // ── Stream E1 keystone — partition tests ──────────────────────────────────
 //
-// Focus: assert the post-first-regen partition behaviour — no-op short-circuit,
-// triggering-fragments shape, lifecycle_state transitions. The mock DB harness
-// returns whatever the test queues; partition compute is pure JS over the
-// queued fragment + edge rows.
+// Focus: assert the post-first-regen partition behaviour, no-op short-circuit,
+// triggering-fragments shape, and editorial-state transitions (now derived
+// from {state, dirty_since, last_rebuilt_at}, see lib/wiki-editorial-state).
+// The mock DB harness returns whatever the test queues; partition compute
+// is pure JS over the queued fragment + edge rows.
 
 describe('regenerateWiki — E1 partition (post-first-regen)', () => {
   beforeEach(() => {
@@ -622,22 +623,28 @@ describe('regenerateWiki — E1 partition (post-first-regen)', () => {
     vi.clearAllMocks()
   })
 
-  it('flips lifecycle_state to dreaming on entry and back to filed on success', async () => {
+  it('flips state to LINKING on entry and back to RESOLVED with dirty_since cleared on success', async () => {
     stageDbResponses([
       [baseWiki()], // 1. wikis select (outer)
       [],           // 2. classifyUnfiledFragments
-      [],           // 3. fragment edges (empty → first-regen path)
+      [],           // 3. fragment edges (empty, first-regen path)
       [],           // 4. user edits
       [],           // 5. wikiTypes select
     ])
 
     await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
 
-    // dbUpdates[0] is the LINKING + dreaming flip; [1] is content + filed.
-    expect(dbUpdates[0]).toMatchObject({ state: 'LINKING', lifecycleState: 'dreaming' })
-    expect(dbUpdates[1]).toMatchObject({ state: 'RESOLVED', lifecycleState: 'filed' })
-    // last_regen_at is stamped on success (not on the dreaming flip).
+    // dbUpdates[0] is the LINKING flip (editorial 'dreaming' is derived).
+    // dbUpdates[1] is content + RESOLVED + dirtySince=null (editorial 'filed'
+    // is derived from those signals).
+    expect(dbUpdates[0]).toMatchObject({ state: 'LINKING' })
+    expect(dbUpdates[1]).toMatchObject({ state: 'RESOLVED', dirtySince: null })
+    // last_regen_at is stamped on success (not on the LINKING flip).
     expect(dbUpdates[1].lastRegenAt).toBeInstanceOf(Date)
+    // Sanity: the dropped column name is not in either payload.
+    const droppedKey = ['lifecycle', 'State'].join('')
+    expect(Object.keys(dbUpdates[0])).not.toContain(droppedKey)
+    expect(Object.keys(dbUpdates[1])).not.toContain(droppedKey)
   })
 
   it('returns triggeringFragments=undefined and skipped=undefined on first regen', async () => {
@@ -657,7 +664,7 @@ describe('regenerateWiki — E1 partition (post-first-regen)', () => {
     expect(llmCalls).toHaveLength(1)
   })
 
-  it('short-circuits when partition is empty post-first-regen and lifecycle returns to filed', async () => {
+  it('short-circuits when partition is empty post-first-regen and dirty_since is cleared (editorial returns to filed)', async () => {
     // Post-first-regen wiki with one INTEGRATED fragment (edge older than
     // last_rebuilt_at, fragment older than last_rebuilt_at). Partition: NEW
     // and UPDATED both empty; REMOVED empty too. Expect skipped=true.
@@ -690,11 +697,14 @@ describe('regenerateWiki — E1 partition (post-first-regen)', () => {
     expect(result.skipped).toBe(true)
     // No LLM call when partition is empty.
     expect(llmCalls).toHaveLength(0)
-    // Still flips lifecycle back to filed and bumps last_rebuilt_at.
+    // Still clears dirty_since and bumps last_rebuilt_at, editorial returns
+    // to 'filed' (derived from RESOLVED + dirtySince=null + lastRebuiltAt set).
     const skipUpdate = dbUpdates.find(
-      (u) => u.lifecycleState === 'filed' && u.state === 'RESOLVED' && u.content === undefined
+      (u) => u.dirtySince === null && u.state === 'RESOLVED' && u.content === undefined
     )
     expect(skipUpdate).toBeDefined()
+    const droppedKey = ['lifecycle', 'State'].join('')
+    expect(Object.keys(skipUpdate ?? {})).not.toContain(droppedKey)
     // Body stays the same — content key not in the skip-path update.
     // triggeringFragments still surfaces the integrated count for audit.
     expect(result.triggeringFragments).toBeDefined()

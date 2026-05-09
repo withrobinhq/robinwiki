@@ -18,8 +18,11 @@
  * check. Recovery (Reason 3, stuck state) and the explicit-cadence
  * midnight cron (Reason 4) bypass the debounce.
  *
- * No migration: we read `MAX(edges.created_at)` per wiki to derive the
- * last fragment-arrival time. `wikis.last_rebuilt_at` already exists.
+ * v0.2.2 (T4-bundle): read `wikis.dirty_since` directly. The query-time
+ * `MAX(edges.created_at)` derivation went away when migration 0014 added
+ * the column. The signal is identical (set on edge insert, cleared on
+ * regen completion), but the read is one column lookup instead of a
+ * grouped scan over edges.
  *
  * @see {@link processRegenBatchJob} -- the consumer
  * @see {@link handleRegenNow} -- on-demand bypass for the MCP tool
@@ -28,7 +31,7 @@
 import { eq, and, isNull, inArray, sql, desc } from 'drizzle-orm'
 import { QUEUE_NAMES } from '@robin/queue'
 import type { DB } from '../db/client.js'
-import { wikis, edges, fragments, pipelineEvents } from '../db/schema.js'
+import { wikis, fragments, pipelineEvents } from '../db/schema.js'
 import { producer } from './producer.js'
 
 /**
@@ -52,13 +55,15 @@ export function regenDebounceMs(): number {
 }
 
 /**
- * Filter a candidate set down to wikis whose most-recent FRAGMENT_IN_WIKI
- * edge is older than `now - REGEN_DEBOUNCE_MS`. Wikis with no edges yet
- * (no fragments attached) are treated as eligible; the debounce only
- * delays regen during active ingest.
+ * Filter a candidate set down to wikis whose `dirty_since` is older than
+ * `now - REGEN_DEBOUNCE_MS`. Wikis with `dirty_since IS NULL` (clean,
+ * nothing to regen) are treated as eligible; the debounce only delays
+ * regen during active ingest.
  *
- * Reads `MAX(edges.created_at)` grouped by `dst_id` for the
- * `FRAGMENT_IN_WIKI` edge type. Single query, indexed by `edges_dst_idx`.
+ * v0.2.2 (T4-bundle): reads `wikis.dirty_since` directly. The signal is
+ * stamped by every FRAGMENT_IN_WIKI edge insert and cleared on regen
+ * completion, so it carries the same meaning as the old MAX(edges.created_at)
+ * derivation but in a single column lookup.
  */
 export async function filterDebouncedWikiKeys(
   db: DB,
@@ -71,41 +76,34 @@ export async function filterDebouncedWikiKeys(
 
   const rows = await db
     .select({
-      wikiKey: edges.dstId,
-      lastEdgeAt: sql<Date>`MAX(${edges.createdAt})`,
+      wikiKey: wikis.lookupKey,
+      dirtySince: wikis.dirtySince,
     })
-    .from(edges)
-    .where(
-      and(
-        inArray(edges.dstId, candidateKeys),
-        eq(edges.edgeType, 'FRAGMENT_IN_WIKI'),
-        isNull(edges.deletedAt)
-      )
-    )
-    .groupBy(edges.dstId)
+    .from(wikis)
+    .where(and(inArray(wikis.lookupKey, candidateKeys), isNull(wikis.deletedAt)))
 
-  const lastEdgeByWiki = new Map<string, Date>()
+  const dirtySinceByWiki = new Map<string, Date | null>()
   for (const r of rows) {
-    if (r.lastEdgeAt) lastEdgeByWiki.set(r.wikiKey, new Date(r.lastEdgeAt))
+    dirtySinceByWiki.set(r.wikiKey, r.dirtySince ?? null)
   }
 
   const cutoff = now.getTime() - debounceMs
   const eligible: string[] = []
   const debounced: { wikiKey: string; lastEdgeAt: Date; etaMs: number }[] = []
   for (const key of candidateKeys) {
-    const last = lastEdgeByWiki.get(key)
-    if (!last) {
-      // No fragment edges yet -- nothing to wait on.
+    const dirtySince = dirtySinceByWiki.get(key) ?? null
+    if (!dirtySince) {
+      // dirty_since is null, nothing to wait on.
       eligible.push(key)
       continue
     }
-    if (last.getTime() <= cutoff) {
+    if (dirtySince.getTime() <= cutoff) {
       eligible.push(key)
     } else {
       debounced.push({
         wikiKey: key,
-        lastEdgeAt: last,
-        etaMs: last.getTime() + debounceMs - now.getTime(),
+        lastEdgeAt: dirtySince,
+        etaMs: dirtySince.getTime() + debounceMs - now.getTime(),
       })
     }
   }
@@ -252,29 +250,22 @@ export async function getRegenStatus(
       const rows = await db
         .select({ lookupKey: wikis.lookupKey })
         .from(wikis)
-        .where(and(isNull(wikis.deletedAt), eq(wikis.regenerate, true)))
+        .where(and(isNull(wikis.deletedAt), eq(wikis.autoregen, true)))
       for (const r of rows) debounceCandidates.add(r.lookupKey)
     }
 
+    // T4-bundle (v0.2.2): dirty_since is now a column, read it directly
+    // instead of joining edges and deriving freshness at query time.
     const wikisWithNewFragments = await db
       .select({ lookupKey: wikis.lookupKey })
       .from(wikis)
-      .innerJoin(
-        edges,
-        and(
-          eq(edges.dstId, wikis.lookupKey),
-          eq(edges.edgeType, 'FRAGMENT_IN_WIKI'),
-          isNull(edges.deletedAt)
-        )
-      )
       .where(
         and(
           isNull(wikis.deletedAt),
-          eq(wikis.regenerate, true),
-          sql`${edges.createdAt} > COALESCE(${wikis.lastRebuiltAt}, '1970-01-01'::timestamptz)`
+          eq(wikis.autoregen, true),
+          sql`${wikis.dirtySince} IS NOT NULL`,
         )
       )
-      .groupBy(wikis.lookupKey)
     for (const r of wikisWithNewFragments) debounceCandidates.add(r.lookupKey)
 
     const { debounced: deferred } = await filterDebouncedWikiKeys(
