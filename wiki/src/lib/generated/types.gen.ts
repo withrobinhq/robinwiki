@@ -238,12 +238,14 @@ export type CreateThreadBodySchema = {
     type?: string;
     description?: string;
     prompt?: string;
+    structure?: string;
 };
 
 export type UpdateThreadBodySchema = {
     name?: string;
     type?: string;
     prompt?: string;
+    structure?: string;
 };
 
 export type ThreadResponseSchema = {
@@ -254,6 +256,7 @@ export type ThreadResponseSchema = {
     description?: string;
     type: string;
     prompt: string;
+    structure?: string;
     state: 'PENDING' | 'RESOLVED' | 'LINKING' | 'DIRTY';
     lastRebuiltAt: string;
     createdAt: string;
@@ -284,6 +287,7 @@ export type ThreadWithWikiResponseSchema = {
     description?: string;
     type: string;
     prompt: string;
+    structure?: string;
     state: 'PENDING' | 'RESOLVED' | 'LINKING' | 'DIRTY';
     lastRebuiltAt: string;
     createdAt: string;
@@ -347,6 +351,7 @@ export type WikiDetailResponseSchema = {
     description?: string;
     type: string;
     prompt: string;
+    structure?: string;
     state: 'PENDING' | 'RESOLVED' | 'LINKING' | 'DIRTY';
     lastRebuiltAt: string;
     createdAt: string;
