@@ -1,0 +1,15 @@
+{
+  "input": "I've been turning the Kenya decision over in my head for months. Last week I finally moved. The flight was uneventful, the unpacking was familiar, the first morning was bright. Everything I'd planned for went the way I'd planned for it.\n\nWhat I hadn't planned for was the small stuff. The way the pharmacy near my old place stocked exactly the brand my mum prefers. The barista who knew my order. The route I ran on Sundays where I always passed the same red door. Those are the things I miss now, and they hit harder than any of the headline losses I'd braced for.\n\n1st order losses are what you brace for. But 2nd and 3rd order ones are what actually shape the texture of your life.\n\nThe FOMO is real too. A friend in SF posted about a dinner I would have been at. Another shipped a side project I'd been kicking around for a year. The reflex is to read these as evidence that I made the wrong call. The slower read is that they are evidence I made a real call, one with a real cost, and that cost is now visible because I'm no longer hiding from it.\n\nWhen we make big life decisions that feel aligned with our values, we often forget to do the grief work. We tell ourselves the choice is right, and then we expect the feelings to follow. They don't. The choice can be right and the loss can still be real. Both are true at once.\n\nNaming the feeling doesn't fix it. But it gives you just enough distance to analyse it before acting from it. I've noticed I almost booked a return flight twice this week. Not because I want to go back, but because the ache wanted somewhere to put itself.\n\nI still believe in walking the road in front of you. But you also need to notice the ghost walking beside you. Pretending it's not there is what makes it loud. Acknowledging it is what makes it walk slower.",
+  "expectedCount": { "min": 5, "max": 10 },
+  "mustContain": [
+    "1st order losses",
+    "grief work",
+    "Naming the feeling",
+    "ghost walking beside you"
+  ],
+  "mustNotContain": [
+    "I've been turning",
+    "uneventful"
+  ],
+  "notes": "Reflective post about choosing Kenya over Silicon Valley. Tests the v3 reflective-claim retention exception, the four philosophical claims must survive the fluff filter as atomic knowledge. Also tests the paragraph-structure rule, each paragraph carries one coherent claim plus reasoning."
+}
