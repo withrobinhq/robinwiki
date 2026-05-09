@@ -63,6 +63,8 @@ type WikiTypeListItem = {
   displayOrder: number
   promptYaml: string
   defaultYaml: string
+  defaultStructure: string
+  defaultSystemMessage: string
   userModified: boolean
   basedOnVersion: number
   inputVariables: Array<{ name: string; description: string; required: boolean }>
@@ -111,6 +113,8 @@ wikiTypesRouter.get('/', async (c) => {
         displayOrder: 999,
         promptYaml: row.prompt,
         defaultYaml: '',
+        defaultStructure: '',
+        defaultSystemMessage: '',
         userModified: row.userModified,
         basedOnVersion: row.basedOnVersion,
         inputVariables: [],
@@ -129,6 +133,8 @@ wikiTypesRouter.get('/', async (c) => {
         displayOrder: spec.display_order ?? 999,
         promptYaml: row.prompt,
         defaultYaml,
+        defaultStructure: spec.default_structure ?? '',
+        defaultSystemMessage: spec.system_message ?? '',
         userModified: row.userModified,
         basedOnVersion: row.basedOnVersion,
         inputVariables: spec.input_variables.map((v) => ({
@@ -150,6 +156,8 @@ wikiTypesRouter.get('/', async (c) => {
         displayOrder: 999,
         promptYaml: row.prompt,
         defaultYaml,
+        defaultStructure: '',
+        defaultSystemMessage: '',
         userModified: row.userModified,
         basedOnVersion: row.basedOnVersion,
         inputVariables: [],

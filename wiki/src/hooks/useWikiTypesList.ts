@@ -15,6 +15,19 @@ export interface WikiTypeListItem {
   displayOrder: number;
   promptYaml: string;
   defaultYaml: string;
+  /**
+   * The type's `default_structure` block extracted from its YAML spec.
+   * Used as the placeholder for the Document Format field in the
+   * AddWiki settings modal so users see what their override would
+   * replace.
+   */
+  defaultStructure: string;
+  /**
+   * The type's `system_message` block extracted from its YAML spec.
+   * Used as the placeholder for the Wiki Style field, which overrides
+   * `wikis.prompt` (the system_message swap at regen time).
+   */
+  defaultSystemMessage: string;
   userModified: boolean;
   basedOnVersion: number;
   inputVariables: InputVariable[];

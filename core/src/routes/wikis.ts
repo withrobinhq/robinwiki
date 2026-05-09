@@ -180,6 +180,7 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
       type: wikiType,
       state: 'PENDING',
       prompt: body.prompt ?? '',
+      structure: body.structure ?? '',
       // Stream V (migration 0015): web-UI captures stamp the wiki row
       // with `source_client = 'web'` so retrospective queries can break
       // creates down by surface without unpacking audit_log.detail.
@@ -576,6 +577,12 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
     updates.prompt = body.prompt
     // Prompt change affects wiki generation — mark PENDING so regen rebuilds with new prompt
     if (body.prompt !== existing.prompt) updates.state = 'PENDING'
+  }
+  // Document-structure override (#244). Sibling of `prompt`; same PENDING
+  // semantics on change so the next regen rebuilds against the new skeleton.
+  if (body.structure != null) {
+    updates.structure = body.structure
+    if (body.structure !== existing.structure) updates.state = 'PENDING'
   }
   // T4-bundle (v0.2.2): autoregen flag now editable via the unified PUT body.
   if (body.autoregen != null) updates.autoregen = body.autoregen

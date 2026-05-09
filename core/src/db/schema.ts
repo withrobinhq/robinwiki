@@ -478,6 +478,12 @@ export const edits = pgTable(
 
 // ─── Edges ───
 
+// Canonical src_type / dst_type vocabulary, enforced by CHECK constraints
+// added in migration 0016: 'raw_source' | 'fragment' | 'wiki' | 'person'.
+// 'raw_source' is the canonical name for the entries-table side, since
+// the underlying table was renamed from `entries` to `raw_sources` in
+// v0.2.0. Writers must not emit 'entry' (the legacy spelling) anywhere.
+
 export const edges = pgTable(
   'edges',
   {
