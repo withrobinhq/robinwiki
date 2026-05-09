@@ -22,7 +22,7 @@ import { eq, and, isNull, inArray, sql } from 'drizzle-orm'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { listWikis, getWiki, getFragment, findPersonById, findPersonByQuery, listWikiTypes, briefPerson, resolveWikiBySlug } from './resolvers.js'
 import type { McpResolverDeps } from './resolvers.js'
-import { handleLogEntry, handleLogFragment, handleCreateWikiType, handleCreateWiki, handleEditWiki, handleAttachFragments, handlePublishWiki, handleUnpublishWiki, handleRegenNow, handleRegenStatus, handleCreatePerson, handleUpdatePerson, handleAddRelationship } from './handlers.js'
+import { handleLogEntry, handleLogFragment, handleCreateWikiType, handleCreateWiki, handleEditWiki, handleAttachFragments, handlePublishWiki, handleUnpublishWiki, handleRegenNow, handleRegenStatus, handleCreatePerson, handleUpdatePerson, handleAddRelationship, handleListPendingPersons, handleSetAutoAcceptPersons } from './handlers.js'
 import type { McpServerDeps } from './handlers.js'
 import { wikis, wikiTypes, edges, auditLog, groups, groupWikis } from '../db/schema.js'
 import { hybridSearch } from '../lib/search.js'
@@ -359,6 +359,41 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     },
     async (input, extra) => {
       return handleUpdatePerson(deps, input, extra.authInfo?.clientId as string)
+    }
+  )
+
+  server.registerTool(
+    'list_pending_persons',
+    {
+      description:
+        'List Persons in the quarantine queue (status="pending"). Read-only triage view. ' +
+        'Approval and rejection are HTTP-only via /admin/people/:key/approve and /admin/people/:key/reject; ' +
+        'this tool only surfaces the queue contents so AI agents can plan their next step.',
+      inputSchema: {
+        limit: z.number().optional().describe('Max rows (default 50, max 200)'),
+        offset: z.number().optional().describe('Pagination offset'),
+        since: z
+          .string()
+          .optional()
+          .describe('ISO timestamp; only persons created after this'),
+      },
+    },
+    async (input, extra) => {
+      return handleListPendingPersons(deps, input, extra.authInfo?.clientId as string)
+    }
+  )
+
+  server.registerTool(
+    'set_auto_accept_persons',
+    {
+      description:
+        'Toggle the instance-wide `auto_accept_persons` flag (app_settings). When true, ' +
+        'the extractor flips new candidates straight to status="verified" instead of ' +
+        'routing them through the quarantine queue. Returns { previous, current }.',
+      inputSchema: { value: z.boolean() },
+    },
+    async (input, extra) => {
+      return handleSetAutoAcceptPersons(deps, input, extra.authInfo?.clientId as string)
     }
   )
 

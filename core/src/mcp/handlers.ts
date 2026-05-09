@@ -1346,6 +1346,137 @@ function appendContextNote(
   }
 }
 
+import {
+  loadAutoAcceptPersons as readAutoAcceptPersons,
+  setAutoAcceptPersons as writeAutoAcceptPersons,
+} from '../lib/people-settings.js'
+
+/**
+ * Handle the `list_pending_persons` MCP tool call. Read-only triage view
+ * of the quarantine queue. Approval and rejection are HTTP-only via
+ * /admin/people/:key/approve and /reject; this tool only surfaces the
+ * queue contents so AI agents can plan their next action.
+ */
+export async function handleListPendingPersons(
+  deps: McpServerDeps,
+  input: { limit?: number; offset?: number; since?: string },
+  userId: string | undefined
+) {
+  if (!userId) {
+    return {
+      content: [{ type: 'text' as const, text: 'Error: not authenticated' }],
+      isError: true as const,
+    }
+  }
+  const limit = Math.max(1, Math.min(200, input.limit ?? 50))
+  const offset = Math.max(0, input.offset ?? 0)
+  try {
+    const baseFilter = sql`${peopleTable.status} = 'pending' AND ${peopleTable.deletedAt} IS NULL`
+    const where =
+      input.since && !Number.isNaN(Date.parse(input.since))
+        ? sql`${baseFilter} AND ${peopleTable.createdAt} >= ${new Date(input.since)}`
+        : baseFilter
+
+    const rows = await deps.db
+      .select({
+        lookupKey: peopleTable.lookupKey,
+        slug: peopleTable.slug,
+        canonicalName: peopleTable.canonicalName,
+        aliases: peopleTable.aliases,
+        createdAt: peopleTable.createdAt,
+        createdVia: peopleTable.createdVia,
+        extractedFromFragmentId: peopleTable.extractedFromFragmentId,
+      })
+      .from(peopleTable)
+      .where(where)
+      .orderBy(sql`${peopleTable.createdAt} DESC`)
+      .limit(limit)
+      .offset(offset)
+
+    const totalRows = await deps.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(peopleTable)
+      .where(where)
+    const total = Number(totalRows[0]?.count ?? 0)
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            persons: rows.map((r) => ({
+              lookupKey: r.lookupKey,
+              slug: r.slug,
+              canonicalName: r.canonicalName,
+              aliases: r.aliases ?? [],
+              status: 'pending' as const,
+              createdAt: r.createdAt?.toISOString?.() ?? null,
+              createdVia: r.createdVia,
+              extractedFromFragmentId: r.extractedFromFragmentId,
+            })),
+            total,
+          }),
+        },
+      ],
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.error({ err, userId }, 'mcp list_pending_persons failed')
+    return {
+      content: [{ type: 'text' as const, text: `Error: ${message}` }],
+      isError: true as const,
+    }
+  }
+}
+
+/**
+ * Handle the `set_auto_accept_persons` MCP tool. Toggles the instance-wide
+ * `auto_accept_persons` flag in app_settings. When true, the extractor flips
+ * new candidates straight to status='verified' instead of routing them
+ * through the quarantine queue.
+ */
+export async function handleSetAutoAcceptPersons(
+  deps: McpServerDeps,
+  input: { value: boolean },
+  userId: string | undefined
+) {
+  if (!userId) {
+    return {
+      content: [{ type: 'text' as const, text: 'Error: not authenticated' }],
+      isError: true as const,
+    }
+  }
+  if (typeof input.value !== 'boolean') {
+    return {
+      content: [{ type: 'text' as const, text: 'Error: value must be boolean' }],
+      isError: true as const,
+    }
+  }
+  try {
+    const result = await writeAutoAcceptPersons(deps.db, input.value)
+    await emitAuditEvent(deps.db, {
+      entityType: 'app_setting',
+      entityId: 'auto_accept_persons',
+      eventType: 'edited',
+      source: 'mcp',
+      summary: `auto_accept_persons set to ${result.current}`,
+      detail: result,
+    })
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.error({ err, userId }, 'mcp set_auto_accept_persons failed')
+    return {
+      content: [{ type: 'text' as const, text: `Error: ${message}` }],
+      isError: true as const,
+    }
+  }
+}
+
+void readAutoAcceptPersons
+
 /**
  * Handle the `create_person` MCP tool call.
  *
