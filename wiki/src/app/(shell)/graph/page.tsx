@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
 import GraphCanvas from "@/components/graph/GraphCanvas";
 import { GraphLegend } from "@/components/graph/GraphOverlays";
 import { GraphDetailPanel } from "@/components/graph/GraphDetailPanel";
@@ -141,6 +142,30 @@ export default function WikiGraphPage() {
           >
             {graphData.nodes.length} nodes · {graphData.edges.length} edges
           </span>
+          {(() => {
+            // Prefer the user's current selection or focus; fall back to the
+            // first wiki node so the link is never dead. Restricted to wiki
+            // ids since the ego route is wiki-scoped in Phase 1.
+            const egoTarget =
+              selected?.id ??
+              focusNodeId ??
+              graphData.nodes.find((n) => n.type === "wiki")?.id;
+            if (!egoTarget) return null;
+            return (
+              <Link
+                href={`/graph/ego/${egoTarget}`}
+                style={{
+                  ...T.caption,
+                  fontFamily: FONT.SANS,
+                  color: "var(--wiki-link)",
+                  textDecoration: "underline",
+                  pointerEvents: "auto",
+                }}
+              >
+                Open ego view
+              </Link>
+            );
+          })()}
         </div>
         <GraphLegend style={{ top: 48 }} />
         <GraphDetailPanel
