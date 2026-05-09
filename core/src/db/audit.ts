@@ -5,13 +5,27 @@ import { logger } from '../lib/logger.js'
 
 const log = logger.child({ component: 'audit' })
 
+/**
+ * Shape of `audit_log.detail`. Stream V (migration 0015) banned the
+ * `source_client` key from this object: every entity type that used to
+ * carry the value now stores it on its own `source_client` column. The
+ * `source_client?: never` intersection makes a literal `source_client`
+ * key a compile-time error, so re-introducing the legacy stamp gets
+ * caught by tsc instead of leaking into production rows.
+ *
+ * Use `string` keys other than `source_client` for any new field. The
+ * `unknown` value type stays intentionally wide because audit detail
+ * is a junk drawer for event-specific metadata.
+ */
+export type AuditDetail = Record<string, unknown> & { source_client?: never }
+
 export interface AuditEventParams {
   entityType: string
   entityId: string
   eventType: string
   source?: string
   summary: string
-  detail?: Record<string, unknown>
+  detail?: AuditDetail
 }
 
 export async function emitAuditEvent(
