@@ -40,23 +40,24 @@ function popResponse(): unknown[] {
 }
 
 vi.mock('../db/client.js', () => {
+  function thenable() {
+    return {
+      // biome-ignore lint/suspicious/noThenProperty: drizzle thenable mock
+      then: (onFulfilled: (v: unknown[]) => unknown) =>
+        Promise.resolve(popResponse()).then(onFulfilled),
+    }
+  }
   function selectChain() {
     return {
       from: () => ({
         where: () => ({
-          // batch processor calls .where() (thenable) and .where().groupBy() — both
-          // pop one queue entry.
-          // biome-ignore lint/suspicious/noThenProperty: drizzle thenable mock
-          then: (onFulfilled: (v: unknown[]) => unknown) =>
-            Promise.resolve(popResponse()).then(onFulfilled),
+          ...thenable(),
+          // The debounce helper appends `.groupBy(...)` after `.where(...)`.
+          groupBy: () => thenable(),
         }),
         innerJoin: () => ({
           where: () => ({
-            groupBy: () => ({
-              // biome-ignore lint/suspicious/noThenProperty: drizzle thenable mock
-              then: (onFulfilled: (v: unknown[]) => unknown) =>
-                Promise.resolve(popResponse()).then(onFulfilled),
-            }),
+            groupBy: () => thenable(),
           }),
         }),
       }),
