@@ -13,6 +13,10 @@ import { logger } from '../lib/logger.js'
 import { validationHook } from '../lib/validation.js'
 import { nanoid24 } from '../lib/id.js'
 import { regenerateWiki } from '../lib/regen.js'
+import {
+  upsertDescriptionAgentSchemaRow,
+  deleteHydeAgentSchemaRow,
+} from '../lib/wiki-agent-schema.js'
 import { wikiRegenLock } from '../db/locks.js'
 import { buildSidecar } from '../lib/wikiSidecar.js'
 import { makeSidecarDeps } from '../lib/wikiSidecarDeps.js'
@@ -202,11 +206,25 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
         .set({ embedding: wikiVec })
         .where(eq(wikis.lookupKey, lookupKey))
 
-      // D6 (empty-wiki bootstrap) is deferred to a follow-up PR. Stream G's
-      // wiki_agent_schema table (PR #326) is the destination; this slice
-      // requires G to merge first so the schema is in main. Once G is in,
-      // a follow-up writes a kind='description' row here using G's shape
-      // (wiki_key + content + embedding + generator_version='hyde_v1').
+      // Empty-wiki bootstrap (#69 D6 follow-up): seed the kind='description'
+      // row in wiki_agent_schema immediately so a brand-new wiki competes in
+      // hybrid search on day one. wikiVec already encodes name + description;
+      // re-using it here keeps the cost at zero extra LLM/embedding calls.
+      // The hyde_synthetic row is deferred to the heal worker because HyDE
+      // is an LLM round-trip we will not block POST on.
+      try {
+        await upsertDescriptionAgentSchemaRow(
+          db,
+          lookupKey,
+          body.description ?? '',
+          wikiVec
+        )
+      } catch (err) {
+        log.warn(
+          { wikiKey: lookupKey, err },
+          'failed to seed description agent_schema row at create — heal worker will retry'
+        )
+      }
 
       const candidates = await db
         .select({
@@ -548,6 +566,41 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
     .set(updates)
     .where(eq(wikis.lookupKey, id))
     .returning()
+
+  // Refresh the agent_schema rows when the description changes so hybrid
+  // search keeps using a representation that matches the current text.
+  // The description-kind row gets re-embedded synchronously (cheap, one
+  // embedding call) and upserted in place. The hyde_synthetic row, which
+  // grounds itself on the description, gets deleted; the heal worker
+  // re-creates it on the next tick. We do not run the LLM HyDE call here
+  // because PUT is a request-path handler and a 3 to 8s LLM round-trip is
+  // unacceptable latency.
+  if (descriptionChanged) {
+    try {
+      const orConfig = await loadOpenRouterConfig()
+      const newDescription = updated.description ?? ''
+      if (newDescription.trim().length > 0) {
+        const descVec = await embedText(newDescription, {
+          apiKey: orConfig.apiKey,
+          model: orConfig.models.embedding,
+        })
+        if (descVec) {
+          await upsertDescriptionAgentSchemaRow(db, id, newDescription, descVec)
+        } else {
+          log.warn(
+            { wikiKey: id },
+            'description embed returned null on edit, heal worker will retry'
+          )
+        }
+      }
+      await deleteHydeAgentSchemaRow(db, id)
+    } catch (err) {
+      log.warn(
+        { wikiKey: id, err },
+        'failed to refresh agent_schema rows on description edit, heal worker will retry'
+      )
+    }
+  }
 
   const typeTransition = body.type != null && body.type !== existing.type
     ? { from: existing.type, to: body.type }

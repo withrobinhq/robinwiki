@@ -226,6 +226,36 @@ Three migrations, sequenced:
 2. **`wiki_types.internal_framing` column**: ALTER TABLE add column, nullable. Populated on next bootstrap by the YAML loader using the v0.2.0 framing set above.
 3. **Backfill cutover**: regen pipeline starts dual-writing into `wiki_agent_schema`. Retrieval reads from the new table when rows exist, falls back to `wikis.embedding` when they do not. Once 100% of wikis have rows, drop `wikis.embedding` in a follow-up migration.
 
+## Recovery on existing instances
+
+A deployment that ran before #69 closed the create-time and edit-time write
+paths will have a long tail of wikis with no `wiki_agent_schema` rows. Two
+recovery surfaces, sequenced:
+
+1. **One-shot description backfill**:
+
+   ```
+   pnpm -C core tsx scripts/backfill-wiki-agent-schema.ts            # write
+   pnpm -C core tsx scripts/backfill-wiki-agent-schema.ts -- --dry-run
+   pnpm -C core tsx scripts/backfill-wiki-agent-schema.ts -- --limit 50
+   ```
+
+   Idempotent. Re-running on a clean instance is a no-op. Only embeds and
+   writes the `kind='description'` row, which is the cheap path (one
+   embedding call per wiki, no LLM round-trip).
+
+2. **Incremental HyDE heal**: the embedding-retry worker (15-minute cron,
+   `core/src/queue/embedding-retry-worker.ts`) catches up missing
+   `kind='hyde_synthetic'` rows in batches of 5 per tick. A 200-wiki tail
+   completes in roughly 10 hours by design; bounding the per-tick LLM spend
+   matters more than the recovery wall-clock here. The same worker pass
+   also fixes any `kind='description'` rows whose embedding came back NULL
+   on the first attempt.
+
+The worker pass and the script use the same `findWikisMissingDescriptionRow`
+and `findWikisMissingHydeRow` queries, so there is one source of truth for
+"what still needs writing".
+
 ## What this is not
 
 - Not a cache layer. The agent schema is the canonical retrieval surface. The wiki body is the human content surface. Each is authoritative for its consumer.

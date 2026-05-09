@@ -1,6 +1,11 @@
 import type { EmbeddingRetryJob, JobResult } from '@robin/queue'
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
-import { embedText, takeLastEmbedFailure } from '@robin/agent'
+import {
+  createHydeAgent,
+  createStringCaller,
+  embedText,
+  takeLastEmbedFailure,
+} from '@robin/agent'
 import { db } from '../db/client.js'
 import { fragments, wikis, people } from '../db/schema.js'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
@@ -8,6 +13,13 @@ import { logger } from '../lib/logger.js'
 import { emitPipelineEvent } from '../db/pipeline-events.js'
 import { emitAuditEvent } from '../db/audit.js'
 import { emitUsageEvent } from '../db/usage-events.js'
+import {
+  findWikisMissingDescriptionRow,
+  findWikisMissingHydeRow,
+  generateWikiAgentSchema,
+  resolveRetrievalIndexModel,
+  upsertDescriptionAgentSchemaRow,
+} from '../lib/wiki-agent-schema.js'
 
 const log = logger.child({ component: 'embedding-retry' })
 
@@ -257,6 +269,101 @@ async function retryTable<TableName extends 'fragments' | 'wikis' | 'people'>(
 }
 
 /**
+ * Caps for the agent_schema heal pass. The description heal is cheap (one
+ * embedding call per wiki) so it gets a higher batch. The HyDE heal makes
+ * an LLM round-trip per wiki at 3 to 8s + an embedding, so it gets a
+ * tighter batch to bound per-tick cost and wall-clock.
+ */
+const AGENT_SCHEMA_DESC_BATCH = 25
+const AGENT_SCHEMA_HYDE_BATCH = 5
+
+/**
+ * Heal the agent_schema rows for wikis that were missed by create-time or
+ * edit-time write paths (#69 D6). Two passes per tick:
+ *
+ *   1. Description heal: any wiki whose kind='description' row is missing
+ *      or has a NULL embedding gets re-embedded and upserted.
+ *   2. HyDE heal: any wiki missing a kind='hyde_synthetic' row gets the
+ *      LLM HyDE pipeline run via generateWikiAgentSchema, which is
+ *      idempotent on (wiki_key, kind, generator_version).
+ *
+ * Both passes are bounded by their batch caps. A failure on one wiki does
+ * not stop the rest of the pass; we log and continue.
+ */
+async function healAgentSchemaRows(
+  embedConfig: { apiKey: string; model: string },
+  config: Awaited<ReturnType<typeof loadOpenRouterConfig>>
+): Promise<{
+  description: { scanned: number; ok: number; failed: number }
+  hyde: { scanned: number; ok: number; failed: number }
+}> {
+  const descTargets = await findWikisMissingDescriptionRow(db, AGENT_SCHEMA_DESC_BATCH)
+  let descOk = 0
+  let descFailed = 0
+  for (const target of descTargets) {
+    try {
+      const vec = await embedText(target.description, embedConfig)
+      if (vec) {
+        await upsertDescriptionAgentSchemaRow(db, target.wikiKey, target.description, vec)
+        descOk++
+      } else {
+        descFailed++
+        log.warn(
+          { wikiKey: target.wikiKey },
+          'agent_schema description heal: embed returned null',
+        )
+      }
+    } catch (err) {
+      descFailed++
+      log.warn(
+        { wikiKey: target.wikiKey, err: err instanceof Error ? err.message : String(err) },
+        'agent_schema description heal threw',
+      )
+    }
+  }
+
+  const hydeTargets = await findWikisMissingHydeRow(db, AGENT_SCHEMA_HYDE_BATCH)
+  let hydeOk = 0
+  let hydeFailed = 0
+
+  // Lazily build the HyDE caller; if no targets, save the agent construction.
+  let hydeCaller: ((prompt: string) => Promise<string | null>) | null = null
+  if (hydeTargets.length > 0) {
+    const hydeModel = resolveRetrievalIndexModel(config)
+    const hydeAgent = createHydeAgent(config, hydeModel)
+    const hydeStringCaller = createStringCaller(hydeAgent)
+    hydeCaller = async (prompt: string) => {
+      const text = await hydeStringCaller('', prompt)
+      return text ?? null
+    }
+  }
+
+  for (const wikiKey of hydeTargets) {
+    if (!hydeCaller) break
+    try {
+      const result = await generateWikiAgentSchema(db, {
+        wikiKey,
+        orConfig: config,
+        hydeCaller: async (prompt) => hydeCaller!(prompt),
+      })
+      if (result.wroteHyde) hydeOk++
+      else hydeFailed++
+    } catch (err) {
+      hydeFailed++
+      log.warn(
+        { wikiKey, err: err instanceof Error ? err.message : String(err) },
+        'agent_schema hyde heal threw',
+      )
+    }
+  }
+
+  return {
+    description: { scanned: descTargets.length, ok: descOk, failed: descFailed },
+    hyde: { scanned: hydeTargets.length, ok: hydeOk, failed: hydeFailed },
+  }
+}
+
+/**
  * Scheduler-driven retry of fragments, wikis, and people whose embedding
  * column is still NULL (likely because the original ingest/create hit an
  * OpenRouter failure). Runs every 15 minutes per the BullMQ scheduler.
@@ -314,6 +421,22 @@ export async function processEmbeddingRetryJob(
     const wikiResult = await retryTable('wikis', cutoff, embedConfig, job.jobId)
     const peopleResult = await retryTable('people', cutoff, embedConfig, job.jobId)
 
+    // Agent-schema heal (#69 D6 follow-up). Wikis whose POST or PUT path
+    // missed writing their kind='description' or kind='hyde_synthetic' row
+    // get caught up here so hybrid search lanes stay populated.
+    let agentSchemaResult: Awaited<ReturnType<typeof healAgentSchemaRows>> = {
+      description: { scanned: 0, ok: 0, failed: 0 },
+      hyde: { scanned: 0, ok: 0, failed: 0 },
+    }
+    try {
+      agentSchemaResult = await healAgentSchemaRows(embedConfig, config)
+    } catch (err) {
+      log.warn(
+        { jobId: job.jobId, error: err instanceof Error ? err.message : String(err) },
+        'agent_schema heal pass threw, continuing without it',
+      )
+    }
+
     const elapsed = Math.round(performance.now() - t0)
     log.info(
       {
@@ -321,6 +444,7 @@ export async function processEmbeddingRetryJob(
         fragments: fragResult,
         wikis: wikiResult,
         people: peopleResult,
+        agentSchema: agentSchemaResult,
         ms: elapsed,
       },
       'embedding retry batch done'
@@ -335,6 +459,7 @@ export async function processEmbeddingRetryJob(
         fragments: fragResult,
         wikis: wikiResult,
         people: peopleResult,
+        agentSchema: agentSchemaResult,
         durationMs: elapsed,
       },
     })
@@ -342,16 +467,19 @@ export async function processEmbeddingRetryJob(
     // Parallel audit row so /admin/diagnose's audit_log column carries a
     // human-readable summary of the cron tick (dashboards / log greps that
     // look at audit_log, not pipeline_events, still see embed activity).
+    const agentDescOk = agentSchemaResult.description.ok
+    const agentHydeOk = agentSchemaResult.hyde.ok
     await emitAuditEvent(db, {
       entityType: 'embedding_retry',
       entityId: job.jobId,
       eventType: 'completed',
       source: 'system',
-      summary: `Embedding retry batch: ${fragResult.ok}+${wikiResult.ok}+${peopleResult.ok} healed, ${fragResult.failed}+${wikiResult.failed}+${peopleResult.failed} still pending`,
+      summary: `Embedding retry batch: ${fragResult.ok}+${wikiResult.ok}+${peopleResult.ok} healed, ${fragResult.failed}+${wikiResult.failed}+${peopleResult.failed} still pending; agent_schema: ${agentDescOk} description, ${agentHydeOk} hyde`,
       detail: {
         fragments: fragResult,
         wikis: wikiResult,
         people: peopleResult,
+        agentSchema: agentSchemaResult,
         durationMs: elapsed,
       },
     })

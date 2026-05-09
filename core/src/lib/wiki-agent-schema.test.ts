@@ -4,12 +4,14 @@
 // fallback. The full DB-integration path (insert/upsert) is exercised by
 // the regen worker test suite.
 
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import {
   GENERATOR_VERSION,
   HYDE_BODY_EXCERPT_CHARS,
+  deleteHydeAgentSchemaRow,
   renderHydePrompt,
   resolveRetrievalIndexModel,
+  upsertDescriptionAgentSchemaRow,
 } from './wiki-agent-schema.js'
 
 describe('renderHydePrompt', () => {
@@ -105,5 +107,46 @@ describe('resolveRetrievalIndexModel', () => {
   it('treats whitespace-only env var as unset', () => {
     process.env.RETRIEVAL_INDEX_MODEL = '   '
     expect(resolveRetrievalIndexModel(baseConfig)).toBe('writer-model')
+  })
+})
+
+describe('upsertDescriptionAgentSchemaRow', () => {
+  it('issues an INSERT ... ON CONFLICT DO UPDATE on (wiki_key, kind)', async () => {
+    const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined)
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate })
+    const insert = vi.fn().mockReturnValue({ values })
+    const fakeDb = { insert } as unknown as Parameters<typeof upsertDescriptionAgentSchemaRow>[0]
+
+    await upsertDescriptionAgentSchemaRow(fakeDb, 'wiki-key-1', 'a description', [0.1, 0.2])
+
+    expect(insert).toHaveBeenCalledTimes(1)
+    expect(values).toHaveBeenCalledTimes(1)
+    const valuesArg = values.mock.calls[0][0]
+    expect(valuesArg.wikiKey).toBe('wiki-key-1')
+    expect(valuesArg.kind).toBe('description')
+    expect(valuesArg.content).toBe('a description')
+    expect(valuesArg.embedding).toEqual([0.1, 0.2])
+    expect(valuesArg.generatorVersion).toBe(GENERATOR_VERSION)
+
+    expect(onConflictDoUpdate).toHaveBeenCalledTimes(1)
+    const conflictArg = onConflictDoUpdate.mock.calls[0][0]
+    expect(conflictArg.target).toHaveLength(2)
+    expect(conflictArg.set.content).toBe('a description')
+    expect(conflictArg.set.embedding).toEqual([0.1, 0.2])
+    expect(conflictArg.set.generatorVersion).toBe(GENERATOR_VERSION)
+    expect(conflictArg.set.generatedAt).toBeInstanceOf(Date)
+  })
+})
+
+describe('deleteHydeAgentSchemaRow', () => {
+  it('issues a DELETE WHERE wiki_key=? AND kind=hyde_synthetic', async () => {
+    const where = vi.fn().mockResolvedValue(undefined)
+    const del = vi.fn().mockReturnValue({ where })
+    const fakeDb = { delete: del } as unknown as Parameters<typeof deleteHydeAgentSchemaRow>[0]
+
+    await deleteHydeAgentSchemaRow(fakeDb, 'wiki-key-2')
+
+    expect(del).toHaveBeenCalledTimes(1)
+    expect(where).toHaveBeenCalledTimes(1)
   })
 })

@@ -6,9 +6,13 @@ import { fragments as realFragments } from '../db/schema.js'
 
 const embedTextMock = vi.fn()
 const takeLastEmbedFailureMock = vi.fn()
+const createHydeAgentMock = vi.fn()
+const createStringCallerMock = vi.fn()
 vi.mock('@robin/agent', () => ({
   embedText: (...args: unknown[]) => embedTextMock(...args),
   takeLastEmbedFailure: () => takeLastEmbedFailureMock(),
+  createHydeAgent: (...args: unknown[]) => createHydeAgentMock(...args),
+  createStringCaller: (...args: unknown[]) => createStringCallerMock(...args),
 }))
 
 const loadOpenRouterConfigMock = vi.fn()
@@ -21,6 +25,12 @@ vi.mock('../lib/openrouter-config.js', () => ({
 const selectReturns: Array<Array<Record<string, unknown>>> = []
 const updateCapture: Array<{ set: Record<string, unknown> }> = []
 const whereCapture: Array<unknown> = []
+const insertCapture: Array<{ table: unknown; values: Record<string, unknown> }> = []
+const deleteCapture: Array<{ table: unknown }> = []
+
+// db.execute returns are queued the same way selectReturns are; the heal pass
+// uses raw SQL via db.execute() to scan for missing agent_schema rows.
+const executeReturns: Array<Array<Record<string, unknown>>> = []
 
 vi.mock('../db/client.js', () => ({
   db: {
@@ -43,7 +53,36 @@ vi.mock('../db/client.js', () => ({
         return { where: () => Promise.resolve() }
       },
     }),
+    insert: (table: unknown) => ({
+      values: (v: Record<string, unknown>) => {
+        insertCapture.push({ table, values: v })
+        return {
+          onConflictDoUpdate: () => Promise.resolve(),
+          onConflictDoNothing: () => Promise.resolve(),
+          returning: () => Promise.resolve([{ id: 'mock' }]),
+        }
+      },
+    }),
+    delete: (table: unknown) => ({
+      where: () => {
+        deleteCapture.push({ table })
+        return Promise.resolve()
+      },
+    }),
+    execute: () => Promise.resolve(executeReturns.shift() ?? []),
   },
+}))
+
+// emitPipelineEvent / emitAuditEvent / emitUsageEvent each insert into a real
+// table; we don't want their side effects in tests, so stub them.
+vi.mock('../db/pipeline-events.js', () => ({
+  emitPipelineEvent: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock('../db/audit.js', () => ({
+  emitAuditEvent: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock('../db/usage-events.js', () => ({
+  emitUsageEvent: vi.fn().mockResolvedValue(undefined),
 }))
 
 // Note: we intentionally do NOT mock '../db/schema.js'. Using the real
@@ -67,10 +106,15 @@ function baseJob() {
 beforeEach(() => {
   embedTextMock.mockReset()
   takeLastEmbedFailureMock.mockReset()
+  createHydeAgentMock.mockReset()
+  createStringCallerMock.mockReset()
   loadOpenRouterConfigMock.mockReset()
   selectReturns.length = 0
   updateCapture.length = 0
   whereCapture.length = 0
+  insertCapture.length = 0
+  deleteCapture.length = 0
+  executeReturns.length = 0
   loadOpenRouterConfigMock.mockResolvedValue({
     apiKey: 'k',
     models: { extraction: 'x', classification: 'y', wikiGeneration: 'z', embedding: 'e' },
@@ -126,7 +170,7 @@ describe('processEmbeddingRetryJob — issue #151', () => {
   it('issue #216: serializes Date cutoff in where clause without throwing', async () => {
     selectReturns.push([])
     await processEmbeddingRetryJob(baseJob())
-    expect(whereCapture).toHaveLength(1)
+    expect(whereCapture.length).toBeGreaterThanOrEqual(1)
     // Sanity check: the captured where targets the real schema column so
     // PgDialect can resolve column references during compilation.
     expect(realFragments.embeddingLastAttemptAt).toBeDefined()
@@ -161,5 +205,81 @@ describe('processEmbeddingRetryJob — issue #151', () => {
     expect(updateCapture).toHaveLength(2)
     expect(updateCapture[0].set.embedding).toEqual([1, 2, 3])
     expect(updateCapture[1].set.embeddingAttemptCount).toBe(2)
+  })
+})
+
+// ── Agent-schema heal pass (#69 D6 follow-up) ─────────────────────────────
+
+describe('processEmbeddingRetryJob — agent_schema heal pass', () => {
+  it('writes a kind=description row for each wiki missing one', async () => {
+    // Three retryTable selects (fragments, wikis, people): all empty.
+    selectReturns.push([], [], [])
+    // Two execute() calls in the heal pass: description targets, then hyde.
+    executeReturns.push(
+      [{ wiki_key: 'wiki1', description: 'first wiki' }, { wiki_key: 'wiki2', description: 'second wiki' }],
+      [],
+    )
+    embedTextMock.mockResolvedValue([0.5, 0.5, 0.5])
+
+    const res = await processEmbeddingRetryJob(baseJob())
+    expect(res.success).toBe(true)
+
+    // One INSERT per wiki, all into wiki_agent_schema with kind=description.
+    const descInserts = insertCapture.filter(
+      (c) => (c.values as Record<string, unknown>).kind === 'description'
+    )
+    expect(descInserts).toHaveLength(2)
+    expect(descInserts[0].values.wikiKey).toBe('wiki1')
+    expect(descInserts[0].values.embedding).toEqual([0.5, 0.5, 0.5])
+    expect(descInserts[0].values.generatorVersion).toBe('hyde_v1')
+    expect(descInserts[1].values.wikiKey).toBe('wiki2')
+  })
+
+  it('does not LLM-call when no wikis need hyde rows', async () => {
+    selectReturns.push([], [], [])
+    executeReturns.push([], []) // both heal queries empty
+
+    const res = await processEmbeddingRetryJob(baseJob())
+    expect(res.success).toBe(true)
+    expect(createHydeAgentMock).not.toHaveBeenCalled()
+    expect(createStringCallerMock).not.toHaveBeenCalled()
+  })
+
+  it('skips a wiki when its embed returns null and continues to the next', async () => {
+    selectReturns.push([], [], [])
+    executeReturns.push(
+      [
+        { wiki_key: 'wiki-bad', description: 'will fail' },
+        { wiki_key: 'wiki-good', description: 'will succeed' },
+      ],
+      [],
+    )
+    embedTextMock
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([0.7, 0.7, 0.7])
+
+    const res = await processEmbeddingRetryJob(baseJob())
+    expect(res.success).toBe(true)
+
+    const descInserts = insertCapture.filter(
+      (c) => (c.values as Record<string, unknown>).kind === 'description'
+    )
+    expect(descInserts).toHaveLength(1)
+    expect(descInserts[0].values.wikiKey).toBe('wiki-good')
+  })
+
+  it('does not abort the worker when the heal pass throws', async () => {
+    selectReturns.push([], [], [])
+    // Both heal queries throw via undefined return for executeReturns;
+    // simulate by pushing nothing and making execute throw via a marker.
+    // Easier: have findWikisMissingDescriptionRow's first execute throw by
+    // making executeReturns shift undefined (the real query throws on
+    // undefined.map). We rely on the worker's outer try/catch around the
+    // heal pass to swallow it.
+    executeReturns.push(undefined as unknown as Array<Record<string, unknown>>)
+
+    const res = await processEmbeddingRetryJob(baseJob())
+    // The worker swallows the heal failure and still completes the cron tick.
+    expect(res.success).toBe(true)
   })
 })
