@@ -360,7 +360,11 @@ function ExplorerInner() {
               </li>
             ) : (
               visibleItems.map((item) => (
-                <ExplorerRow key={item.id} item={item} />
+                <ExplorerRow
+                  key={item.id}
+                  item={item}
+                  activeCollectionId={filters.collection}
+                />
               ))
             )}
           </ul>
@@ -373,8 +377,20 @@ function ExplorerInner() {
   );
 }
 
-function ExplorerRow({ item }: { item: ExplorerItem }) {
+function ExplorerRow({
+  item,
+  activeCollectionId,
+}: {
+  item: ExplorerItem;
+  activeCollectionId: string | null;
+}) {
   const Icon = getWikiTypeIcon(item.subtype ?? item.type);
+  // When a collection filter is active, prefer surfacing the matching one;
+  // otherwise show the first membership.
+  const surfacedCollection =
+    (activeCollectionId
+      ? item.collections.find((c) => c.id === activeCollectionId)
+      : null) ?? item.collections[0] ?? null;
 
   return (
     <li
@@ -437,20 +453,20 @@ function ExplorerRow({ item }: { item: ExplorerItem }) {
           type={item.subtype ?? (item.type.charAt(0).toUpperCase() + item.type.slice(1))}
         />
 
-        {item.collectionColor && item.collectionName && (
+        {surfacedCollection && (
           <div
             style={{ display: "flex", alignItems: "center", gap: 6 }}
           >
             <span
               className="inline-block h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: item.collectionColor }}
+              style={{ backgroundColor: surfacedCollection.color }}
               aria-hidden
             />
             <span
               className="hidden sm:inline"
               style={{ ...T.micro, color: "var(--wiki-count)" }}
             >
-              {item.collectionName}
+              {surfacedCollection.name}
             </span>
           </div>
         )}

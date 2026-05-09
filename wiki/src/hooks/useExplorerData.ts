@@ -9,15 +9,19 @@ import { useCollections, type Collection } from '@/hooks/useCollections'
 import type { ExplorerFilters } from '@/hooks/useExplorerFilters'
 import { ROUTES } from '@/lib/routes'
 
+export interface ExplorerItemCollection {
+  id: string
+  name: string
+  color: string
+}
+
 export interface ExplorerItem {
   id: string
   lookupKey: string
   type: 'fragment' | 'wiki' | 'person' | 'entry'
   subtype: string | null
   title: string
-  collectionId: string | null
-  collectionName: string | null
-  collectionColor: string | null
+  collections: ExplorerItemCollection[]
   date: string
   href: string
 }
@@ -42,24 +46,28 @@ export function useExplorerData(filters: ExplorerFilters) {
   const items = useMemo(() => {
     const result: ExplorerItem[] = []
 
-    // Wikis (threads)
+    // Wikis (threads). The list endpoint returns wiki.collections; previously
+    // dropped here, which caused the collection filter to match nothing.
     for (const wiki of wikisQuery.data?.wikis ?? []) {
-      // TODO: resolve collection membership when API supports it
       result.push({
         id: wiki.id,
         lookupKey: wiki.lookupKey,
         type: 'wiki',
         subtype: capitalize(wiki.type),
         title: wiki.name,
-        collectionId: null,
-        collectionName: null,
-        collectionColor: null,
+        collections: (wiki.collections ?? []).map((c) => ({
+          id: c.id,
+          name: c.name,
+          color: c.color,
+        })),
         date: wiki.updatedAt,
         href: `/wiki/${wiki.lookupKey}`,
       })
     }
 
-    // Fragments
+    // Fragments, people, entries do not carry collection memberships in the
+    // data model (collections attach to wikis only via group_wikis), so an
+    // empty list correctly excludes them under a collection filter.
     for (const frag of fragmentsQuery.data?.fragments ?? []) {
       result.push({
         id: frag.id,
@@ -67,15 +75,12 @@ export function useExplorerData(filters: ExplorerFilters) {
         type: 'fragment',
         subtype: capitalize(frag.type),
         title: frag.title,
-        collectionId: null,
-        collectionName: null,
-        collectionColor: null,
+        collections: [],
         date: frag.updatedAt,
         href: ROUTES.fragment(frag.lookupKey),
       })
     }
 
-    // People
     for (const person of peopleQuery.data?.people ?? []) {
       result.push({
         id: person.id,
@@ -83,15 +88,12 @@ export function useExplorerData(filters: ExplorerFilters) {
         type: 'person',
         subtype: null,
         title: person.name,
-        collectionId: null,
-        collectionName: null,
-        collectionColor: null,
+        collections: [],
         date: person.updatedAt,
         href: ROUTES.person(person.lookupKey),
       })
     }
 
-    // Entries
     for (const entry of entriesQuery.data?.entries ?? []) {
       result.push({
         id: entry.id,
@@ -99,9 +101,7 @@ export function useExplorerData(filters: ExplorerFilters) {
         type: 'entry',
         subtype: null,
         title: entry.title,
-        collectionId: null,
-        collectionName: null,
-        collectionColor: null,
+        collections: [],
         date: entry.createdAt,
         href: ROUTES.entry(entry.lookupKey),
       })
@@ -115,7 +115,10 @@ export function useExplorerData(filters: ExplorerFilters) {
 
     // Apply collection filter
     if (filters.collection) {
-      filtered = filtered.filter((item) => item.collectionId === filters.collection)
+      const collectionId = filters.collection
+      filtered = filtered.filter((item) =>
+        item.collections.some((c) => c.id === collectionId),
+      )
     }
 
     // Apply sort
