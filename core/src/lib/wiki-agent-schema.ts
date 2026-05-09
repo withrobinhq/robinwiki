@@ -7,12 +7,17 @@
 // kinds drop in as additional rows without schema change.
 //
 // Per docs/architecture/wiki-agent-schema.md.
+//
+// All write paths funnel through `ensureAgentSchema` (Stream S). The
+// per-kind helpers below are kept module-private so the contract test
+// can assert that no INSERT into wiki_agent_schema escapes this file.
 
 import { and, eq, sql } from 'drizzle-orm'
 import { embedText, type OpenRouterConfig } from '@robin/agent'
 import type { DB } from '../db/client.js'
 import { wikis, wikiTypes, wikiAgentSchema } from '../db/schema.js'
 import { logger } from './logger.js'
+import { emitPipelineEvent } from '../db/pipeline-events.js'
 
 const log = logger.child({ component: 'wiki-agent-schema' })
 
@@ -28,18 +33,20 @@ export const GENERATOR_VERSION = 'hyde_v1'
 export const HYDE_BODY_EXCERPT_CHARS = 800
 
 /**
- * Upsert the `kind='description'` row for a wiki. Caller supplies the
- * already-computed embedding so this stays free of LLM calls and is
- * safe to invoke from the POST/PUT request path.
+ * Module-private upsert for the `kind='description'` row. Caller supplies
+ * the already-computed embedding so this stays free of LLM calls.
  *
  * Idempotent on (wiki_key, kind). Re-running with the same content/embedding
  * is a no-op aside from the bumped generated_at timestamp.
+ *
+ * NOT exported. All write paths must go through `ensureAgentSchema`.
  */
-export async function upsertDescriptionAgentSchemaRow(
+async function upsertDescriptionRow(
   database: DB,
   wikiKey: string,
   description: string,
-  embedding: number[]
+  embedding: number[],
+  generatorVersion: string,
 ): Promise<void> {
   await database
     .insert(wikiAgentSchema)
@@ -48,39 +55,67 @@ export async function upsertDescriptionAgentSchemaRow(
       kind: 'description',
       content: description,
       embedding,
-      generatorVersion: GENERATOR_VERSION,
+      generatorVersion,
     })
     .onConflictDoUpdate({
       target: [wikiAgentSchema.wikiKey, wikiAgentSchema.kind],
       set: {
         content: description,
         embedding,
-        generatorVersion: GENERATOR_VERSION,
+        generatorVersion,
         generatedAt: new Date(),
       },
     })
 }
 
 /**
- * Delete the `kind='hyde_synthetic'` row for a wiki. Used by PUT /wikis/:id
- * when the description changes to invalidate the now-stale HyDE passage.
- * The heal worker recreates it asynchronously (the HyDE call is an LLM
- * round-trip, too expensive for the request path).
+ * Module-private delete for the `kind='hyde_synthetic'` row. Used by
+ * the refresh path to invalidate the now-stale HyDE passage; the heal
+ * worker recreates it asynchronously.
  *
  * Idempotent: deleting a missing row is a no-op.
  */
-export async function deleteHydeAgentSchemaRow(
-  database: DB,
-  wikiKey: string
-): Promise<void> {
+async function deleteHydeRow(database: DB, wikiKey: string): Promise<void> {
   await database
     .delete(wikiAgentSchema)
     .where(
       and(
         eq(wikiAgentSchema.wikiKey, wikiKey),
-        eq(wikiAgentSchema.kind, 'hyde_synthetic')
-      )
+        eq(wikiAgentSchema.kind, 'hyde_synthetic'),
+      ),
     )
+}
+
+/**
+ * Module-private upsert for the `kind='hyde_synthetic'` row. Caller has
+ * already invoked the LLM and embedded the result; this is the storage
+ * step.
+ */
+async function upsertHydeRow(
+  database: DB,
+  wikiKey: string,
+  content: string,
+  embedding: number[],
+  generatorVersion: string,
+): Promise<void> {
+  await database
+    .insert(wikiAgentSchema)
+    .values({
+      wikiKey,
+      kind: 'hyde_synthetic',
+      content,
+      embedding,
+      generatorVersion,
+    })
+    .onConflictDoUpdate({
+      target: [wikiAgentSchema.wikiKey, wikiAgentSchema.kind],
+      set: {
+        content,
+        embedding,
+        generatorVersion,
+        generatedAt: new Date(),
+      },
+    })
 }
 
 /**
@@ -96,7 +131,7 @@ export async function deleteHydeAgentSchemaRow(
  * The MUST-NOT block is hard grounding: the LLM is forbidden from
  * introducing claims not present in the source. Combined with the
  * type-aware framing, this addresses the three failure modes naive HyDE
- * exhibits — vocabulary collapse, drift, and register mismatch.
+ * exhibits, vocabulary collapse, drift, and register mismatch.
  */
 export function renderHydePrompt(args: {
   wikiType: string
@@ -146,59 +181,175 @@ export function resolveRetrievalIndexModel(orConfig: OpenRouterConfig): string {
 }
 
 /**
- * Call the HyDE LLM. Returns the generated passage as plain text,
- * stripped of leading/trailing whitespace. Returns null on failure so
- * the caller can fall back to skipping the hyde_synthetic row rather
- * than aborting the entire regen.
+ * Caller for the HyDE LLM. Returns the generated passage as plain text
+ * (caller trims), or null on failure so write paths fall back to skipping
+ * the hyde_synthetic row rather than aborting the parent operation.
  */
 export type HydeCaller = (prompt: string, model: string) => Promise<string | null>
 
-interface GenerateAgentSchemaArgs {
-  wikiKey: string
-  orConfig: OpenRouterConfig
-  /**
-   * Caller for the HyDE LLM. Injected for testability — production
-   * wiring uses a thin wrapper over the OpenRouter SDK; tests pass a
-   * deterministic stub.
-   */
-  hydeCaller: HydeCaller
-}
-
-interface GenerateAgentSchemaResult {
-  /** Whether a description-kind row was written. */
-  wroteDescription: boolean
-  /** Whether a hyde_synthetic-kind row was written. */
-  wroteHyde: boolean
-  /** Generator version stamped on rows from this run. */
-  version: string
-  /** Wall-clock total in ms (excludes the parent regen flow). */
-  totalMs: number
-}
+/**
+ * Mode dispatcher for `ensureAgentSchema`. Each mode encodes the calling
+ * surface and the policy for which kinds to write or stale.
+ *
+ * - `create`     POST /wikis: seed kind='description' at creation. Requires
+ *                precomputedEmbedding so we do not pay an embed call.
+ * - `refresh`    PUT /wikis/:id (description changed): re-embed and upsert
+ *                kind='description', stale kind='hyde_synthetic' for the
+ *                async heal pass.
+ * - `heal`       embedding-retry-worker: fill any missing or stale rows.
+ *                description is cheap (re-embed); hyde_synthetic is an
+ *                LLM call (rate-limited by caller).
+ * - `regen-bump` regen.ts: refresh both kinds when wiki content changes.
+ *                Short-circuits when the description matches what is
+ *                already stored (saves token cost).
+ * - `backfill`   one-shot script: idempotent description-row write for
+ *                wikis that have no row at all.
+ */
+export type EnsureMode = 'create' | 'refresh' | 'heal' | 'regen-bump' | 'backfill'
 
 /**
- * Regenerate every kind in wiki_agent_schema for a single wiki. Idempotent
- * per (wiki_key, kind, generator_version). The `description` kind is a
- * direct embedding of wikis.description; the `hyde_synthetic` kind runs
- * through the HyDE template + LLM + embedding pipeline.
- *
- * Failure of the hyde_synthetic stage does NOT abort description-kind
- * generation. Retrieval falls back to BM25 + description-kind when
- * hyde_synthetic is missing.
+ * Lightweight observability context fed into pipeline_events emissions.
+ * Source distinguishes API vs. system writers; jobId threads through
+ * batch operations.
  */
-export async function generateWikiAgentSchema(
-  database: DB,
-  args: GenerateAgentSchemaArgs
-): Promise<GenerateAgentSchemaResult> {
-  const t0 = performance.now()
-  const { wikiKey, orConfig, hydeCaller } = args
-  const result: GenerateAgentSchemaResult = {
-    wroteDescription: false,
-    wroteHyde: false,
-    version: GENERATOR_VERSION,
-    totalMs: 0,
+export interface AgentSchemaAuditContext {
+  source: 'api' | 'system'
+  jobId?: string | null
+  triggeredBy?: string | null
+}
+
+export interface EnsureOptions {
+  /** Which calling surface invoked this write. Drives the policy below. */
+  mode: EnsureMode
+
+  /**
+   * Canonical `wikis.description` value. Required for create / refresh /
+   * backfill paths because the description-kind row stores this verbatim.
+   * For heal and regen-bump the helper re-reads it from the wikis table
+   * if not supplied.
+   */
+  description?: string
+
+  /**
+   * Pre-computed embedding for the description text. POST /wikis and PUT
+   * /wikis/:id already embed the description for the legacy wikis.embedding
+   * column, so they pass the vector through here to avoid a duplicate
+   * embedding API call. When omitted, the helper computes the embedding
+   * via the embedding service.
+   */
+  precomputedEmbedding?: number[]
+
+  /**
+   * When true, the helper will also stale (delete) the kind='hyde_synthetic'
+   * row so the heal worker regenerates it asynchronously. Defaults to false.
+   * The 'refresh' mode sets this to true automatically.
+   */
+  alsoStaleHyde?: boolean
+
+  /**
+   * Stamp these rows with this generator version. Defaults to GENERATOR_VERSION.
+   * Provided as an option so backfill / migration paths can pin a specific
+   * version when needed.
+   */
+  generatorVersion?: string
+
+  /**
+   * Required for any mode that may invoke embedText (heal, regen-bump,
+   * backfill, and create/refresh when precomputedEmbedding is omitted).
+   * Optional otherwise.
+   */
+  orConfig?: OpenRouterConfig
+
+  /**
+   * Required for modes that may write the hyde_synthetic row (heal and
+   * regen-bump). The caller is responsible for constructing the LLM
+   * adapter via createHydeAgent + createStringCaller and passing it
+   * through; this keeps the helper free of mastra dependencies.
+   */
+  hydeCaller?: HydeCaller
+
+  /** Observability context for pipeline_events emission. */
+  context: AgentSchemaAuditContext
+}
+
+export interface EnsureResult {
+  wikiKey: string
+  mode: EnsureMode
+  /** Per-kind write outcome. */
+  written: { description: boolean; hyde_synthetic: boolean }
+  /** Per-kind stale outcome. Currently only hyde_synthetic can be staled. */
+  staled: { hyde_synthetic: boolean }
+  /**
+   * True when the helper decided no work was needed (regen-bump with
+   * unchanged content, backfill on a wiki that already has the row).
+   */
+  shortCircuited: boolean
+}
+
+interface DescriptionRowSnapshot {
+  exists: boolean
+  content: string | null
+  hasEmbedding: boolean
+  generatorVersion: string | null
+}
+
+interface HydeRowSnapshot {
+  exists: boolean
+  content: string | null
+  hasEmbedding: boolean
+  generatorVersion: string | null
+}
+
+interface AgentSchemaSnapshot {
+  description: DescriptionRowSnapshot
+  hyde: HydeRowSnapshot
+}
+
+async function loadSnapshot(database: DB, wikiKey: string): Promise<AgentSchemaSnapshot> {
+  const rows = await database
+    .select({
+      kind: wikiAgentSchema.kind,
+      content: wikiAgentSchema.content,
+      hasEmbedding: sql<boolean>`(${wikiAgentSchema.embedding} IS NOT NULL)`,
+      generatorVersion: wikiAgentSchema.generatorVersion,
+    })
+    .from(wikiAgentSchema)
+    .where(eq(wikiAgentSchema.wikiKey, wikiKey))
+
+  const snapshot: AgentSchemaSnapshot = {
+    description: { exists: false, content: null, hasEmbedding: false, generatorVersion: null },
+    hyde: { exists: false, content: null, hasEmbedding: false, generatorVersion: null },
   }
 
-  const [wiki] = await database
+  for (const row of rows) {
+    if (row.kind === 'description') {
+      snapshot.description = {
+        exists: true,
+        content: row.content,
+        hasEmbedding: Boolean(row.hasEmbedding),
+        generatorVersion: row.generatorVersion,
+      }
+    } else if (row.kind === 'hyde_synthetic') {
+      snapshot.hyde = {
+        exists: true,
+        content: row.content,
+        hasEmbedding: Boolean(row.hasEmbedding),
+        generatorVersion: row.generatorVersion,
+      }
+    }
+  }
+  return snapshot
+}
+
+interface WikiRow {
+  type: string
+  name: string
+  description: string | null
+  content: string | null
+}
+
+async function loadWikiRow(database: DB, wikiKey: string): Promise<WikiRow | null> {
+  const [row] = await database
     .select({
       type: wikis.type,
       name: wikis.name,
@@ -207,44 +358,38 @@ export async function generateWikiAgentSchema(
     })
     .from(wikis)
     .where(eq(wikis.lookupKey, wikiKey))
-  if (!wiki) {
-    log.warn({ wikiKey }, 'wiki not found, skipping agent-schema generation')
-    result.totalMs = performance.now() - t0
-    return result
-  }
+  return row ?? null
+}
 
-  // ── description kind: direct embedding of wikis.description ──
-  if (wiki.description && wiki.description.trim().length > 0) {
-    const descVec = await embedText(wiki.description, {
-      apiKey: orConfig.apiKey,
-      model: orConfig.models.embedding,
-    })
-    if (descVec) {
-      await upsertDescriptionAgentSchemaRow(database, wikiKey, wiki.description, descVec)
-      result.wroteDescription = true
-    } else {
-      log.warn({ wikiKey }, 'description embedding returned null, skipping description kind')
-    }
-  } else {
-    log.debug({ wikiKey }, 'description empty, skipping description kind')
-  }
-
-  // ── hyde_synthetic kind: LLM-generated hypothetical document, then embedded ──
-  // Look up internal_framing on the wiki's type. NULL framing means the
-  // type does not yet ship with framing on disk — fall back to a generic
-  // type-naming framing rather than blowing up.
-  const [framingRow] = await database
+async function loadInternalFraming(database: DB, wikiType: string): Promise<string> {
+  const [row] = await database
     .select({ internalFraming: wikiTypes.internalFraming })
     .from(wikiTypes)
-    .where(eq(wikiTypes.slug, wiki.type))
+    .where(eq(wikiTypes.slug, wikiType))
+  if (row?.internalFraming && row.internalFraming.trim().length > 0) {
+    return row.internalFraming
+  }
+  return `Write in the register appropriate for a ${wikiType} wiki.`
+}
 
-  const internalFraming =
-    framingRow?.internalFraming && framingRow.internalFraming.trim().length > 0
-      ? framingRow.internalFraming
-      : `Write in the register appropriate for a ${wiki.type} wiki.`
-
+/**
+ * Run the LLM HyDE pipeline for one wiki and upsert the row. Shared
+ * implementation across heal and regen-bump modes.
+ *
+ * Returns true on success, false on any failure (LLM threw, returned
+ * empty, embedding came back null). Failures are logged but do not raise,
+ * so callers can continue processing the next target.
+ */
+async function generateAndUpsertHyde(
+  database: DB,
+  wikiKey: string,
+  wiki: WikiRow,
+  orConfig: OpenRouterConfig,
+  hydeCaller: HydeCaller,
+  generatorVersion: string,
+): Promise<boolean> {
+  const internalFraming = await loadInternalFraming(database, wiki.type)
   const sourceExcerpt = (wiki.content ?? '').slice(0, HYDE_BODY_EXCERPT_CHARS)
-
   const prompt = renderHydePrompt({
     wikiType: wiki.type,
     title: wiki.name,
@@ -252,7 +397,6 @@ export async function generateWikiAgentSchema(
     sourceExcerpt,
     internalFraming,
   })
-
   const model = resolveRetrievalIndexModel(orConfig)
 
   let hydeText: string | null = null
@@ -261,53 +405,325 @@ export async function generateWikiAgentSchema(
   } catch (err) {
     log.warn(
       { wikiKey, err: err instanceof Error ? err.message : String(err) },
-      'hyde generator threw, skipping hyde_synthetic kind'
+      'hyde generator threw, skipping hyde_synthetic kind',
     )
-    hydeText = null
+    return false
   }
 
-  if (hydeText && hydeText.trim().length > 0) {
-    const trimmed = hydeText.trim()
-    const hydeVec = await embedText(trimmed, {
-      apiKey: orConfig.apiKey,
-      model: orConfig.models.embedding,
-    })
-    if (hydeVec) {
-      await database
-        .insert(wikiAgentSchema)
-        .values({
+  if (!hydeText || hydeText.trim().length === 0) return false
+  const trimmed = hydeText.trim()
+  const hydeVec = await embedText(trimmed, {
+    apiKey: orConfig.apiKey,
+    model: orConfig.models.embedding,
+  })
+  if (!hydeVec) {
+    log.warn({ wikiKey }, 'hyde embedding returned null, skipping hyde_synthetic kind')
+    return false
+  }
+  await upsertHydeRow(database, wikiKey, trimmed, hydeVec, generatorVersion)
+  return true
+}
+
+/**
+ * Embed `description` via the embedding service. Returns the vector or
+ * null on failure. Logs a warning so the caller can decide whether to
+ * propagate the skip.
+ */
+async function embedDescription(
+  description: string,
+  orConfig: OpenRouterConfig,
+  wikiKey: string,
+): Promise<number[] | null> {
+  const vec = await embedText(description, {
+    apiKey: orConfig.apiKey,
+    model: orConfig.models.embedding,
+  })
+  if (!vec) {
+    log.warn({ wikiKey }, 'description embedding returned null')
+    return null
+  }
+  return vec
+}
+
+/**
+ * Single entry point for every `wiki_agent_schema` write in the codebase.
+ *
+ * Routing all writers through this function lets the system reason about
+ * agent_schema as a service-owned layer rather than a side effect of any
+ * one pipeline. The contract test in
+ * core/src/__tests__/agent-schema-writer-contract.test.ts asserts that no
+ * direct INSERT statements into wiki_agent_schema exist outside this file.
+ *
+ * Behavior is dispatched on `options.mode`. See the EnsureMode docstring
+ * for the per-mode policy.
+ */
+export async function ensureAgentSchema(
+  database: DB,
+  wikiKey: string,
+  options: EnsureOptions,
+): Promise<EnsureResult> {
+  const generatorVersion = options.generatorVersion ?? GENERATOR_VERSION
+  const result: EnsureResult = {
+    wikiKey,
+    mode: options.mode,
+    written: { description: false, hyde_synthetic: false },
+    staled: { hyde_synthetic: false },
+    shortCircuited: false,
+  }
+
+  // Helper to emit a pipeline_event with the mode and outcome. Failures
+  // here MUST NOT propagate; observability is best-effort.
+  const emit = async (status: 'started' | 'completed' | 'failed', extra: Record<string, unknown> = {}): Promise<void> => {
+    try {
+      await emitPipelineEvent(database as never, {
+        entryKey: null,
+        jobId: options.context.jobId ?? 'agent-schema',
+        stage: 'embed',
+        status,
+        metadata: {
+          substage: 'agent-schema-ensure',
+          mode: options.mode,
           wikiKey,
-          kind: 'hyde_synthetic',
-          content: trimmed,
-          embedding: hydeVec,
-          generatorVersion: GENERATOR_VERSION,
-        })
-        .onConflictDoUpdate({
-          target: [wikiAgentSchema.wikiKey, wikiAgentSchema.kind],
-          set: {
-            content: trimmed,
-            embedding: hydeVec,
-            generatorVersion: GENERATOR_VERSION,
-            generatedAt: new Date(),
-          },
-        })
-      result.wroteHyde = true
-    } else {
-      log.warn({ wikiKey }, 'hyde embedding returned null, skipping hyde_synthetic kind')
+          source: options.context.source,
+          triggeredBy: options.context.triggeredBy ?? null,
+          ...extra,
+        },
+      })
+    } catch {
+      // pipeline_events emission failure must not break the write path.
     }
   }
 
-  result.totalMs = performance.now() - t0
-  log.info(
-    {
-      wikiKey,
-      wroteDescription: result.wroteDescription,
-      wroteHyde: result.wroteHyde,
-      ms: Math.round(result.totalMs),
-    },
-    'wiki agent schema generated'
-  )
+  await emit('started')
+
+  const snapshot = await loadSnapshot(database, wikiKey)
+
+  // ── Mode dispatch ───────────────────────────────────────────────────
+  switch (options.mode) {
+    case 'create': {
+      const description = options.description ?? ''
+      if (description.trim().length === 0) {
+        result.shortCircuited = true
+        await emit('completed', { reason: 'empty_description' })
+        return result
+      }
+      const vec =
+        options.precomputedEmbedding ??
+        (options.orConfig
+          ? await embedDescription(description, options.orConfig, wikiKey)
+          : null)
+      if (!vec) {
+        await emit('failed', { reason: 'embed_unavailable' })
+        return result
+      }
+      await upsertDescriptionRow(database, wikiKey, description, vec, generatorVersion)
+      result.written.description = true
+      break
+    }
+
+    case 'refresh': {
+      const description = options.description ?? ''
+      if (description.trim().length > 0) {
+        const vec =
+          options.precomputedEmbedding ??
+          (options.orConfig
+            ? await embedDescription(description, options.orConfig, wikiKey)
+            : null)
+        if (vec) {
+          await upsertDescriptionRow(database, wikiKey, description, vec, generatorVersion)
+          result.written.description = true
+        }
+      }
+      // Refresh always stales hyde so the heal worker regenerates it.
+      // alsoStaleHyde defaults to true for this mode.
+      const stale = options.alsoStaleHyde ?? true
+      if (stale && snapshot.hyde.exists) {
+        await deleteHydeRow(database, wikiKey)
+        result.staled.hyde_synthetic = true
+      }
+      break
+    }
+
+    case 'heal': {
+      const wiki = await loadWikiRow(database, wikiKey)
+      if (!wiki) {
+        await emit('failed', { reason: 'wiki_not_found' })
+        return result
+      }
+      const description = wiki.description ?? options.description ?? ''
+      const needsDescription = !snapshot.description.exists || !snapshot.description.hasEmbedding
+      const needsHyde = !snapshot.hyde.exists
+
+      if (needsDescription && description.trim().length > 0 && options.orConfig) {
+        const vec =
+          options.precomputedEmbedding ??
+          (await embedDescription(description, options.orConfig, wikiKey))
+        if (vec) {
+          await upsertDescriptionRow(database, wikiKey, description, vec, generatorVersion)
+          result.written.description = true
+        }
+      }
+
+      if (needsHyde && options.orConfig && options.hydeCaller && description.trim().length > 0) {
+        const wrote = await generateAndUpsertHyde(
+          database,
+          wikiKey,
+          wiki,
+          options.orConfig,
+          options.hydeCaller,
+          generatorVersion,
+        )
+        result.written.hyde_synthetic = wrote
+      }
+      break
+    }
+
+    case 'regen-bump': {
+      const wiki = await loadWikiRow(database, wikiKey)
+      if (!wiki) {
+        await emit('failed', { reason: 'wiki_not_found' })
+        return result
+      }
+      const description = wiki.description ?? ''
+      const descriptionTrim = description.trim()
+
+      // Short-circuit when the description-kind row is current and the
+      // hyde row exists: regen would generate the same artifact and
+      // burn LLM tokens for no net change.
+      const descriptionUnchanged =
+        snapshot.description.exists &&
+        snapshot.description.hasEmbedding &&
+        snapshot.description.content === description &&
+        snapshot.description.generatorVersion === generatorVersion
+      const hydePresent = snapshot.hyde.exists && snapshot.hyde.hasEmbedding
+      if (descriptionUnchanged && hydePresent) {
+        result.shortCircuited = true
+        await emit('completed', { reason: 'unchanged' })
+        return result
+      }
+
+      // Description-kind row: write/refresh when description is non-empty.
+      if (descriptionTrim.length > 0 && options.orConfig) {
+        const vec =
+          options.precomputedEmbedding ??
+          (await embedDescription(description, options.orConfig, wikiKey))
+        if (vec) {
+          await upsertDescriptionRow(database, wikiKey, description, vec, generatorVersion)
+          result.written.description = true
+        }
+      }
+
+      // hyde_synthetic regenerates when content has changed (i.e. we got
+      // here at all, not short-circuited).
+      if (options.orConfig && options.hydeCaller) {
+        const wrote = await generateAndUpsertHyde(
+          database,
+          wikiKey,
+          wiki,
+          options.orConfig,
+          options.hydeCaller,
+          generatorVersion,
+        )
+        result.written.hyde_synthetic = wrote
+      }
+      break
+    }
+
+    case 'backfill': {
+      const description = options.description ?? ''
+      if (description.trim().length === 0) {
+        result.shortCircuited = true
+        await emit('completed', { reason: 'empty_description' })
+        return result
+      }
+      // Backfill is idempotent: skip when the row is already current.
+      if (
+        snapshot.description.exists &&
+        snapshot.description.hasEmbedding &&
+        snapshot.description.generatorVersion === generatorVersion
+      ) {
+        result.shortCircuited = true
+        await emit('completed', { reason: 'already_present' })
+        return result
+      }
+      const vec =
+        options.precomputedEmbedding ??
+        (options.orConfig
+          ? await embedDescription(description, options.orConfig, wikiKey)
+          : null)
+      if (!vec) {
+        await emit('failed', { reason: 'embed_unavailable' })
+        return result
+      }
+      await upsertDescriptionRow(database, wikiKey, description, vec, generatorVersion)
+      result.written.description = true
+      break
+    }
+  }
+
+  await emit('completed', {
+    written: result.written,
+    staled: result.staled,
+  })
   return result
+}
+
+// ── Legacy exports (Step 1 of Stream S) ───────────────────────────────────
+//
+// These wrappers keep the existing call sites compiling while Step 1
+// lands the helper. Step 2 of the same stream replaces every caller with
+// a direct `ensureAgentSchema` invocation and deletes these wrappers.
+// Do not introduce new callers.
+
+/** @deprecated use ensureAgentSchema with mode='create' or 'refresh'. */
+export async function upsertDescriptionAgentSchemaRow(
+  database: DB,
+  wikiKey: string,
+  description: string,
+  embedding: number[],
+): Promise<void> {
+  await upsertDescriptionRow(database, wikiKey, description, embedding, GENERATOR_VERSION)
+}
+
+/** @deprecated use ensureAgentSchema with mode='refresh' (alsoStaleHyde=true). */
+export async function deleteHydeAgentSchemaRow(
+  database: DB,
+  wikiKey: string,
+): Promise<void> {
+  await deleteHydeRow(database, wikiKey)
+}
+
+interface LegacyGenerateArgs {
+  wikiKey: string
+  orConfig: OpenRouterConfig
+  hydeCaller: HydeCaller
+}
+
+interface LegacyGenerateResult {
+  wroteDescription: boolean
+  wroteHyde: boolean
+  version: string
+  totalMs: number
+}
+
+/** @deprecated use ensureAgentSchema with mode='regen-bump'. */
+export async function generateWikiAgentSchema(
+  database: DB,
+  args: LegacyGenerateArgs,
+): Promise<LegacyGenerateResult> {
+  const t0 = performance.now()
+  const out = await ensureAgentSchema(database, args.wikiKey, {
+    mode: 'regen-bump',
+    orConfig: args.orConfig,
+    hydeCaller: args.hydeCaller,
+    context: { source: 'system' },
+  })
+  return {
+    wroteDescription: out.written.description,
+    wroteHyde: out.written.hyde_synthetic,
+    version: GENERATOR_VERSION,
+    totalMs: performance.now() - t0,
+  }
 }
 
 /**
@@ -316,10 +732,10 @@ export async function generateWikiAgentSchema(
  * opportunities.
  */
 export async function countOutstandingAgentSchemaWikis(
-  database: DB
+  database: DB,
 ): Promise<number> {
   // A wiki is outstanding if it has zero rows at the current version.
-  // Use a single SQL aggregation rather than two queries — one count of
+  // Use a single SQL aggregation rather than two queries, one count of
   // wikis whose latest row trails or is missing.
   const rows = await database.execute<{ count: number }>(sql`
     SELECT COUNT(DISTINCT w.lookup_key)::int AS count
@@ -348,7 +764,7 @@ export async function countOutstandingAgentSchemaWikis(
  */
 export async function findWikisMissingDescriptionRow(
   database: DB,
-  limit: number
+  limit: number,
 ): Promise<Array<{ wikiKey: string; description: string }>> {
   const rows = await database.execute<{ wiki_key: string; description: string }>(sql`
     SELECT w.lookup_key AS wiki_key, w.description AS description
@@ -372,7 +788,7 @@ export async function findWikisMissingDescriptionRow(
  */
 export async function findWikisMissingHydeRow(
   database: DB,
-  limit: number
+  limit: number,
 ): Promise<string[]> {
   const rows = await database.execute<{ wiki_key: string }>(sql`
     SELECT w.lookup_key AS wiki_key
