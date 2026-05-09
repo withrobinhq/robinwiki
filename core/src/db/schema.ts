@@ -593,6 +593,25 @@ export const apiKeys = pgTable('api_keys', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
+// ─── Scheduled Jobs (issue #322 — heartbeat surface for periodic workers) ───
+//
+// One row per named scheduled job. The daily prune-pipeline-events worker,
+// the (future) HyDE backfill, fragment-relationship backfill and any other
+// recurring background job records its last-run state here via
+// recordJobRun in core/src/lib/scheduled-jobs.ts. Distinct from audit_log:
+// audit_log is for user-visible state changes; scheduled_jobs is worker
+// telemetry. last_run_status is constrained to
+// 'completed' | 'failed' | 'partial' by a CHECK constraint declared in
+// migration 0012 (Drizzle's pg-core has no first-class CHECK helper, so
+// the constraint stays authoritative in the SQL file).
+export const scheduledJobs = pgTable('scheduled_jobs', {
+  jobName: text('job_name').primaryKey(),
+  lastRunAt: timestamp('last_run_at', { withTimezone: true }).notNull(),
+  lastRunStatus: text('last_run_status').notNull(),
+  lastRunMeta: jsonb('last_run_meta').$type<Record<string, unknown> | null>(),
+  lastRunDurationMs: integer('last_run_duration_ms'),
+})
+
 // ─── Wiki Agent Schema (multi-row agent-facing retrieval surface — Wave G) ───
 
 /**

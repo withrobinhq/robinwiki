@@ -85,6 +85,13 @@
       "when": 1746604800000,
       "tag": "0011_wikis_published_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1746748800000,
+      "tag": "0012_scheduled_jobs",
+      "breakpoints": true
     }
   ]
 }
