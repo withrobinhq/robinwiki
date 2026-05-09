@@ -55,6 +55,12 @@ import { computeContentHash } from '../db/dedup.js'
 import { emitPipelineEvent, type PipelineStage } from '../db/pipeline-events.js'
 import { emitAuditEvent } from '../db/audit.js'
 import { emitUsageEvent } from '../db/usage-events.js'
+import {
+  loadVerifiedPeople,
+  loadPendingPeople,
+  loadAutoAcceptPersons,
+  insertExtractedPerson,
+} from '../lib/people-settings.js'
 import { producer } from './producer.js'
 import { processRegenJob, processRegenBatchJob } from './regen-worker.js'
 import { processEmbeddingRetryJob } from './embedding-retry-worker.js'
@@ -245,20 +251,14 @@ async function processExtractionJob(job: ExtractionJob): Promise<JobResult> {
       emitEvent,
     },
     entityExtractDeps: {
-      loadAllPeople: async () => {
-        const rows = await db
-          .select({
-            lookupKey: people.lookupKey,
-            canonicalName: people.canonicalName,
-            aliases: people.aliases,
-          })
-          .from(people)
-        return rows.map((r) => ({
-          lookupKey: r.lookupKey,
-          canonicalName: r.canonicalName,
-          aliases: r.aliases ?? [],
-        }))
-      },
+      // Stream P: matcher prompt sees verified people only; pending
+      // people participate in extract-time dedup but not in the LLM
+      // candidate list. The helpers in `lib/people-settings` are the
+      // single source of truth for both pools.
+      loadAllPeople: () => loadVerifiedPeople(db),
+      loadPendingPeople: () => loadPendingPeople(db),
+      loadAutoAcceptPersons: () => loadAutoAcceptPersons(db),
+      insertPerson: (input) => insertExtractedPerson(db, input),
       llmCall: withTypedUsage(peopleExtractionSchema, {
         agent: agents.entityExtractor,
         record: recordUsage,

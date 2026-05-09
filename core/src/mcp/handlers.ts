@@ -30,8 +30,12 @@ import {
   parseLookupKey,
   generateSlug,
   loadPeopleExtractionSpec,
+  normalisePeopleExtraction,
 } from '@robin/shared'
 import type { PeopleExtractionOutput } from '@robin/shared'
+import { resolveOrDrop } from '@robin/agent'
+import { loadAutoAcceptPersons } from '../lib/people-settings.js'
+import { loadPendingPeople } from '../lib/people-settings.js'
 import type { BullMQProducer, ExtractionJob } from '@robin/queue'
 import { resolveEntrySlug, resolveFragmentSlug, resolveWikiSlug } from '../db/slug.js'
 import { computeContentHash, findDuplicateEntry, findDuplicateFragment } from '../db/dedup.js'
@@ -51,7 +55,7 @@ import {
   unpublishWiki as unpublishWikiService,
 } from '../services/publish.js'
 import type { McpResolverDeps } from './resolvers.js'
-import { resolvePerson, DEFAULT_RESOLUTION_CONFIG, embedText } from '@robin/agent'
+import { DEFAULT_RESOLUTION_CONFIG, embedText } from '@robin/agent'
 import type { KnownPerson } from '@robin/agent'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
 import { eq, and, isNull, inArray, ne } from 'drizzle-orm'
@@ -321,9 +325,11 @@ export async function handleLogFragment(
       }
     }
 
-    // Entity extraction (fail-open)
+    // Entity extraction (fail-open). Stream P: routes the extractor
+    // payload through the shared `resolveOrDrop` helper so the worker
+    // pipeline and this fast path produce the same outcome graph for
+    // the same input.
     const personKeys: string[] = []
-    const newPeople: Array<{ personKey: string; canonicalName: string }> = []
     try {
       const knownPeople = await deps.loadUserPeople(userId)
       const knownPeopleJson =
@@ -342,22 +348,35 @@ export async function handleLogFragment(
         knownPeople: knownPeopleJson,
       })
       const parsed = await deps.entityExtractCall(spec.system, spec.user)
+      const buckets = normalisePeopleExtraction(parsed)
 
-      const makePeopleKey = () => makeLookupKey('person')
-      for (const extraction of parsed.people) {
-        const resolved = resolvePerson(
-          extraction,
-          knownPeople,
-          DEFAULT_RESOLUTION_CONFIG,
-          makePeopleKey
-        )
-        personKeys.push(resolved.personKey)
-        if (resolved.isNew) {
-          newPeople.push({
-            personKey: resolved.personKey,
-            canonicalName: extraction.inferredName,
-          })
+      const pendingPool = await loadPendingPeople(deps.db)
+      const autoAccept = await loadAutoAcceptPersons(deps.db)
+
+      const outcomes = await resolveOrDrop(
+        { matched: buckets.matched, candidates: buckets.candidates },
+        {
+          // log_fragment knows the fragment id only after the insert
+          // below. We pass null to avoid coupling resolveOrDrop's
+          // ordering to the fragment row write.
+          fragmentId: null,
+          autoAccept,
+          verifiedPeople: knownPeople,
+          pendingPeople: pendingPool,
+          makePersonKey: () => makeLookupKey('person'),
+          insertPerson: async (input) => {
+            const { insertExtractedPerson } = await import(
+              '../lib/people-settings.js'
+            )
+            await insertExtractedPerson(deps.db, input)
+          },
+          resolutionConfig: DEFAULT_RESOLUTION_CONFIG,
         }
+      )
+
+      for (const outcome of outcomes) {
+        if (outcome.kind === 'dropped') continue
+        personKeys.push(outcome.lookupKey)
       }
     } catch (err) {
       log.warn({ err, userId }, 'log_fragment entity extraction failed (continuing)')
@@ -441,21 +460,10 @@ export async function handleLogFragment(
         .onConflictDoNothing()
     }
 
-    // Insert new people rows (for people not yet in DB)
-    for (const person of newPeople) {
-      await deps.db
-        .insert(peopleTable)
-        .values({
-          lookupKey: person.personKey,
-          slug: generateSlug(person.canonicalName),
-          name: person.canonicalName,
-          canonicalName: person.canonicalName,
-          state: 'RESOLVED',
-          aliases: [],
-          verified: false,
-        })
-        .onConflictDoNothing()
-    }
+    // Stream P: new persons are inserted by `resolveOrDrop` via the
+    // `insertExtractedPerson` helper, so this handler no longer needs
+    // a per-person upsert loop. The helper stamps status, created_via,
+    // and extracted_from_fragment_id uniformly with the worker path.
 
     // Mark wiki for regen (PENDING signals regen needed)
     await deps.db

@@ -63,8 +63,11 @@ export type LegacyMention = z.infer<typeof legacyMentionSchema>
 export function normalisePeopleExtraction(
   parsed: PeopleExtractionOutput
 ): { matched: MatchedMention[]; candidates: CandidateMention[] } {
-  const matched: MatchedMention[] = [...parsed.matched]
-  const candidates: CandidateMention[] = [...parsed.candidates]
+  // Defensive copies that tolerate mocked LLM payloads which only
+  // hand us the legacy `people` field. Real Zod-parsed payloads
+  // always carry `matched` and `candidates` arrays.
+  const matched: MatchedMention[] = parsed.matched ? [...parsed.matched] : []
+  const candidates: CandidateMention[] = parsed.candidates ? [...parsed.candidates] : []
   if (parsed.people && parsed.people.length > 0) {
     for (const p of parsed.people) {
       if (p.matchedKey !== null) {
