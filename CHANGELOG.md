@@ -5,6 +5,56 @@ All notable changes to Robin are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-05-09
+
+People extraction overhaul, quarantine model, settings shell, graph observability, wiki state rationalization, and classifier citation maps. Ships 12 PRs across 3 waves.
+
+### Breaking changes
+
+- **Regen is now fully opt-in per wiki.** The `regenerate` flag is dropped. `autoregen` (renamed from `auto_regen`) is the sole gate, default `false`. Existing instances: run migration 0014 with `--preserve-existing` to keep current behavior, or adopt the new opt-in default and enable `autoregen` per wiki via the settings UI. `regen_now` MCP tool bypasses the flag for on-demand use.
+- **People-extraction prompt flips from matcher-only to extractor.** The LLM now surfaces all person-like mentions, not just matches against known people. Unknown names create `status='pending'` rows (quarantine) by default. Operators triage via `/settings/people` or set `auto_accept_persons=true` to skip quarantine. MCP `create_person` auto-verifies (no quarantine for intentional creation).
+- **`wikis.lifecycle_state` column dropped.** Editorial state is now derived from `{state, dirty_since, last_rebuilt_at}` via the `editorialStateOf(...)` Zod helper. Code that read `lifecycle_state` directly must switch to the helper or the `editorialStateWhere` SQL fragments.
+
+### Added
+
+- `/settings` shell with three panels: Wikis (per-wiki autoregen toggle, regen-now button, last-regen time-ago, agent-schema gap indicator), People (pending-person triage with Approve/Reject, auto-accept toggle), Backfill (gap detection, on-demand triggers via `/admin/backfill` endpoints).
+- `create_person`, `update_person`, `add_relationship` MCP tools. `create_person` auto-verifies. `update_person` accepts an explicit `promoteFromQuarantine` flag (default false) for promoting pending persons while adding context.
+- `list_pending_persons` and `set_auto_accept_persons` MCP tools for operator triage flows.
+- `POST /admin/people/:key/approve` and `POST /admin/people/:key/reject` HTTP endpoints (UI-only approval, no MCP approve/reject by design).
+- `GET /admin/graph/stats` endpoint for graph and pipeline observability: person counts by status, wiki editorial-state breakdown, edge counts by type, 24h people-extraction telemetry (rawMentionsSeen, dropRate), agent-schema gap counts, regen counts.
+- `GET /admin/backfill/audit`, `POST /admin/backfill/wiki-agent-schema`, `GET /admin/backfill/runs` HTTP endpoints for operator-controlled backfill.
+- `wikis.dirty_since` column replaces v0.2.1's query-time derivation for regen debounce. Set on FRAGMENT_IN_WIKI edge arrival, cleared on regen completion.
+- `people.status` column (`verified`, `pending`, `rejected`) with quarantine propagation: pending persons excluded from hybrid search, Marcel classification, Quill regen citations, and agent_schema rows; visible with status marker in find_person, brief_person, GET /people, and person wiki page (full-width quarantine topbar).
+- `people.created_via`, `people.extracted_from_fragment_id`, `people.context_notes` columns for traceability and context accumulation.
+- `app_settings.auto_accept_persons` toggle (default false) for bypassing quarantine on future ingest.
+- `WIKI_RELATED_TO_WIKI` edges from Marcel's secondary candidates above 0.4 confidence. Graph now records co-occurrence signal that was previously discarded after classification.
+- `FRAGMENT_MENTIONS_PERSON` edges now carry `attrs.{mention, sourceSpan, confidence}` on every new write. Enables provenance display, matcher auditing, and offline re-matching.
+- Marcel emits `citationSpans` per matched wiki: character offsets plus literal text of spans that drove the classification. FRAGMENT_IN_WIKI edges persist these in attrs. Wiki rendering reads them directly with fallback to legacy reconstruction for older edges.
+- `ensureAgentSchema(wikiKey, options)` helper centralizes all `wiki_agent_schema` writes through a single entry point with 5 modes (create, refresh, heal, regen-bump, backfill). Contract test enforces no direct writes outside the helper.
+- `editorialStateOf(...)` Zod helper and `editorialStateWhere` SQL fragments derive editorial state from `{state, dirty_since, last_rebuilt_at}` without a dedicated column.
+- `source_client` columns on `fragments`, `wikis`, `wiki_types`, `groups` tables. All audit-log writers converted from `detail.source_client` JSON to direct column writes. `AuditDetail` type guard prevents regression.
+- `rawMentionsSeen` and `dropRatePct` telemetry on entity-extract pipeline events, surfacing the real LLM drop rate for people extraction.
+- Shared `resolveOrDrop` helper unifies the worker pipeline and MCP `log_fragment` paths for person resolution. No more behavioral divergence between the two ingest paths.
+- `docs/architecture/wiki-state.md`, `docs/architecture/people-quarantine.md`, `docs/architecture/observability.md`, `docs/architecture/citation-rendering.md`, `docs/architecture/seed-data.md`, `docs/operator-guide/settings.md`.
+
+### Changed
+
+- Regen partition YAML aligned with E1 implementation: `[NEW FRAGMENTS]`, `[UPDATED FRAGMENTS]`, `[REMOVED FRAGMENTS]` headers across all 10 wiki-type Quill prompts. Legacy `[USER EDITS]` block dropped from all wiki-type YAMLs. Contract test asserts Quill never sees old-style flat lists.
+- `edges.src_type` canonicalized: `'entry'` backfilled to `'raw_source'` with CHECK constraint preventing reintroduction. Persist stage rewritten to emit canonical value.
+- Seed-person edge creation path audited and documented. The 15 edges from QA Issue 4c traced to `core/src/lib/seedFixture.ts` (first-user provisioning for "Attention Is All You Need" test data).
+
+### Fixed
+
+- `wikis.lifecycle_state` eliminated as a redundant column. Editorial state is now a deterministic function of existing columns, removing a class of drift bugs where the two state machines could disagree.
+- `ENTRY_HAS_FRAGMENT` edges no longer use inconsistent `src_type` values. Graph traversal queries that filter by src_type return complete result sets.
+
+### Migrations
+
+- 0014: `wikis` state rationalization (destructive, BREAKING). Drops `regenerate`, drops `lifecycle_state`, renames `auto_regen` to `autoregen`, adds `dirty_since`.
+- 0015: `source_client` columns on fragments, wikis, wiki_types, groups (additive).
+- 0016: `edges.src_type` canonicalization plus CHECK constraint (additive, backfill).
+- 0017: `people.status`, `created_via`, `extracted_from_fragment_id`, `context_notes` columns plus `auto_accept_persons` setting (additive).
+
 ## [0.2.1] - 2026-05-09
 
 Stability + cost-visibility release. Fragmentation prompt v3, regen debounce during active ingest, on-demand regen surface for MCP clients, scheduled-job heartbeat infrastructure.
