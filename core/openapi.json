@@ -771,10 +771,10 @@
         }
       }
     },
-    "/wikis/{id}/regenerate": {
+    "/wikis/{id}/auto-regen": {
       "patch": {
-        "operationId": "toggleRegenerate",
-        "summary": "Toggle regenerate flag on a wiki",
+        "operationId": "toggleAutoRegen",
+        "summary": "Toggle autoregen flag on a wiki",
         "tags": [
           "Wikis"
         ],
@@ -793,18 +793,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/toggleRegenerateBodySchema"
+                "$ref": "#/components/schemas/autoRegenBodySchema"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Updated regenerate flag",
+            "description": "Updated autoregen flag",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/toggleRegenerateResponseSchema"
+                  "$ref": "#/components/schemas/autoRegenResponseSchema"
                 }
               }
             }
@@ -820,7 +820,9 @@
             }
           }
         }
-      },
+      }
+    },
+    "/wikis/{id}/regenerate": {
       "post": {
         "operationId": "regenerateWiki",
         "summary": "Trigger on-demand wiki regeneration",
@@ -844,16 +846,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/okResponseSchema"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Regeneration disabled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/errorResponseSchema"
                 }
               }
             }
@@ -3446,6 +3438,20 @@
               "$ref": "#/components/schemas/wikiCollectionSchema"
             },
             "default": []
+          },
+          "autoregen": {
+            "type": "boolean",
+            "default": false
+          },
+          "dirtySince": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "default": null
+          },
+          "editorialState": {
+            "$ref": "#/components/schemas/editorialStateSchema",
+            "default": "empty"
           }
         },
         "required": [
@@ -3594,6 +3600,20 @@
               "$ref": "#/components/schemas/wikiCollectionSchema"
             },
             "default": []
+          },
+          "autoregen": {
+            "type": "boolean",
+            "default": false
+          },
+          "dirtySince": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "default": null
+          },
+          "editorialState": {
+            "$ref": "#/components/schemas/editorialStateSchema",
+            "default": "empty"
           },
           "wikiContent": {
             "type": "string"
@@ -3751,6 +3771,20 @@
                     "$ref": "#/components/schemas/wikiCollectionSchema"
                   },
                   "default": []
+                },
+                "autoregen": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "dirtySince": {
+                  "type": "string",
+                  "format": "date-time",
+                  "nullable": true,
+                  "default": null
+                },
+                "editorialState": {
+                  "$ref": "#/components/schemas/editorialStateSchema",
+                  "default": "empty"
                 }
               },
               "required": [
@@ -3907,6 +3941,20 @@
             },
             "default": []
           },
+          "autoregen": {
+            "type": "boolean",
+            "default": false
+          },
+          "dirtySince": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "default": null
+          },
+          "editorialState": {
+            "$ref": "#/components/schemas/editorialStateSchema",
+            "default": "empty"
+          },
           "wikiContent": {
             "type": "string"
           },
@@ -4055,7 +4103,7 @@
             "format": "date-time",
             "nullable": true
           },
-          "regenerate": {
+          "autoregen": {
             "type": "boolean"
           }
         },
@@ -4063,7 +4111,7 @@
           "published",
           "publishedSlug",
           "publishedAt",
-          "regenerate",
+          "autoregen",
           "publishedOrigin"
         ],
         "additionalProperties": false
@@ -4106,34 +4154,38 @@
         ],
         "additionalProperties": false
       },
-      "toggleRegenerateBodySchema": {
+      "autoRegenBodySchema": {
         "type": "object",
         "properties": {
-          "regenerate": {
+          "autoregen": {
             "type": "boolean"
           }
         },
         "required": [
-          "regenerate"
+          "autoregen"
         ],
         "additionalProperties": false
       },
-      "toggleRegenerateResponseSchema": {
+      "autoRegenResponseSchema": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "minLength": 1
           },
-          "regenerate": {
+          "autoregen": {
             "type": "boolean"
           }
         },
         "required": [
           "id",
-          "regenerate"
+          "autoregen"
         ],
         "additionalProperties": false
+      },
+      "editorialStateSchema": {
+        "type": "string",
+        "enum": ["empty", "learning", "dreaming", "filed"]
       },
       "updateProgressBodySchema": {
         "type": "object",
