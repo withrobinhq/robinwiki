@@ -10,13 +10,12 @@ import {
 } from "react";
 
 /**
- * Shared state for the "Add Wiki" creation modal. Both the Header dropdown
- * (legacy trigger, kept for one ship-cycle for muscle memory) and the
- * Sidebar "+ Add Wiki" trigger (A-game canonical location, line 421)
- * dispatch to the same modal via {@link useAddWiki}.
+ * Shared state for the "Add Wiki" creation modal. The Header dropdown is
+ * the canonical trigger; any other surfaces (e.g. the Sidebar) dispatch
+ * into the same modal via {@link useAddWiki}.
  *
- * The modal itself is mounted once by `(shell)/layout.tsx`, so the Header
- * and Sidebar never mount their own `<AddWikiModal>` instances.
+ * The modal itself is mounted once by `(shell)/layout.tsx`, so triggers
+ * never mount their own `<AddWikiModal>` instances.
  */
 interface AddWikiContextValue {
   open: boolean;

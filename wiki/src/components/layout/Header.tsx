@@ -18,10 +18,9 @@ interface HeaderProps {
 
 export default function Header({ onMenuToggle }: HeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  // H1: the Header dropdown's "Wiki" entry is the LEGACY trigger for Add
-  // Wiki. The canonical A-game location is the Sidebar (#H1). This trigger
-  // stays for one ship-cycle so muscle memory doesn't break, then gets
-  // removed in a follow-up issue once telemetry shows sidebar adoption.
+  // The Header dropdown's "Wiki" entry is the canonical trigger for the
+  // Add Wiki modal. Any other surface (e.g. the sidebar) opens the same
+  // modal via the shared `AddWikiContext`.
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const { openModal: openAddWikiModal } = useAddWiki();
   const [addEntryOpen, setAddEntryOpen] = useState(false);

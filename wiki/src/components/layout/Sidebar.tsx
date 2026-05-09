@@ -471,10 +471,9 @@ function SidebarSection({
   );
 }
 
-// H1: the canonical A-game (line 421) trigger for opening the Add Wiki
-// modal lives in the sidebar. The Header dropdown trigger is preserved
-// for one ship-cycle (see Header.tsx) so existing muscle memory doesn't
-// break. Both dispatch into the same AddWikiContext.
+// Sidebar shortcut for opening the Add Wiki modal. The canonical trigger
+// is the Header dropdown (see Header.tsx); this entry just dispatches into
+// the same shared AddWikiContext for users who reach for the sidebar.
 function AddWikiTrigger() {
   const { openModal } = useAddWiki();
   return (
