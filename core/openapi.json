@@ -2451,6 +2451,177 @@
         }
       }
     },
+    "/admin/graph/stats": {
+      "get": {
+        "operationId": "getGraphStats",
+        "summary": "Read-only graph and pipeline observability snapshot",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Graph and pipeline stats snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "persons",
+                    "wikis",
+                    "fragments",
+                    "edges",
+                    "agentSchema",
+                    "peopleExtraction24h",
+                    "regen24h",
+                    "lastUpdated"
+                  ],
+                  "properties": {
+                    "persons": {
+                      "type": "object",
+                      "required": [
+                        "total",
+                        "verified",
+                        "pending",
+                        "rejected",
+                        "owner"
+                      ],
+                      "properties": {
+                        "total": { "type": "integer" },
+                        "verified": { "type": "integer" },
+                        "pending": { "type": "integer" },
+                        "rejected": { "type": "integer" },
+                        "owner": { "type": "integer" }
+                      }
+                    },
+                    "wikis": {
+                      "type": "object",
+                      "required": [
+                        "total",
+                        "populated",
+                        "empty",
+                        "autoregenEnabled",
+                        "dirty",
+                        "editorialState"
+                      ],
+                      "properties": {
+                        "total": { "type": "integer" },
+                        "populated": { "type": "integer" },
+                        "empty": { "type": "integer" },
+                        "autoregenEnabled": { "type": "integer" },
+                        "dirty": { "type": "integer" },
+                        "editorialState": {
+                          "type": "object",
+                          "required": ["empty", "learning", "dreaming", "filed"],
+                          "properties": {
+                            "empty": { "type": "integer" },
+                            "learning": { "type": "integer" },
+                            "dreaming": { "type": "integer" },
+                            "filed": { "type": "integer" }
+                          }
+                        }
+                      }
+                    },
+                    "fragments": {
+                      "type": "object",
+                      "required": ["total", "withMention", "withoutMention"],
+                      "properties": {
+                        "total": { "type": "integer" },
+                        "withMention": { "type": "integer" },
+                        "withoutMention": { "type": "integer" }
+                      }
+                    },
+                    "edges": {
+                      "type": "object",
+                      "required": [
+                        "FRAGMENT_RELATED_TO_FRAGMENT",
+                        "FRAGMENT_IN_WIKI",
+                        "ENTRY_HAS_FRAGMENT",
+                        "FRAGMENT_MENTIONS_PERSON",
+                        "WIKI_RELATED_TO_WIKI"
+                      ],
+                      "properties": {
+                        "FRAGMENT_RELATED_TO_FRAGMENT": { "type": "integer" },
+                        "FRAGMENT_IN_WIKI": { "type": "integer" },
+                        "ENTRY_HAS_FRAGMENT": { "type": "integer" },
+                        "FRAGMENT_MENTIONS_PERSON": { "type": "integer" },
+                        "WIKI_RELATED_TO_WIKI": { "type": "integer" }
+                      }
+                    },
+                    "agentSchema": {
+                      "type": "object",
+                      "required": [
+                        "wikisWithDescription",
+                        "wikisWithHyde",
+                        "wikisMissingEither",
+                        "wikisMissingBoth"
+                      ],
+                      "properties": {
+                        "wikisWithDescription": { "type": "integer" },
+                        "wikisWithHyde": { "type": "integer" },
+                        "wikisMissingEither": { "type": "integer" },
+                        "wikisMissingBoth": { "type": "integer" }
+                      }
+                    },
+                    "peopleExtraction24h": {
+                      "type": "object",
+                      "required": [
+                        "rawMentionsSeen",
+                        "matched",
+                        "dropped",
+                        "dropRatePct",
+                        "telemetryStarted"
+                      ],
+                      "properties": {
+                        "rawMentionsSeen": { "type": "integer" },
+                        "matched": { "type": "integer" },
+                        "dropped": { "type": "integer" },
+                        "dropRatePct": { "type": "number" },
+                        "telemetryStarted": {
+                          "type": ["string", "null"],
+                          "format": "date-time"
+                        }
+                      }
+                    },
+                    "regen24h": {
+                      "type": "object",
+                      "required": ["total", "debounced", "onDemand"],
+                      "properties": {
+                        "total": { "type": "integer" },
+                        "debounced": { "type": "integer" },
+                        "onDemand": { "type": "integer" }
+                      }
+                    },
+                    "lastUpdated": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "telemetryWarning": {
+                      "type": "string",
+                      "description": "Present when peopleExtraction24h.rawMentionsSeen is 0 and telemetryStarted is null. Notes that counters reflect only post-merge data."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Query failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/mcp": {
       "post": {
         "operationId": "mcpTransport",

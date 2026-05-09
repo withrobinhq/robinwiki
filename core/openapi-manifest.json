@@ -1,9 +1,9 @@
 {
   "_meta": {
-    "generatedAt": "2026-05-09T13:50:09.424Z",
+    "generatedAt": "2026-05-09T15:28:32.817Z",
     "description": "Route + JSON Schema manifest for OpenAPI generation. Feed to /apidoc.",
-    "schemaCount": 64,
-    "routeCount": 58
+    "schemaCount": 65,
+    "routeCount": 62
   },
   "info": {
     "title": "Robin API",
@@ -1353,6 +1353,74 @@
       }
     },
     {
+      "method": "GET",
+      "path": "/admin/backfill/audit",
+      "operationId": "getBackfillAudit",
+      "summary": "Read-only gap audit for wiki_agent_schema rows",
+      "tags": [
+        "Admin"
+      ],
+      "auth": "session",
+      "responses": {
+        "200": {
+          "description": "Gap report and last-audit timestamp"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/admin/backfill/wiki-agent-schema",
+      "operationId": "triggerWikiAgentSchemaBackfill",
+      "summary": "Trigger the wiki_agent_schema description-row backfill",
+      "tags": [
+        "Admin"
+      ],
+      "auth": "session",
+      "responses": {
+        "200": {
+          "description": "Backfill result"
+        },
+        "500": {
+          "description": "Runner threw",
+          "schemaName": "errorResponseSchema"
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/admin/backfill/runs",
+      "operationId": "getBackfillRuns",
+      "summary": "Last-run telemetry for backfill and embedding-related jobs",
+      "tags": [
+        "Admin"
+      ],
+      "auth": "session",
+      "responses": {
+        "200": {
+          "description": "Recent scheduled-job runs"
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/admin/graph/stats",
+      "operationId": "getGraphStats",
+      "summary": "Read-only graph and pipeline observability snapshot",
+      "tags": [
+        "Admin"
+      ],
+      "auth": "session",
+      "responses": {
+        "200": {
+          "description": "Graph and pipeline stats snapshot"
+        },
+        "500": {
+          "description": "Query failed",
+          "schemaName": "errorResponseSchema"
+        }
+      }
+    },
+    {
       "method": "POST",
       "path": "/mcp",
       "operationId": "mcpTransport",
@@ -2413,6 +2481,15 @@
                 "filed"
               ],
               "default": "empty"
+            },
+            "agentSchemaStatus": {
+              "type": "string",
+              "enum": [
+                "complete",
+                "missing_description",
+                "missing_hyde",
+                "missing_both"
+              ]
             }
           },
           "required": [
@@ -2610,6 +2687,15 @@
                 "filed"
               ],
               "default": "empty"
+            },
+            "agentSchemaStatus": {
+              "type": "string",
+              "enum": [
+                "complete",
+                "missing_description",
+                "missing_hyde",
+                "missing_both"
+              ]
             },
             "wikiContent": {
               "type": "string"
@@ -2816,6 +2902,15 @@
                       "filed"
                     ],
                     "default": "empty"
+                  },
+                  "agentSchemaStatus": {
+                    "type": "string",
+                    "enum": [
+                      "complete",
+                      "missing_description",
+                      "missing_hyde",
+                      "missing_both"
+                    ]
                   }
                 },
                 "required": [
@@ -3021,6 +3116,15 @@
               ],
               "default": "empty"
             },
+            "agentSchemaStatus": {
+              "type": "string",
+              "enum": [
+                "complete",
+                "missing_description",
+                "missing_hyde",
+                "missing_both"
+              ]
+            },
             "wikiContent": {
               "type": "string"
             },
@@ -3069,6 +3173,15 @@
                   },
                   "name": {
                     "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "pending",
+                      "rejected"
+                    ],
+                    "default": "verified"
                   }
                 },
                 "required": [
@@ -3758,6 +3871,20 @@
         }
       }
     },
+    "agentSchemaStatusSchema": {
+      "$ref": "#/definitions/agentSchemaStatusSchema",
+      "definitions": {
+        "agentSchemaStatusSchema": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "missing_description",
+            "missing_hyde",
+            "missing_both"
+          ]
+        }
+      }
+    },
     "updateProgressBodySchema": {
       "$ref": "#/definitions/updateProgressBodySchema",
       "definitions": {
@@ -4070,6 +4197,15 @@
                 "DIRTY"
               ]
             },
+            "status": {
+              "type": "string",
+              "enum": [
+                "verified",
+                "pending",
+                "rejected"
+              ],
+              "default": "verified"
+            },
             "lastRebuiltAt": {
               "type": "string",
               "format": "date-time",
@@ -4144,6 +4280,15 @@
                 "LINKING",
                 "DIRTY"
               ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "verified",
+                "pending",
+                "rejected"
+              ],
+              "default": "verified"
             },
             "lastRebuiltAt": {
               "type": "string",
@@ -4276,6 +4421,15 @@
                 "DIRTY"
               ]
             },
+            "status": {
+              "type": "string",
+              "enum": [
+                "verified",
+                "pending",
+                "rejected"
+              ],
+              "default": "verified"
+            },
             "lastRebuiltAt": {
               "type": "string",
               "format": "date-time",
@@ -4370,6 +4524,15 @@
                       "DIRTY"
                     ]
                   },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "pending",
+                      "rejected"
+                    ],
+                    "default": "verified"
+                  },
                   "lastRebuiltAt": {
                     "type": "string",
                     "format": "date-time",
@@ -4451,6 +4614,16 @@
               "type": "integer",
               "minimum": 0,
               "default": 0
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "verified",
+                "pending",
+                "rejected",
+                "all"
+              ],
+              "default": "verified"
             }
           },
           "additionalProperties": false
