@@ -1,4 +1,4 @@
-import { USER_OVERRIDE_FORBIDDEN_FIELDS, parseUserSpecFromBlobStrict } from '@robin/shared'
+import { parseUserSpecFromBlobLenient } from '@robin/shared'
 import type { PromptSpec } from '@robin/shared'
 import Handlebars from 'handlebars'
 
@@ -79,19 +79,21 @@ export function validatePromptYaml(yaml: string): ValidationResult {
     }
   }
 
-  // 2 + 3. Parse YAML + validate schema via the STRICT user-blob parser. It
+  // 2 + 3. Parse YAML + validate schema via the LENIENT user-blob parser. It
   // first asserts the root is a plain mapping (YAMLException-shaped error on
-  // arrays / scalars), then enforces USER_OVERRIDE_FORBIDDEN_FIELDS, then
-  // PromptSpecSchema. We disambiguate the error families by .name (YAMLException
-  // / YAMLError) vs. the presence of ZodError's .flatten().
-  //
-  // Forbidden-field violations surface as a ZodError whose issues all sit at
-  // path[0] in the forbidden list — we route those through a dedicated
-  // FORBIDDEN_FIELD response code so the frontend can render an actionable
-  // message instead of a generic schema error.
+  // arrays / scalars), silently strips USER_OVERRIDE_FORBIDDEN_FIELDS so a
+  // round-tripped disk YAML (which always carries system_message) survives
+  // validation, then runs PromptSpecSchema. Stripped fields are surfaced as
+  // soft warnings, never as a hard error. Defense-in-depth lives at the
+  // runtime loader (wiki-generation.ts), which always overwrites
+  // system_message and system_only with the canonical disk values before
+  // render so a stripped-but-stored override cannot reach the LLM.
   let spec: PromptSpec
+  let stripped: string[] = []
   try {
-    spec = parseUserSpecFromBlobStrict(yaml)
+    const result = parseUserSpecFromBlobLenient(yaml)
+    spec = result.spec
+    stripped = result.stripped
   } catch (err) {
     const name = (err as { name?: string }).name
     if (name === 'YAMLException' || name === 'YAMLError') {
@@ -103,29 +105,6 @@ export function validatePromptYaml(yaml: string): ValidationResult {
           error: 'YAML parse error',
           detail: (err as Error).message,
         },
-      }
-    }
-
-    // Forbidden-field fast path: detect a ZodError whose every issue's first
-    // path segment is in the locked forbidden list. Any mix with non-forbidden
-    // issues falls through to the generic YAML_SCHEMA_ERROR branch so the
-    // operator still sees the full validation detail.
-    const issues = (err as { issues?: Array<{ path?: Array<string | number> }> }).issues
-    if (Array.isArray(issues) && issues.length > 0) {
-      const forbiddenSet = new Set<string>(USER_OVERRIDE_FORBIDDEN_FIELDS)
-      const offendingFields = issues
-        .map((iss) => (iss.path && iss.path.length > 0 ? String(iss.path[0]) : null))
-        .filter((field): field is string => field !== null && forbiddenSet.has(field))
-      if (offendingFields.length > 0 && offendingFields.length === issues.length) {
-        return {
-          ok: false,
-          status: 400,
-          body: {
-            code: 'FORBIDDEN_FIELD',
-            error: 'User-supplied YAML contains a field that may not be overridden',
-            detail: { fields: [...new Set(offendingFields)] },
-          },
-        }
       }
     }
 
@@ -257,6 +236,16 @@ export function validatePromptYaml(yaml: string): ValidationResult {
         `Template references {{${ref}}} but it is not declared in input_variables.`
       )
     }
+  }
+
+  // Surface forbidden-field stripping as a soft warning so the caller can
+  // audit and the frontend can show "your override of X was ignored". The
+  // runtime loader strips again before render (defense-in-depth) so a stored
+  // override cannot reach the LLM.
+  for (const field of stripped) {
+    warnings.push(
+      `Field "${field}" is reserved for the canonical disk spec and was ignored. The stored value will not affect generation.`
+    )
   }
 
   return { ok: true, spec, warnings }
