@@ -14,6 +14,7 @@ import { validationHook } from '../lib/validation.js'
 import { nanoid24 } from '../lib/id.js'
 import { regenerateWiki } from '../lib/regen.js'
 import { editorialStateOf } from '../lib/wiki-editorial-state.js'
+import { loadAgentSchemaStatusByWiki } from '../lib/backfill-runner.js'
 import {
   upsertDescriptionAgentSchemaRow,
   deleteHydeAgentSchemaRow,
@@ -88,6 +89,11 @@ function prepareWiki(
     shortDescriptor?: string
     descriptor?: string
     collections?: WikiCollectionRow[]
+    agentSchemaStatus?:
+      | 'complete'
+      | 'missing_description'
+      | 'missing_hyde'
+      | 'missing_both'
   }
 ) {
   return {
@@ -106,6 +112,7 @@ function prepareWiki(
       dirtySince: t.dirtySince ?? null,
       lastRebuiltAt: t.lastRebuiltAt ?? null,
     }),
+    agentSchemaStatus: t.agentSchemaStatus,
   }
 }
 
@@ -144,6 +151,11 @@ wikisRouter.get('/', zValidator('query', wikiListQuerySchema, validationHook), a
 
   const collectionsByWiki = await loadWikiCollections(rows.map((r) => r.wiki.lookupKey))
 
+  // Stream U: per-wiki agent_schema completeness so the settings Wikis
+  // panel can render a "needs backfill" indicator without making N round
+  // trips. Single SQL pass via loadAgentSchemaStatusByWiki.
+  const agentSchemaByWiki = await loadAgentSchemaStatusByWiki(db)
+
   return c.json(
     wikiListResponseSchema.parse({
       wikis: rows.map((r) =>
@@ -154,6 +166,7 @@ wikisRouter.get('/', zValidator('query', wikiListQuerySchema, validationHook), a
             shortDescriptor: r.shortDescriptor ?? '',
             descriptor: r.descriptor ?? '',
             collections: collectionsByWiki.get(r.wiki.lookupKey) ?? [],
+            agentSchemaStatus: agentSchemaByWiki.get(r.wiki.lookupKey),
           })
         )
       ),

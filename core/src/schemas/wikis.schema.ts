@@ -33,6 +33,17 @@ export const wikiCollectionSchema = z.object({
 
 export const editorialStateSchema = z.enum(['empty', 'learning', 'dreaming', 'filed'])
 
+// Stream U: per-wiki agent_schema status surfaced on the /settings Wikis
+// panel. 'complete' means both kinds (description + hyde_synthetic) are
+// written; the missing_* values let the UI render a yellow dot that
+// scrolls to the Backfill panel.
+export const agentSchemaStatusSchema = z.enum([
+  'complete',
+  'missing_description',
+  'missing_hyde',
+  'missing_both',
+])
+
 export const wikiResponseSchema = z.object({
   id: lookupKeySchema,
   lookupKey: lookupKeySchema,
@@ -59,6 +70,10 @@ export const wikiResponseSchema = z.object({
   autoregen: z.boolean().default(false),
   dirtySince: z.coerce.date().nullable().default(null),
   editorialState: editorialStateSchema.default('empty'),
+  // Stream U: per-wiki agent_schema completeness, used by the Wikis
+  // settings panel to render a "needs backfill" indicator. Optional so
+  // routes that do not compute it (e.g. detail) can omit the field.
+  agentSchemaStatus: agentSchemaStatusSchema.optional(),
 })
 
 export const wikiWithContentResponseSchema = wikiResponseSchema.extend({

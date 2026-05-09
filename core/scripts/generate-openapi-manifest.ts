@@ -49,6 +49,7 @@ import {
   autoRegenBodySchema,
   autoRegenResponseSchema,
   editorialStateSchema,
+  agentSchemaStatusSchema,
   updateProgressBodySchema,
   updateProgressResponseSchema,
   // wiki types
@@ -133,6 +134,7 @@ const schemaRegistry: Record<string, ZodType> = {
   autoRegenBodySchema,
   autoRegenResponseSchema,
   editorialStateSchema,
+  agentSchemaStatusSchema,
   updateProgressBodySchema,
   updateProgressResponseSchema,
   // wiki types

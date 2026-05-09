@@ -3673,6 +3673,9 @@
           "editorialState": {
             "$ref": "#/components/schemas/editorialStateSchema",
             "default": "empty"
+          },
+          "agentSchemaStatus": {
+            "$ref": "#/components/schemas/agentSchemaStatusSchema"
           }
         },
         "required": [
@@ -4006,6 +4009,9 @@
                 "editorialState": {
                   "$ref": "#/components/schemas/editorialStateSchema",
                   "default": "empty"
+                },
+                "agentSchemaStatus": {
+                  "$ref": "#/components/schemas/agentSchemaStatusSchema"
                 }
               },
               "required": [
@@ -4407,6 +4413,15 @@
       "editorialStateSchema": {
         "type": "string",
         "enum": ["empty", "learning", "dreaming", "filed"]
+      },
+      "agentSchemaStatusSchema": {
+        "type": "string",
+        "enum": [
+          "complete",
+          "missing_description",
+          "missing_hyde",
+          "missing_both"
+        ]
       },
       "updateProgressBodySchema": {
         "type": "object",
