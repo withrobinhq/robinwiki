@@ -217,14 +217,30 @@ export async function runLinking(
         entryKey: input.entryKey,
       })
 
+      // Pick the top-1 wiki by score; only that edge carries
+      // citationSpans (Stream T1 / #320). Secondary FRAGMENT_IN_WIKI
+      // edges still get score in attrs but no spans, so render-side
+      // can rely on top-1 spans being authoritative for the fragment.
+      const topWikiKey =
+        wikiResult.data.wikiEdges.length > 0
+          ? wikiResult.data.wikiEdges
+              .slice()
+              .sort((a, b) => b.score - a.score)[0].wikiKey
+          : null
+
       for (const edge of wikiResult.data.wikiEdges) {
+        const isTop = edge.wikiKey === topWikiKey
+        const attrs: Record<string, unknown> = { score: edge.score }
+        if (isTop && edge.citationSpans && edge.citationSpans.length > 0) {
+          attrs.citationSpans = edge.citationSpans
+        }
         await deps.insertEdge({
           srcType: 'fragment',
           srcId: input.fragmentKey,
           dstType: 'wiki',
           dstId: edge.wikiKey,
           edgeType: 'FRAGMENT_IN_WIKI',
-          attrs: { score: edge.score },
+          attrs,
         })
       }
 
@@ -279,13 +295,10 @@ export async function runLinking(
         entryKey: input.entryKey,
       })
 
-      // Pick a wiki context for audit detail. Prefer the highest-scoring
-      // wikiClassify result; fall back to empty string when the fragment
-      // didn't classify into any wiki on this run.
-      const wikiKeyForAudit =
-        wikiResult.data.wikiEdges.length > 0
-          ? wikiResult.data.wikiEdges.slice().sort((a, b) => b.score - a.score)[0].wikiKey
-          : ''
+      // Audit detail uses the same top-1 wikiKey we used to stamp
+      // citationSpans, falling back to empty string when nothing
+      // classified.
+      const wikiKeyForAudit = topWikiKey ?? ''
 
       for (const edge of relateResult.data.relatedEdges) {
         // attrs.method='cosine-regen' must match the regen-time path in

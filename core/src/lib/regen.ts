@@ -367,6 +367,14 @@ export async function classifyUnfiledFragments(
         }
 
         if (result.data.wikiEdges.length > 0) {
+          // Stream T1 / #320: only the top-1 wiki on this run carries
+          // citationSpans. Secondary FRAGMENT_IN_WIKI edges still get
+          // hybridScore + signal but no spans, so consumers can rely on
+          // top-1 spans being authoritative for the fragment.
+          const topWikiKey = result.data.wikiEdges
+            .slice()
+            .sort((a, b) => b.score - a.score)[0].wikiKey
+
           for (const edge of result.data.wikiEdges) {
             // Re-check the destination wiki right before the insert.
             // The LLM call is slow; the wiki may have been soft-
@@ -382,6 +390,16 @@ export async function classifyUnfiledFragments(
               log.warn({ fragmentKey: frag.lookupKey, wikiKey: edge.wikiKey }, 'skipping FRAGMENT_IN_WIKI insert: wiki was soft-deleted during LLM call')
               continue
             }
+            const isTop = edge.wikiKey === topWikiKey
+            const attrs: Record<string, unknown> = {
+              score: edge.score,
+              hybridScore: frag.hybridScore,
+              method: 'hybrid-llm-review',
+              signal: edge.score >= STRONG_SIGNAL_THRESHOLD ? 'strong' : 'weak',
+            }
+            if (isTop && edge.citationSpans && edge.citationSpans.length > 0) {
+              attrs.citationSpans = edge.citationSpans
+            }
             await database
               .insert(edges)
               .values({
@@ -391,12 +409,7 @@ export async function classifyUnfiledFragments(
                 dstType: 'wiki',
                 dstId: edge.wikiKey,
                 edgeType: 'FRAGMENT_IN_WIKI',
-                attrs: {
-                  score: edge.score,
-                  hybridScore: frag.hybridScore,
-                  method: 'hybrid-llm-review',
-                  signal: edge.score >= STRONG_SIGNAL_THRESHOLD ? 'strong' : 'weak',
-                },
+                attrs,
               })
               .onConflictDoNothing()
             llmFiled++

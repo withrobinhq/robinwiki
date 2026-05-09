@@ -398,7 +398,10 @@ wikisRouter.get('/:id', async (c) => {
     content: wiki.content ?? '',
     metadata: wiki.metadata ?? null,
     citationDeclarations: wiki.citationDeclarations ?? [],
-    deps: makeSidecarDeps(db),
+    // Pass the wiki lookupKey so resolveCitation can prefer Marcel-
+    // emitted citationSpans on the FRAGMENT_IN_WIKI edge for this wiki
+    // (#320). Legacy edges with no spans fall back to the snippet path.
+    deps: makeSidecarDeps(db, wiki.lookupKey),
   })
 
   // ?raw — token-efficient response for LLM consumption

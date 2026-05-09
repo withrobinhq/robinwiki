@@ -3,6 +3,7 @@ import type {
   FragmentationOutput,
   WikiClassificationOutput,
   FragmentRelevanceOutput,
+  CitationSpan,
 } from '@robin/shared'
 import type { OpenRouterConfig } from '../openrouter-config.js'
 
@@ -95,8 +96,24 @@ export interface WikiClassifyDeps {
 }
 
 export interface WikiClassifyResult {
-  wikiEdges: Array<{ wikiKey: string; score: number }>
-  rawAssignments?: Array<{ wikiKey: string; confidence: number; reasoning: string }>
+  /**
+   * Top-N matches that cleared the threshold. `citationSpans` is the
+   * filtered, validated subset of spans Marcel emitted for that wiki:
+   * every entry has `text === fragmentContent.slice(start, end)`.
+   * Empty / undefined when Marcel did not emit spans (legacy v3 outputs)
+   * or when every emitted span failed validation.
+   */
+  wikiEdges: Array<{
+    wikiKey: string
+    score: number
+    citationSpans?: CitationSpan[]
+  }>
+  rawAssignments?: Array<{
+    wikiKey: string
+    confidence: number
+    reasoning: string
+    citationSpans?: CitationSpan[]
+  }>
 }
 
 export interface FragRelateDeps {

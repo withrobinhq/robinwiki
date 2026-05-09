@@ -14,6 +14,7 @@ publishedRoutes.get('/wiki/:nanoid', async (c) => {
 
   const [wiki] = await db
     .select({
+      lookupKey: wikis.lookupKey,
       name: wikis.name,
       type: wikis.type,
       publishedAt: wikis.publishedAt,
@@ -42,7 +43,9 @@ publishedRoutes.get('/wiki/:nanoid', async (c) => {
     content: wiki.content,
     metadata: wiki.metadata ?? null,
     citationDeclarations: wiki.citationDeclarations ?? [],
-    deps: makeSidecarDeps(db),
+    // #320: pass wiki lookupKey so resolveCitation can prefer Marcel-
+    // emitted citationSpans on the FRAGMENT_IN_WIKI edge.
+    deps: makeSidecarDeps(db, wiki.lookupKey),
   })
 
   if (c.req.query('raw') !== undefined) {
