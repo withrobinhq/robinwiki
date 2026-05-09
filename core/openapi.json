@@ -2230,6 +2230,227 @@
         }
       }
     },
+    "/admin/backfill/audit": {
+      "get": {
+        "operationId": "getBackfillAudit",
+        "summary": "Read-only gap audit for wiki_agent_schema rows",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Gap report and last-audit timestamp",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "wikiAgentSchema",
+                    "generatedAt",
+                    "lastAuditAt"
+                  ],
+                  "properties": {
+                    "wikiAgentSchema": {
+                      "type": "object",
+                      "required": [
+                        "missingDescription",
+                        "missingHyde"
+                      ],
+                      "properties": {
+                        "missingDescription": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "missingHyde": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "generatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "lastAuditAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/backfill/wiki-agent-schema": {
+      "post": {
+        "operationId": "triggerWikiAgentSchemaBackfill",
+        "summary": "Trigger the wiki_agent_schema description-row backfill",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "wikiKey": {
+                    "type": "string",
+                    "description": "Optional: scope the run to a single wiki by lookup key"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Backfill result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "jobId",
+                    "scope",
+                    "ok",
+                    "failed",
+                    "scanned",
+                    "durationMs"
+                  ],
+                  "properties": {
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "single"
+                      ]
+                    },
+                    "wikiKey": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "ok": {
+                      "type": "integer"
+                    },
+                    "failed": {
+                      "type": "integer"
+                    },
+                    "scanned": {
+                      "type": "integer"
+                    },
+                    "durationMs": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Runner threw",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/backfill/runs": {
+      "get": {
+        "operationId": "getBackfillRuns",
+        "summary": "Last-run telemetry for backfill and embedding-related jobs",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent scheduled-job runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "runs"
+                  ],
+                  "properties": {
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "jobName",
+                          "lastRunAt",
+                          "lastRunStatus"
+                        ],
+                        "properties": {
+                          "jobName": {
+                            "type": "string"
+                          },
+                          "lastRunAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "lastRunStatus": {
+                            "type": "string"
+                          },
+                          "lastRunMeta": {
+                            "type": [
+                              "object",
+                              "null"
+                            ]
+                          },
+                          "lastRunDurationMs": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/mcp": {
       "post": {
         "operationId": "mcpTransport",
