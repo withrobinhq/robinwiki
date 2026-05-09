@@ -228,6 +228,49 @@ export async function runLinking(
         })
       }
 
+      // H4 (#328): WIKI_RELATED_TO_WIKI edges from Marcel secondary
+      // candidates. When the classifier scored top-N wikis, the runners
+      // up still surface conceptual adjacency. Persist secondaries above
+      // RELATED_THRESHOLD so future "related wikis" surfaces have a
+      // ready signal without re-running Marcel.
+      //
+      // Direction: top-1 winner -> each above-threshold secondary.
+      // Idempotency: edges.unique(src,dst,type,edge_type) is enforced at
+      // the schema level. The first fragment that co-classifies a pair
+      // wins the edge; subsequent fragments inserting the same pair are
+      // absorbed by onConflictDoNothing inside `deps.insertEdge`. This
+      // diverges from the spec's "accumulate per fragment" wording but
+      // matches the existing schema constraint and avoids a migration.
+      // Aggregate co-occurrence counts can be derived later from
+      // FRAGMENT_IN_WIKI overlap if the surface ever needs them.
+      //
+      // Skip writing when the worker pipeline produced no winner
+      // (multi-classify can return zero wikis above THRESHOLD).
+      const RELATED_THRESHOLD = 0.4
+      const raw = wikiResult.data.rawAssignments ?? []
+      const winners = wikiResult.data.wikiEdges
+      if (winners.length > 0 && raw.length > 1) {
+        const top = winners.slice().sort((a, b) => b.score - a.score)[0]
+        // Defensive dedup against the top-1 wiki itself, since Marcel
+        // returns it inside `rawAssignments` too.
+        const secondaries = raw.filter(
+          (a) => a.wikiKey !== top.wikiKey && a.confidence > RELATED_THRESHOLD
+        )
+        for (const secondary of secondaries) {
+          await deps.insertEdge({
+            srcType: 'wiki',
+            srcId: top.wikiKey,
+            dstType: 'wiki',
+            dstId: secondary.wikiKey,
+            edgeType: 'WIKI_RELATED_TO_WIKI',
+            attrs: {
+              sourceFragmentId: input.fragmentKey,
+              marcelConfidence: secondary.confidence,
+            },
+          })
+        }
+      }
+
       // Stage 2: fragment-to-fragment relationships
       const relateResult = await fragRelate(deps.fragRelateDeps, {
         fragmentContent: input.fragmentContent,

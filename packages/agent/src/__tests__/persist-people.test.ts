@@ -77,8 +77,8 @@ describe('matchMentionsToFragments', () => {
       makeFragment({ content: 'Bob said hello at the gate', sourceSpan: 'Bob said hello' }),
     ]
     const extractions = [
-      { mention: 'Sarah', sourceSpan: 'with Sarah' },
-      { mention: 'Bob', sourceSpan: 'Bob said' },
+      { mention: 'Sarah', sourceSpan: 'with Sarah', confidence: 0.92 },
+      { mention: 'Bob', sourceSpan: 'Bob said', confidence: 0.81 },
     ]
     const peopleMap = new Map([
       ['Sarah', 'personAAA'],
@@ -87,20 +87,25 @@ describe('matchMentionsToFragments', () => {
 
     const result = matchMentionsToFragments(extractions, fragments, peopleMap)
 
-    expect(result.get(0)).toContain('personAAA')
-    expect(result.get(1)).toContain('personBBB')
+    expect(result.get(0)?.map((p) => p.personKey)).toContain('personAAA')
+    expect(result.get(1)?.map((p) => p.personKey)).toContain('personBBB')
+    expect(result.get(0)?.[0].attrs).toEqual({
+      mention: 'Sarah',
+      sourceSpan: 'with Sarah',
+      confidence: 0.92,
+    })
   })
 
   it('matches mention text fallback when sourceSpan is not found', () => {
     const fragments: FragmentResult[] = [
       makeFragment({ content: 'Sarah was here yesterday', sourceSpan: 'Sarah was here' }),
     ]
-    const extractions = [{ mention: 'Sarah', sourceSpan: 'nonexistent span' }]
+    const extractions = [{ mention: 'Sarah', sourceSpan: 'nonexistent span', confidence: 0.7 }]
     const peopleMap = new Map([['Sarah', 'personAAA']])
 
     const result = matchMentionsToFragments(extractions, fragments, peopleMap)
 
-    expect(result.get(0)).toContain('personAAA')
+    expect(result.get(0)?.map((p) => p.personKey)).toContain('personAAA')
   })
 
   it('matches one mention to multiple fragments', () => {
@@ -111,13 +116,13 @@ describe('matchMentionsToFragments', () => {
       }),
       makeFragment({ content: 'Sarah joined us for lunch', sourceSpan: 'Sarah joined us' }),
     ]
-    const extractions = [{ mention: 'Sarah', sourceSpan: 'with Sarah' }]
+    const extractions = [{ mention: 'Sarah', sourceSpan: 'with Sarah', confidence: 0.88 }]
     const peopleMap = new Map([['Sarah', 'personAAA']])
 
     const result = matchMentionsToFragments(extractions, fragments, peopleMap)
 
-    expect(result.get(0)).toContain('personAAA')
-    expect(result.get(1)).toContain('personAAA')
+    expect(result.get(0)?.map((p) => p.personKey)).toContain('personAAA')
+    expect(result.get(1)?.map((p) => p.personKey)).toContain('personAAA')
   })
 
   it('deduplicates person keys per fragment', () => {
@@ -125,8 +130,8 @@ describe('matchMentionsToFragments', () => {
       makeFragment({ content: 'Sarah and Sarah met again', sourceSpan: 'Sarah and Sarah' }),
     ]
     const extractions = [
-      { mention: 'Sarah', sourceSpan: 'Sarah and' },
-      { mention: 'Sarah O.', sourceSpan: 'Sarah met' },
+      { mention: 'Sarah', sourceSpan: 'Sarah and', confidence: 0.9 },
+      { mention: 'Sarah O.', sourceSpan: 'Sarah met', confidence: 0.7 },
     ]
     const peopleMap = new Map([
       ['Sarah', 'personAAA'],
@@ -135,14 +140,17 @@ describe('matchMentionsToFragments', () => {
 
     const result = matchMentionsToFragments(extractions, fragments, peopleMap)
 
-    expect(result.get(0)).toEqual(['personAAA'])
+    const keys = result.get(0)?.map((p) => p.personKey) ?? []
+    expect(keys).toEqual(['personAAA'])
+    // First-extraction-wins on attrs when the same person dedups inside one frag.
+    expect(result.get(0)?.[0].attrs.mention).toBe('Sarah')
   })
 
   it('returns empty map when no fragments match', () => {
     const fragments: FragmentResult[] = [
       makeFragment({ content: 'Nice weather', sourceSpan: 'Nice weather' }),
     ]
-    const extractions = [{ mention: 'Sarah', sourceSpan: 'with Sarah downtown' }]
+    const extractions = [{ mention: 'Sarah', sourceSpan: 'with Sarah downtown', confidence: 0.9 }]
     const peopleMap = new Map([['Sarah', 'personAAA']])
 
     const result = matchMentionsToFragments(extractions, fragments, peopleMap)
@@ -199,7 +207,7 @@ describe('persist — Postgres inserts', () => {
         },
       ],
       peopleMap: new Map([['Sarah', 'person01HAAAABBBBCCCCDDDDEEEE']]),
-      extractions: [{ mention: 'Sarah', sourceSpan: 'with Sarah' }],
+      extractions: [{ mention: 'Sarah', sourceSpan: 'with Sarah', confidence: 0.91 }],
       entityExtractionStatus: 'completed' as const,
     })
 
@@ -209,7 +217,7 @@ describe('persist — Postgres inserts', () => {
     expect(upsertArgs.verified).toBe(false)
   })
 
-  it('creates FRAGMENT_MENTIONS_PERSON edges', async () => {
+  it('creates FRAGMENT_MENTIONS_PERSON edges with mention attrs (H2 #329)', async () => {
     const deps = makeMockDeps()
     const fragments = [makeFragment({ content: 'Had coffee with Sarah', sourceSpan: 'with Sarah' })]
 
@@ -220,7 +228,7 @@ describe('persist — Postgres inserts', () => {
         { personKey: 'person01HAAAABBBBCCCCDDDDEEEE', canonicalName: 'Sarah', verified: false },
       ],
       peopleMap: new Map([['Sarah', 'person01HAAAABBBBCCCCDDDDEEEE']]),
-      extractions: [{ mention: 'Sarah', sourceSpan: 'with Sarah' }],
+      extractions: [{ mention: 'Sarah', sourceSpan: 'with Sarah', confidence: 0.93 }],
       entityExtractionStatus: 'completed' as const,
     })
 
@@ -235,6 +243,11 @@ describe('persist — Postgres inserts', () => {
       dstType: 'person',
       dstId: 'person01HAAAABBBBCCCCDDDDEEEE',
       edgeType: 'FRAGMENT_MENTIONS_PERSON',
+      attrs: {
+        mention: 'Sarah',
+        sourceSpan: 'with Sarah',
+        confidence: 0.93,
+      },
     })
   })
 
@@ -248,7 +261,7 @@ describe('persist — Postgres inserts', () => {
       newPeople: [],
       peopleMap: new Map([['sarah', 'personEXIST']]),
       newAliases: new Map([['personEXIST', ['sarah', 'S. Ouma']]]),
-      extractions: [{ mention: 'sarah', sourceSpan: 'with Sarah' }],
+      extractions: [{ mention: 'sarah', sourceSpan: 'with Sarah', confidence: 0.85 }],
       entityExtractionStatus: 'completed' as const,
     })
 

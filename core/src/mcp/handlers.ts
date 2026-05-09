@@ -332,7 +332,15 @@ export async function handleLogFragment(
     // payload through the shared `resolveOrDrop` helper so the worker
     // pipeline and this fast path produce the same outcome graph for
     // the same input.
-    const personKeys: string[] = []
+    //
+    // H2 (#329): each entry carries the attrs we'll stamp on the
+    // FRAGMENT_MENTIONS_PERSON edge (mention surface form, source span
+    // the LLM cited, confidence). `created_pending`/`created_verified`
+    // outcomes synthesised the row, so confidence defaults to 1.0.
+    const personMentions: Array<{
+      personKey: string
+      attrs: { mention: string; sourceSpan: string; confidence: number }
+    }> = []
     try {
       const knownPeople = await deps.loadUserPeople(userId)
       const knownPeopleJson =
@@ -379,7 +387,18 @@ export async function handleLogFragment(
 
       for (const outcome of outcomes) {
         if (outcome.kind === 'dropped') continue
-        personKeys.push(outcome.lookupKey)
+        const confidence =
+          outcome.kind === 'matched' || outcome.kind === 'pending'
+            ? outcome.confidence
+            : 1
+        personMentions.push({
+          personKey: outcome.lookupKey,
+          attrs: {
+            mention: outcome.mention,
+            sourceSpan: outcome.sourceSpan.text,
+            confidence,
+          },
+        })
       }
     } catch (err) {
       log.warn({ err, userId }, 'log_fragment entity extraction failed (continuing)')
@@ -448,8 +467,14 @@ export async function handleLogFragment(
         )
       )
 
-    // Insert FRAGMENT_MENTIONS_PERSON edges (one per person)
-    for (const personKey of personKeys) {
+    // Insert FRAGMENT_MENTIONS_PERSON edges (one per person).
+    // H2 (#329): stamp attrs jsonb with the mention surface, source span,
+    // and extractor confidence so /people and matcher audits can
+    // reconstruct the original signal.
+    const seenPersonKeys = new Set<string>()
+    for (const { personKey, attrs } of personMentions) {
+      if (seenPersonKeys.has(personKey)) continue
+      seenPersonKeys.add(personKey)
       await deps.db
         .insert(edgesTable)
         .values({
@@ -459,6 +484,7 @@ export async function handleLogFragment(
           dstType: 'person',
           dstId: personKey,
           edgeType: 'FRAGMENT_MENTIONS_PERSON',
+          attrs,
         })
         .onConflictDoNothing()
     }

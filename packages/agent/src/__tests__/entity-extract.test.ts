@@ -211,6 +211,17 @@ describe('entityExtract', () => {
     // Both surface in extractions so persist's mention-to-fragment edge
     // logic can write FRAGMENT_MENTIONS_PERSON for each.
     expect(result.data.extractions).toHaveLength(2)
+    // H2 (#329): confidence rides through every extraction so the
+    // persist stage can stamp FRAGMENT_MENTIONS_PERSON.attrs with
+    // the LLM's reported confidence (1.0 for newly minted rows).
+    const sarah = result.data.extractions.find((e) => e.mention === 'Sarah')
+    expect(sarah?.confidence).toBe(0.9)
+    expect(sarah?.sourceSpan).toBe('with Sarah')
+    const bob = result.data.extractions.find((e) => e.mention === 'Bob')
+    // Bob is a candidate that synthesised a new pending row, so
+    // confidence defaults to 1.0 (the row exists because we believed
+    // the candidate; the LLM's own score does not gate the write).
+    expect(bob?.confidence).toBe(1)
     expect(result.durationMs).toBeGreaterThanOrEqual(0)
   })
 

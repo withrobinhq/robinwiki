@@ -208,7 +208,14 @@ export interface EntityExtractDeps {
 export interface EntityExtractResult {
   peopleMap: Map<string, string>
   newAliases: Map<string, string[]>
-  extractions: Array<{ mention: string; sourceSpan: string }>
+  /**
+   * H2 (#329): each extraction carries the literal mention surface
+   * form, the source span text the LLM saw, and the confidence the
+   * extractor reported. The persist stage stamps these on the
+   * FRAGMENT_MENTIONS_PERSON edge attrs jsonb so /people surfaces and
+   * matcher audits can reconstruct what the LLM actually saw.
+   */
+  extractions: Array<{ mention: string; sourceSpan: string; confidence: number }>
   newPeople: Array<{
     personKey: string
     canonicalName: string

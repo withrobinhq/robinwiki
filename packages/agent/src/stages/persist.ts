@@ -7,16 +7,36 @@ import type { StageResult, PersistDeps, PersistResult, FragmentResult } from './
 import { embedText } from '../embeddings.js'
 
 /**
+ * H2 (#329) edge attrs payload. Lands on FRAGMENT_MENTIONS_PERSON
+ * `attrs` jsonb when the persist stage writes the edge.
+ */
+export interface MentionEdgeAttrs {
+  /** Literal surface form the LLM saw ("Phyl", "the founder", "she"). */
+  mention: string
+  /** Source span the LLM cited around the mention. */
+  sourceSpan: string
+  /** Extractor-reported confidence, or 1.0 for newly minted persons. */
+  confidence: number
+}
+
+interface MentionEdgePayload {
+  personKey: string
+  attrs: MentionEdgeAttrs
+}
+
+/**
  * Match mention extractions to fragments by checking if the extraction's
  * sourceSpan or mention text appears in each fragment's content or sourceSpan.
- * Returns Map<fragmentIndex, personKeys[]> with deduplication.
+ * Returns Map<fragmentIndex, MentionEdgePayload[]> with per-(fragment,person)
+ * dedup. When the same person surfaces multiple times in one fragment we
+ * keep the first matching extraction's attrs (deterministic for tests).
  */
 export function matchMentionsToFragments(
-  extractions: Array<{ mention: string; sourceSpan: string }>,
+  extractions: Array<{ mention: string; sourceSpan: string; confidence: number }>,
   fragments: FragmentResult[],
   peopleMap: Map<string, string>
-): Map<number, string[]> {
-  const result = new Map<number, string[]>()
+): Map<number, MentionEdgePayload[]> {
+  const result = new Map<number, MentionEdgePayload[]>()
 
   for (const extraction of extractions) {
     const personKey = peopleMap.get(extraction.mention)
@@ -31,8 +51,15 @@ export function matchMentionsToFragments(
 
       if (matched) {
         const existing = result.get(i) ?? []
-        if (!existing.includes(personKey)) {
-          existing.push(personKey)
+        if (!existing.some((e) => e.personKey === personKey)) {
+          existing.push({
+            personKey,
+            attrs: {
+              mention: extraction.mention,
+              sourceSpan: extraction.sourceSpan,
+              confidence: extraction.confidence,
+            },
+          })
           result.set(i, existing)
         }
       }
@@ -58,18 +85,18 @@ export async function persist(
     jobId: string
     peopleMap?: Map<string, string>
     newAliases?: Map<string, string[]>
-    extractions?: Array<{ mention: string; sourceSpan: string }>
+    extractions?: Array<{ mention: string; sourceSpan: string; confidence: number }>
     newPeople?: Array<{ personKey: string; canonicalName: string; verified: boolean }>
     entityExtractionStatus?: 'completed' | 'failed'
   }
 ): Promise<StageResult<PersistResult>> {
   const start = performance.now()
 
-  // Resolve per-fragment person matches
-  const fragmentPersonKeys =
+  // Resolve per-fragment person matches with their edge attrs payload.
+  const fragmentPersonEdges =
     input.extractions && input.peopleMap && input.peopleMap.size > 0
       ? matchMentionsToFragments(input.extractions, input.fragments, input.peopleMap)
-      : new Map<number, string[]>()
+      : new Map<number, MentionEdgePayload[]>()
 
   // -- Entry insert --
   const entrySlug = generateSlug(input.primaryTopic)
@@ -175,16 +202,20 @@ export async function persist(
   }
 
   // -- Edges: FRAGMENT_MENTIONS_PERSON --
-  for (const [fragIdx, personKeys] of fragmentPersonKeys.entries()) {
+  // H2 (#329): every edge carries `attrs.{mention,sourceSpan,confidence}`
+  // so /people surfaces and matcher audits can reconstruct what the LLM
+  // actually saw at extract time.
+  for (const [fragIdx, payloads] of fragmentPersonEdges.entries()) {
     const fragKey = fragmentKeys[fragIdx]
-    for (const personKey of personKeys) {
-      const resolved = personKeyRemap.get(personKey) ?? personKey
+    for (const payload of payloads) {
+      const resolved = personKeyRemap.get(payload.personKey) ?? payload.personKey
       await deps.insertEdge({
         srcType: 'fragment',
         srcId: fragKey,
         dstType: 'person',
         dstId: resolved,
         edgeType: 'FRAGMENT_MENTIONS_PERSON',
+        attrs: payload.attrs,
       })
     }
   }
