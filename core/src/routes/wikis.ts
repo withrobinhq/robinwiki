@@ -13,6 +13,7 @@ import { logger } from '../lib/logger.js'
 import { validationHook } from '../lib/validation.js'
 import { nanoid24 } from '../lib/id.js'
 import { regenerateWiki } from '../lib/regen.js'
+import { editorialStateOf } from '../lib/wiki-editorial-state.js'
 import {
   upsertDescriptionAgentSchemaRow,
   deleteHydeAgentSchemaRow,
@@ -31,8 +32,6 @@ import {
   publishWikiResponseSchema,
   bouncerModeBodySchema,
   bouncerModeResponseSchema,
-  toggleRegenerateBodySchema,
-  toggleRegenerateResponseSchema,
   autoRegenBodySchema,
   spawnWikiBodySchema,
   spawnWikiResponseSchema,
@@ -100,6 +99,13 @@ function prepareWiki(
     descriptor: t.descriptor ?? '',
     progress: t.progress ?? null,
     collections: t.collections ?? [],
+    // T4-bundle (v0.2.2): editorial state is derived in app code from
+    // {state, dirtySince, lastRebuiltAt}. See lib/wiki-editorial-state.
+    editorialState: editorialStateOf({
+      state: t.state as 'LINKING' | 'RESOLVED' | 'PENDING' | 'ATTACHED',
+      dirtySince: t.dirtySince ?? null,
+      lastRebuiltAt: t.lastRebuiltAt ?? null,
+    }),
   }
 }
 
@@ -263,11 +269,12 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
       }
 
       if (matched.length > 0) {
-        // Stream E lifecycle: a freshly-created wiki with attached fragments
-        // is 'learning' until the first regen completes.
+        // T4-bundle (v0.2.2): a freshly-created wiki with attached fragments
+        // is 'learning' (derived). Stamp dirty_since so editorialStateOf
+        // returns 'learning' until the first regen clears the column.
         await db
           .update(wikis)
-          .set({ lifecycleState: 'learning' })
+          .set({ dirtySince: new Date() })
           .where(eq(wikis.lookupKey, lookupKey))
 
         await producer.enqueueRegen({
@@ -549,6 +556,8 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
     // Prompt change affects wiki generation — mark PENDING so regen rebuilds with new prompt
     if (body.prompt !== existing.prompt) updates.state = 'PENDING'
   }
+  // T4-bundle (v0.2.2): autoregen flag now editable via the unified PUT body.
+  if (body.autoregen != null) updates.autoregen = body.autoregen
 
   // Self-heal: name/description feed the embedded text used for
   // backward classification, so a change to either invalidates the
@@ -650,14 +659,14 @@ wikisRouter.post('/:id/unpublish', async (c) => {
 })
 
 // POST /wikis/:id/regenerate — on-demand wiki regen, serialized via wikiRegenLock (#audit-M5)
+//
+// T4-bundle (v0.2.2): on-demand regen is no longer gated by a per-wiki
+// regenerate flag. The autoregen flag governs the batch worker only;
+// explicit POSTs always run.
 wikisRouter.post('/:id/regenerate', async (c) => {
   const id = c.req.param('id')
   const [wiki] = await db.select().from(wikis).where(eq(wikis.lookupKey, id))
   if (!wiki) return c.json({ error: 'Not found' }, 404)
-
-  if (!wiki.regenerate) {
-    return c.json({ error: 'Regeneration is disabled for this wiki' }, 400)
-  }
 
   // wikiRegenLock keys on lookup_key. Concurrent calls produce one 200 + one
   // 409. successState/failureState both return the wiki to PENDING so the
@@ -708,32 +717,6 @@ wikisRouter.post('/:id/regenerate', async (c) => {
   }
   return c.json({ ok: true, lookupKey: id, fragmentCount: regenResult.fragmentCount })
 })
-
-// PATCH /wikis/:id/regenerate — toggle regenerate boolean
-wikisRouter.patch(
-  '/:id/regenerate',
-  zValidator('json', toggleRegenerateBodySchema, validationHook),
-  async (c) => {
-    const id = c.req.param('id')
-    const { regenerate } = c.req.valid('json')
-
-    const [wiki] = await db.select().from(wikis).where(eq(wikis.lookupKey, id))
-    if (!wiki) return c.json({ error: 'Not found' }, 404)
-
-    const [updated] = await db
-      .update(wikis)
-      .set({ regenerate, updatedAt: new Date() })
-      .where(eq(wikis.lookupKey, id))
-      .returning()
-
-    return c.json(
-      toggleRegenerateResponseSchema.parse({
-        id,
-        regenerate: updated.regenerate,
-      })
-    )
-  }
-)
 
 // PATCH /wikis/:id/bouncer — toggle bouncer mode (auto/review)
 wikisRouter.patch('/:id/bouncer', zValidator('json', bouncerModeBodySchema, validationHook), async (c) => {
@@ -892,12 +875,13 @@ wikisRouter.delete('/:id/fragments/:fragmentId', async (c) => {
     .set({ deletedAt: now })
     .where(eq(edges.id, edge.id))
 
-  // E8 lifecycle: an un-attach is a partition mutation — flip to learning
-  // (skip when dreaming; the regen completion will reset).
+  // T4-bundle (v0.2.2): an un-attach is a partition mutation, stamp dirty_since
+  // so editorialStateOf returns 'learning'. Skip when state is LINKING (dreaming),
+  // the regen completion will clear dirty_since for us.
   await db
     .update(wikis)
-    .set({ lifecycleState: 'learning' })
-    .where(and(eq(wikis.lookupKey, id), ne(wikis.lifecycleState, 'dreaming')))
+    .set({ dirtySince: now })
+    .where(and(eq(wikis.lookupKey, id), ne(wikis.state, 'LINKING')))
 
   await emitAuditEvent(db, {
     entityType: 'wiki',
@@ -911,24 +895,27 @@ wikisRouter.delete('/:id/fragments/:fragmentId', async (c) => {
   return c.json({ ok: true, wikiId: id, fragmentId })
 })
 
-// PATCH /wikis/:id/auto-regen — toggle auto_regen boolean (Stream E5; #259)
+// PATCH /wikis/:id/auto-regen — toggle autoregen boolean (Stream E5; #259)
 //
 // Wiki-level opt-in for the midnight cron. Profile-level default lives in the
-// configs table (kind='auto_regen_default') and is consulted at wiki creation
-// time. Default is false — feature is opt-in per Andrew lock.
+// configs table under the autoregen-default kind and is consulted at wiki
+// creation time. Default is false, the feature is opt-in per Andrew lock.
+//
+// T4-bundle (v0.2.2): autoregen is the sole regen gate (regenerate dropped),
+// and the column is one word to match migration 0014.
 wikisRouter.patch(
   '/:id/auto-regen',
   zValidator('json', autoRegenBodySchema, validationHook),
   async (c) => {
     const id = c.req.param('id')
-    const { autoRegen } = c.req.valid('json')
+    const { autoregen } = c.req.valid('json')
 
     const [wiki] = await db.select().from(wikis).where(eq(wikis.lookupKey, id))
     if (!wiki) return c.json({ error: 'Not found' }, 404)
 
     await db
       .update(wikis)
-      .set({ autoRegen, updatedAt: new Date() })
+      .set({ autoregen, updatedAt: new Date() })
       .where(eq(wikis.lookupKey, id))
 
     await emitAuditEvent(db, {
@@ -936,11 +923,11 @@ wikisRouter.patch(
       entityId: id,
       eventType: 'edited',
       source: 'api',
-      summary: `Wiki auto_regen set to ${autoRegen}`,
-      detail: { wikiKey: id, changedFields: ['autoRegen'] },
+      summary: `Wiki autoregen set to ${autoregen}`,
+      detail: { wikiKey: id, changedFields: ['autoregen'] },
     })
 
-    return c.json({ id, autoRegen })
+    return c.json({ id, autoregen })
   }
 )
 

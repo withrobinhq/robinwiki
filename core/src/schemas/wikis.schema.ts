@@ -31,6 +31,8 @@ export const wikiCollectionSchema = z.object({
   color: z.string(),
 })
 
+export const editorialStateSchema = z.enum(['empty', 'learning', 'dreaming', 'filed'])
+
 export const wikiResponseSchema = z.object({
   id: lookupKeySchema,
   lookupKey: lookupKeySchema,
@@ -53,6 +55,10 @@ export const wikiResponseSchema = z.object({
   publishedSlug: z.string().nullable().default(null),
   publishedOrigin: z.string().nullable().default(null),
   collections: z.array(wikiCollectionSchema).default([]),
+  // T4-bundle (v0.2.2): regen state surface.
+  autoregen: z.boolean().default(false),
+  dirtySince: z.coerce.date().nullable().default(null),
+  editorialState: editorialStateSchema.default('empty'),
 })
 
 export const wikiWithContentResponseSchema = wikiResponseSchema.extend({
@@ -108,6 +114,8 @@ export const updateWikiBodySchema = z
     description: z.string().optional(),
     type: z.string().optional(),
     prompt: z.string().optional(),
+    // T4-bundle (v0.2.2): autoregen replaces regenerate as the sole regen gate.
+    autoregen: z.boolean().optional(),
   })
   .strict()
 
@@ -131,7 +139,8 @@ export const publishWikiResponseSchema = z.object({
   publishedSlug: z.string().nullable(),
   publishedAt: z.coerce.date().nullable(),
   publishedOrigin: z.string().nullable().default(null),
-  regenerate: z.boolean(),
+  // T4-bundle (v0.2.2): autoregen replaces regenerate.
+  autoregen: z.boolean(),
 })
 
 export const publicWikiResponseSchema = z.object({
@@ -161,26 +170,18 @@ export const spawnWikiResponseSchema = z.object({
   fragmentCount: z.number(),
 })
 
-// ── Regenerate toggle schemas ─────────────────────────────────────────────
-
-export const toggleRegenerateBodySchema = z.object({
-  regenerate: z.boolean(),
-})
-
-export const toggleRegenerateResponseSchema = z.object({
-  id: lookupKeySchema,
-  regenerate: z.boolean(),
-})
-
 // ── Auto-regen toggle schemas (Stream E5; #259) ────────────────────────────
+// T4-bundle (v0.2.2): autoregen is the sole regen gate; the legacy
+// `regenerate` toggle is gone. The body uses one-word `autoregen` to match
+// the column rename in migration 0014.
 
 export const autoRegenBodySchema = z.object({
-  autoRegen: z.boolean(),
+  autoregen: z.boolean(),
 })
 
 export const autoRegenResponseSchema = z.object({
   id: lookupKeySchema,
-  autoRegen: z.boolean(),
+  autoregen: z.boolean(),
 })
 
 // ── Edit history schemas ──────────────────────────────────────────────────
