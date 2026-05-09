@@ -52,6 +52,10 @@ export const wikiResponseSchema = z.object({
   description: z.string().default(''),
   type: z.string(),
   prompt: z.string(),
+  // Document-structure override (#244). Sibling of `prompt`. Empty string
+  // means "use the type's default_structure". Surfaced as a first-class
+  // field on settings UI alongside Tone & Voice (which edits `prompt`).
+  structure: z.string().default(''),
   state: objectStateSchema,
   lastRebuiltAt: z.coerce.date().nullable(),
   createdAt: z.coerce.date(),
@@ -95,6 +99,8 @@ export const wikiDetailResponseSchema = wikiResponseSchema.extend({
     z.object({
       id: lookupKeySchema,
       name: z.string(),
+      // Stream P quarantine status; default 'verified' for legacy rows.
+      status: z.enum(['verified', 'pending', 'rejected']).default('verified'),
     })
   ),
   refs: wikiRefsMapSchema.default({}),
@@ -121,6 +127,7 @@ export const createWikiBodySchema = z.object({
   type: z.string().optional(),
   description: z.string().optional(),
   prompt: z.string().optional(),
+  structure: z.string().optional(),
 })
 
 export const updateWikiBodySchema = z
@@ -129,6 +136,7 @@ export const updateWikiBodySchema = z
     description: z.string().optional(),
     type: z.string().optional(),
     prompt: z.string().optional(),
+    structure: z.string().optional(),
     // T4-bundle (v0.2.2): autoregen replaces regenerate as the sole regen gate.
     autoregen: z.boolean().optional(),
   })

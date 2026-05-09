@@ -7,6 +7,17 @@ export { wikiClassify } from './stages/wiki-classify.js'
 export { entityExtract, resolvePerson } from './stages/entity-extract.js'
 export { persist, matchMentionsToFragments } from './stages/persist.js'
 export type { ResolveResult } from './stages/entity-extract.js'
+
+// ── People helpers (Stream P) ────────────────────────────────────────────
+export { resolveOrDrop } from './people/resolveOrDrop.js'
+export type {
+  ResolveOutcome,
+  ResolveOrDropContext,
+  ResolveOrDropInput,
+  SourceSpan,
+} from './people/resolveOrDrop.js'
+export { dedupCandidate } from './people/dedup.js'
+export type { DedupCandidate, DedupHit } from './people/dedup.js'
 export type {
   ExtractionOrchestratorDeps,
   LinkingOrchestratorDeps,

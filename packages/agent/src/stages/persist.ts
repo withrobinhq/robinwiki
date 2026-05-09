@@ -161,9 +161,12 @@ export async function persist(
   }
 
   // -- Edges: ENTRY_HAS_FRAGMENT --
+  // src_type is 'raw_source', not 'entry'. The underlying table was
+  // renamed to raw_sources in v0.2.0; migration 0016 canonicalised the
+  // edges vocabulary and added a CHECK that rejects 'entry'.
   for (const fragKey of fragmentKeys) {
     await deps.insertEdge({
-      srcType: 'entry',
+      srcType: 'raw_source',
       srcId: input.entryKey,
       dstType: 'fragment',
       dstId: fragKey,

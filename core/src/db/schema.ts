@@ -412,6 +412,19 @@ export const people = pgTable(
     // [AUTHORSHIP] block tells the agent to interpret first-person
     // pronouns as this Person.
     isOwner: boolean('is_owner').notNull().default(false),
+    // Stream P quarantine model (migration 0017). Status gates whether
+    // a row is "graph-visible" or sitting in the pending tray awaiting
+    // operator approval. Existing rows default to 'verified' so legacy
+    // deployments behave exactly as before. createdVia carries the
+    // provenance label, extractedFromFragmentId backreferences the
+    // surfacing fragment, contextNotes is an append-only history the
+    // matcher reads back to disambiguate similar names.
+    status: text('status').notNull().default('verified'),
+    createdVia: text('created_via'),
+    extractedFromFragmentId: text('extracted_from_fragment_id'),
+    contextNotes: jsonb('context_notes').$type<{
+      entries: Array<{ note: string; addedAt: string; source: string }>
+    } | null>(),
     lastRebuiltAt: timestamp('last_rebuilt_at'),
     embedding: vector('embedding', { dimensions: 1536 }),
     // Embedding retry bookkeeping — same shape as fragments and wikis.
@@ -422,6 +435,7 @@ export const people = pgTable(
   (t) => [
     uniqueIndex('people_slug_uidx').on(t.slug),
     index('people_aliases_gin_idx').using('gin', t.aliases),
+    index('people_status_idx').on(t.status),
   ]
 )
 
@@ -463,6 +477,12 @@ export const edits = pgTable(
 // kind='description' row from wikis.description into Stream G's schema.
 
 // ─── Edges ───
+
+// Canonical src_type / dst_type vocabulary, enforced by CHECK constraints
+// added in migration 0016: 'raw_source' | 'fragment' | 'wiki' | 'person'.
+// 'raw_source' is the canonical name for the entries-table side, since
+// the underlying table was renamed from `entries` to `raw_sources` in
+// v0.2.0. Writers must not emit 'entry' (the legacy spelling) anywhere.
 
 export const edges = pgTable(
   'edges',

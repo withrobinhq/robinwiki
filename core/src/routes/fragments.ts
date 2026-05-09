@@ -191,7 +191,7 @@ fragmentsRouter.post(
       spawnWriteWorker: () => {},
       // Web direct-send mirrors the MCP wiring (no entity extraction).
       // The classifier-bypass is the whole point — keep this fail-open.
-      entityExtractCall: async () => ({ people: [] }),
+      entityExtractCall: async () => ({ matched: [], candidates: [] }),
       loadUserPeople: async () => [],
     }
 

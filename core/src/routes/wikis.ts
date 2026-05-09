@@ -193,6 +193,7 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
       type: wikiType,
       state: 'PENDING',
       prompt: body.prompt ?? '',
+      structure: body.structure ?? '',
       // Stream V (migration 0015): web-UI captures stamp the wiki row
       // with `source_client = 'web'` so retrospective queries can break
       // creates down by surface without unpacking audit_log.detail.
@@ -383,7 +384,15 @@ wikisRouter.get('/:id', async (c) => {
   const peopleRows =
     personKeys.length > 0
       ? await db
-          .select({ lookupKey: people.lookupKey, name: people.name })
+          .select({
+            lookupKey: people.lookupKey,
+            name: people.name,
+            // Stream P quarantine: edge reads carry status through so
+            // consumers can render the quarantine indicator without
+            // a second fetch. Pending persons stay visible in this
+            // listing per the locked matrix.
+            status: people.status,
+          })
           .from(people)
           .where(inArray(people.lookupKey, personKeys))
       : []
@@ -410,6 +419,10 @@ wikisRouter.get('/:id', async (c) => {
       people: peopleRows.map((p) => ({
         id: p.lookupKey,
         name: p.name,
+        status: ((p as { status?: string }).status ?? 'verified') as
+          | 'verified'
+          | 'pending'
+          | 'rejected',
       })),
     })
   }
@@ -435,6 +448,10 @@ wikisRouter.get('/:id', async (c) => {
       people: peopleRows.map((p) => ({
         id: p.lookupKey,
         name: p.name,
+        status: ((p as { status?: string }).status ?? 'verified') as
+          | 'verified'
+          | 'pending'
+          | 'rejected',
       })),
       refs: sidecar.refs,
       infobox: sidecar.infobox,
@@ -573,6 +590,12 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
     updates.prompt = body.prompt
     // Prompt change affects wiki generation — mark PENDING so regen rebuilds with new prompt
     if (body.prompt !== existing.prompt) updates.state = 'PENDING'
+  }
+  // Document-structure override (#244). Sibling of `prompt`; same PENDING
+  // semantics on change so the next regen rebuilds against the new skeleton.
+  if (body.structure != null) {
+    updates.structure = body.structure
+    if (body.structure !== existing.structure) updates.state = 'PENDING'
   }
   // T4-bundle (v0.2.2): autoregen flag now editable via the unified PUT body.
   if (body.autoregen != null) updates.autoregen = body.autoregen

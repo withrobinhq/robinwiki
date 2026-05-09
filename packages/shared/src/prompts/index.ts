@@ -22,8 +22,16 @@ export * from './models.js'
 // Schemas
 export { fragmentationSchema } from './specs/fragmentation.schema.js'
 export type { FragmentationOutput } from './specs/fragmentation.schema.js'
-export { peopleExtractionSchema } from './specs/people-extraction.schema.js'
-export type { PeopleExtractionOutput } from './specs/people-extraction.schema.js'
+export {
+  peopleExtractionSchema,
+  normalisePeopleExtraction,
+} from './specs/people-extraction.schema.js'
+export type {
+  PeopleExtractionOutput,
+  MatchedMention,
+  CandidateMention,
+  LegacyMention,
+} from './specs/people-extraction.schema.js'
 export { wikiClassificationSchema } from './specs/wiki-classification.schema.js'
 export type { WikiClassificationOutput } from './specs/wiki-classification.schema.js'
 export { wikiRelevanceSchema } from './specs/wiki-relevance.schema.js'

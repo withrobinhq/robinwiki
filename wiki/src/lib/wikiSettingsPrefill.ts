@@ -7,8 +7,18 @@ export type WikiSettingsPrefill = {
   gatekeep?: boolean;
   /** Modal subtitle under the title */
   subtitle?: string;
-  /** Per-wiki prompt override (empty string = "no override", undefined = unseeded) */
+  /**
+   * Per-wiki Wiki Style override, persisted to `wikis.prompt`. Swaps the
+   * type's `system_message` at regen time. Empty string = "no override",
+   * undefined = unseeded.
+   */
   promptOverride?: string;
+  /**
+   * Per-wiki Document Format override, persisted to `wikis.structure`.
+   * Swaps the type's `default_structure` at regen time. Same empty /
+   * undefined semantics as promptOverride.
+   */
+  structureOverride?: string;
   /** Current bouncer mode: 'auto' or 'review' */
   bouncerMode?: 'auto' | 'review';
   /** Current publish state — drives the publish toggle in settings (#255) */
@@ -58,13 +68,15 @@ export function wikiEntitySettingsPrefill(input: {
   chipLabel: string;
   description?: string;
   promptOverride?: string;
+  structureOverride?: string;
 }): WikiSettingsPrefill {
   return {
     name: input.title,
     wikiType: wikiTypeSelectValueForChip(input.chipLabel),
     folder: "default",
     description: input.description ?? WIKI_INTRO_LEAD_PLAINTEXT,
-    subtitle: `${input.chipLabel} wiki — update name, type, and visibility`,
+    subtitle: `${input.chipLabel} wiki, update name, type, and visibility`,
     promptOverride: input.promptOverride,
+    structureOverride: input.structureOverride,
   };
 }
