@@ -21,9 +21,9 @@ import type { DB } from '../db/client.js'
 import { logger } from './logger.js'
 import { loadOpenRouterConfig } from './openrouter-config.js'
 import {
+  ensureAgentSchema,
   findWikisMissingDescriptionRow,
   findWikisMissingHydeRow,
-  upsertDescriptionAgentSchemaRow,
 } from './wiki-agent-schema.js'
 import { wikis, wikiAgentSchema } from '../db/schema.js'
 import { and, eq, isNull, sql } from 'drizzle-orm'
@@ -93,13 +93,19 @@ export async function runWikiAgentSchemaBackfill(
       }
     }
     scanned = 1
-    if (dryRun || !embedConfig) {
+    if (dryRun || !embedConfig || !config) {
       ok = 1
     } else {
       try {
         const vec = await embedText(target.description, embedConfig)
         if (vec) {
-          await upsertDescriptionAgentSchemaRow(db, target.wikiKey, target.description, vec)
+          await ensureAgentSchema(db, target.wikiKey, {
+            mode: 'backfill',
+            description: target.description,
+            precomputedEmbedding: vec,
+            orConfig: config,
+            context: { source: 'system', triggeredBy: 'backfill' },
+          })
           ok = 1
         } else {
           failed = 1
@@ -132,7 +138,7 @@ export async function runWikiAgentSchemaBackfill(
     scanned += chunk.length
 
     for (const target of chunk) {
-      if (dryRun || !embedConfig) {
+      if (dryRun || !embedConfig || !config) {
         ok++
         processed++
         continue
@@ -140,7 +146,13 @@ export async function runWikiAgentSchemaBackfill(
       try {
         const vec = await embedText(target.description, embedConfig)
         if (vec) {
-          await upsertDescriptionAgentSchemaRow(db, target.wikiKey, target.description, vec)
+          await ensureAgentSchema(db, target.wikiKey, {
+            mode: 'backfill',
+            description: target.description,
+            precomputedEmbedding: vec,
+            orConfig: config,
+            context: { source: 'system', triggeredBy: 'backfill' },
+          })
           ok++
         } else {
           failed++

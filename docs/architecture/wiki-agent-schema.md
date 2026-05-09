@@ -2,6 +2,8 @@
 
 Robin keeps two parallel representations of every wiki: the **human-facing wiki body** that operators read, and the **agent-facing schema** that AI clients consume during retrieval and reasoning. This document describes the agent-facing layer.
 
+> **Note (Stream S, v0.2.2):** `wiki_agent_schema` is no longer a side effect of regen. It is a service-owned layer with regen as **one of several** writers. Every write goes through `ensureAgentSchema(db, wikiKey, options)` in `core/src/lib/wiki-agent-schema.ts`. See the [Writer registry](#writer-registry) section below for the canonical caller list.
+
 ## Why two layers
 
 Humans and agents query the knowledge base differently. A human wants the rendered prose. An agent doing retrieval wants something else: phrasings that match likely queries, vocabulary that mirrors how questions get asked, and representations stable enough to embed and search.
@@ -169,6 +171,30 @@ Done
 ```
 
 Generation is idempotent per `(wiki_key, kind, generator_version)`. Re-running an already-current generation is a no-op via `INSERT ... ON CONFLICT DO NOTHING`.
+
+## Writer registry
+
+Stream S (v0.2.2) consolidated every `wiki_agent_schema` write path under a single helper, `ensureAgentSchema(db, wikiKey, options)` in `core/src/lib/wiki-agent-schema.ts`. The helper owns all INSERT statements; every other module calls it with a mode tag describing the calling surface. A static contract test (`core/src/__tests__/agent-schema-writer-contract.test.ts`) fails the build if a direct INSERT into `wikiAgentSchema` ever lands outside the helper.
+
+The registered modes and their callers:
+
+| Mode | Caller | Trigger | Writes | Notes |
+|---|---|---|---|---|
+| `create` | `core/src/routes/wikis.ts` POST | Wiki created | `description` | Uses `precomputedEmbedding` from the legacy wikis.embedding step. Zero extra LLM/embedding cost. |
+| `refresh` | `core/src/routes/wikis.ts` PUT | Description changed | `description`, stales `hyde_synthetic` | Synchronous re-embed; stale signals the heal worker to regenerate hyde async. |
+| `heal` | `core/src/queue/embedding-retry-worker.ts` | 15-minute cron | `description` and/or `hyde_synthetic` | Two passes per tick with separate batch caps (25 description, 5 hyde). |
+| `regen-bump` | `core/src/lib/regen.ts` | Wiki regen completes | `description`, `hyde_synthetic` | Short-circuits when description hash matches the stored row. |
+| `backfill` | `core/src/lib/backfill-runner.ts` (used by `core/scripts/backfill-wiki-agent-schema.ts` and `POST /admin/backfill/wiki-agent-schema`) | Operator one-shot | `description` | Idempotent: skips wikis whose row is already current. |
+
+### How to add a new write path
+
+1. Pick a mode name and add it to the `EnsureMode` union in `core/src/lib/wiki-agent-schema.ts`.
+2. Add a `case` in the `ensureAgentSchema` switch describing the policy: which kinds to write, which to stale, and any short-circuit logic.
+3. Update the `Writer registry` table above with the new caller, trigger, and what it writes.
+4. Update the contract test only if the new caller needs to live outside `core/src/lib/wiki-agent-schema.ts`. The default expectation is that the caller invokes `ensureAgentSchema(...)` from its own module; the helper alone keeps the INSERT.
+5. Add coverage in `core/src/lib/wiki-agent-schema.test.ts` for the new mode.
+
+Do not bypass the helper. The contract test will fail the build, and the writer-registry invariant is what lets retrieval, backfill audits, and the heal worker reason about agent_schema rows without each one re-implementing the embed pipeline.
 
 ## Retrieval flow
 

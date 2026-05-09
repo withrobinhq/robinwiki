@@ -3,10 +3,12 @@ import { Hono } from 'hono'
 
 // ── Mocks (must come before dynamic import) ────────────────────────────────
 //
-// Covers #69 D6 follow-up: POST /wikis seeds the description agent_schema
-// row at create time, and PUT /wikis/:id refreshes it (and deletes the
-// hyde row) when the description changes. Both happen on the request path,
-// so the assertions are on the helper calls rather than DB chains.
+// Covers #69 D6 follow-up + Stream S decouple: POST /wikis seeds the
+// description agent_schema row at create time via ensureAgentSchema with
+// mode='create', and PUT /wikis/:id refreshes it via mode='refresh' with
+// alsoStaleHyde=true when the description changes. Both happen on the
+// request path, so the assertions are on the helper invocation and the
+// option shape rather than DB chains.
 
 const mockDbSelect = vi.fn()
 const mockDbUpdate = vi.fn()
@@ -98,13 +100,21 @@ vi.mock('../lib/openrouter-config.js', () => ({
   }),
 }))
 
-// The two helpers we want to assert against. Stub them so the routes' calls
-// are observable without a real DB.
-const upsertDescMock = vi.fn().mockResolvedValue(undefined)
-const deleteHydeMock = vi.fn().mockResolvedValue(undefined)
+// Stub ensureAgentSchema so the route's calls are observable without a
+// real DB. Tests assert on the (db, wikiKey, options) invocation shape.
+const ensureMock = vi.fn().mockResolvedValue({
+  wikiKey: 'wiki01TEST',
+  mode: 'create',
+  written: { description: true, hyde_synthetic: false },
+  staled: { hyde_synthetic: false },
+  shortCircuited: false,
+})
 vi.mock('../lib/wiki-agent-schema.js', () => ({
-  upsertDescriptionAgentSchemaRow: (...args: unknown[]) => upsertDescMock(...args),
-  deleteHydeAgentSchemaRow: (...args: unknown[]) => deleteHydeMock(...args),
+  ensureAgentSchema: (...args: unknown[]) => ensureMock(...args),
+}))
+
+vi.mock('../lib/backfill-runner.js', () => ({
+  loadAgentSchemaStatusByWiki: vi.fn().mockResolvedValue(new Map()),
 }))
 
 vi.mock('../db/slug.js', () => ({
@@ -140,7 +150,6 @@ function selectChainMock(rows: unknown[]) {
   chain.from = vi.fn().mockReturnValue(chain)
   chain.where = vi.fn().mockReturnValue(chain)
   chain.limit = vi.fn().mockResolvedValue(rows)
-  // Also satisfy await without limit() for the bare select().from().where()
   chain.then = (resolve: (v: unknown) => void) => resolve(rows)
   chain.orderBy = vi.fn().mockReturnValue(chain)
   return chain
@@ -198,22 +207,24 @@ function makeWiki(overrides: Record<string, unknown> = {}) {
 
 // ── POST /wikis ────────────────────────────────────────────────────────────
 
-describe('POST /wikis — agent_schema description bootstrap (#69 D6)', () => {
+describe('POST /wikis — agent_schema description bootstrap (#69 D6, Stream S)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     embedTextMock.mockReset()
-    upsertDescMock.mockReset().mockResolvedValue(undefined)
-    deleteHydeMock.mockReset().mockResolvedValue(undefined)
+    ensureMock.mockReset().mockResolvedValue({
+      wikiKey: 'wiki01TEST',
+      mode: 'create',
+      written: { description: true, hyde_synthetic: false },
+      staled: { hyde_synthetic: false },
+      shortCircuited: false,
+    })
   })
 
-  it('seeds kind=description row using the wikiVec from the legacy embed step', async () => {
+  it("invokes ensureAgentSchema with mode='create' and the precomputed embedding", async () => {
     const created = makeWiki({ name: 'New Wiki', description: 'a fresh description' })
     mockDbInsert.mockReturnValueOnce(insertChainMock([created]))
     mockDbUpdate.mockReturnValueOnce(updateChainMock([created]))
     embedTextMock.mockResolvedValueOnce([0.1, 0.2, 0.3])
-
-    // After the legacy update, the candidate-fragments select is called.
-    // Return empty so no fragment-attach path runs.
     mockDbSelect.mockReturnValueOnce(selectChainMock([]))
 
     const app = createApp()
@@ -224,11 +235,13 @@ describe('POST /wikis — agent_schema description bootstrap (#69 D6)', () => {
     })
     expect(res.status).toBe(201)
 
-    expect(upsertDescMock).toHaveBeenCalledTimes(1)
-    const [, wikiKeyArg, descArg, vecArg] = upsertDescMock.mock.calls[0]
+    expect(ensureMock).toHaveBeenCalledTimes(1)
+    const [, wikiKeyArg, optionsArg] = ensureMock.mock.calls[0]
     expect(typeof wikiKeyArg).toBe('string')
-    expect(descArg).toBe('a fresh description')
-    expect(vecArg).toEqual([0.1, 0.2, 0.3])
+    expect(optionsArg.mode).toBe('create')
+    expect(optionsArg.description).toBe('a fresh description')
+    expect(optionsArg.precomputedEmbedding).toEqual([0.1, 0.2, 0.3])
+    expect(optionsArg.context.source).toBe('api')
   })
 
   it('does not blow up the create when the helper throws', async () => {
@@ -237,7 +250,7 @@ describe('POST /wikis — agent_schema description bootstrap (#69 D6)', () => {
     mockDbUpdate.mockReturnValueOnce(updateChainMock([created]))
     embedTextMock.mockResolvedValueOnce([0.1, 0.2, 0.3])
     mockDbSelect.mockReturnValueOnce(selectChainMock([]))
-    upsertDescMock.mockRejectedValueOnce(new Error('db down'))
+    ensureMock.mockRejectedValueOnce(new Error('db down'))
 
     const app = createApp()
     const res = await app.request('/wikis', {
@@ -260,21 +273,26 @@ describe('POST /wikis — agent_schema description bootstrap (#69 D6)', () => {
       body: JSON.stringify({ name: 'New Wiki', description: 'd' }),
     })
     expect(res.status).toBe(201)
-    expect(upsertDescMock).not.toHaveBeenCalled()
+    expect(ensureMock).not.toHaveBeenCalled()
   })
 })
 
 // ── PUT /wikis/:id ─────────────────────────────────────────────────────────
 
-describe('PUT /wikis/:id — agent_schema refresh on description change (#69 D6)', () => {
+describe('PUT /wikis/:id — agent_schema refresh on description change (#69 D6, Stream S)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     embedTextMock.mockReset()
-    upsertDescMock.mockReset().mockResolvedValue(undefined)
-    deleteHydeMock.mockReset().mockResolvedValue(undefined)
+    ensureMock.mockReset().mockResolvedValue({
+      wikiKey: 'wiki01TEST',
+      mode: 'refresh',
+      written: { description: true, hyde_synthetic: false },
+      staled: { hyde_synthetic: true },
+      shortCircuited: false,
+    })
   })
 
-  it('upserts kind=description with the new embedding and deletes the hyde row', async () => {
+  it("invokes ensureAgentSchema with mode='refresh' and alsoStaleHyde=true", async () => {
     const existing = makeWiki({ description: 'old description' })
     const updated = makeWiki({ description: 'fresh new description' })
     mockDbSelect.mockReturnValueOnce(selectChainMock([existing]))
@@ -289,14 +307,14 @@ describe('PUT /wikis/:id — agent_schema refresh on description change (#69 D6)
     })
     expect(res.status).toBe(200)
 
-    expect(upsertDescMock).toHaveBeenCalledTimes(1)
-    const [, wikiKeyArg, descArg, vecArg] = upsertDescMock.mock.calls[0]
+    expect(ensureMock).toHaveBeenCalledTimes(1)
+    const [, wikiKeyArg, optionsArg] = ensureMock.mock.calls[0]
     expect(wikiKeyArg).toBe('wiki01TEST')
-    expect(descArg).toBe('fresh new description')
-    expect(vecArg).toEqual([0.9, 0.9, 0.9])
-
-    expect(deleteHydeMock).toHaveBeenCalledTimes(1)
-    expect(deleteHydeMock.mock.calls[0][1]).toBe('wiki01TEST')
+    expect(optionsArg.mode).toBe('refresh')
+    expect(optionsArg.description).toBe('fresh new description')
+    expect(optionsArg.precomputedEmbedding).toEqual([0.9, 0.9, 0.9])
+    expect(optionsArg.alsoStaleHyde).toBe(true)
+    expect(optionsArg.context.source).toBe('api')
   })
 
   it('skips the refresh when description is unchanged', async () => {
@@ -312,11 +330,10 @@ describe('PUT /wikis/:id — agent_schema refresh on description change (#69 D6)
       body: JSON.stringify({ name: 'Renamed Only' }),
     })
     expect(res.status).toBe(200)
-    expect(upsertDescMock).not.toHaveBeenCalled()
-    expect(deleteHydeMock).not.toHaveBeenCalled()
+    expect(ensureMock).not.toHaveBeenCalled()
   })
 
-  it('still deletes the hyde row even when the new description is empty', async () => {
+  it('still routes through ensureAgentSchema when the new description is empty', async () => {
     const existing = makeWiki({ description: 'something' })
     const updated = makeWiki({ description: '' })
     mockDbSelect.mockReturnValueOnce(selectChainMock([existing]))
@@ -329,7 +346,10 @@ describe('PUT /wikis/:id — agent_schema refresh on description change (#69 D6)
       body: JSON.stringify({ description: '' }),
     })
     expect(res.status).toBe(200)
-    expect(upsertDescMock).not.toHaveBeenCalled()
-    expect(deleteHydeMock).toHaveBeenCalledTimes(1)
+    expect(ensureMock).toHaveBeenCalledTimes(1)
+    const [, , optionsArg] = ensureMock.mock.calls[0]
+    expect(optionsArg.mode).toBe('refresh')
+    expect(optionsArg.description).toBe('')
+    expect(optionsArg.alsoStaleHyde).toBe(true)
   })
 })

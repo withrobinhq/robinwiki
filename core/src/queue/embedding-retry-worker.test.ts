@@ -20,6 +20,27 @@ vi.mock('../lib/openrouter-config.js', () => ({
   loadOpenRouterConfig: () => loadOpenRouterConfigMock(),
 }))
 
+// Stream S: ensureAgentSchema is the single agent_schema writer. We mock
+// it here so the heal pass's per-mode dispatch is observable without
+// walking through the full helper internals (snapshot select, wiki
+// select, internal_framing select, etc).
+const ensureAgentSchemaMock = vi.fn().mockResolvedValue({
+  wikiKey: '',
+  mode: 'heal',
+  written: { description: false, hyde_synthetic: false },
+  staled: { hyde_synthetic: false },
+  shortCircuited: false,
+})
+const findWikisMissingDescriptionRowMock = vi.fn().mockResolvedValue([])
+const findWikisMissingHydeRowMock = vi.fn().mockResolvedValue([])
+vi.mock('../lib/wiki-agent-schema.js', () => ({
+  ensureAgentSchema: (...args: unknown[]) => ensureAgentSchemaMock(...args),
+  findWikisMissingDescriptionRow: (...args: unknown[]) =>
+    findWikisMissingDescriptionRowMock(...args),
+  findWikisMissingHydeRow: (...args: unknown[]) => findWikisMissingHydeRowMock(...args),
+  resolveRetrievalIndexModel: () => 'mock-model',
+}))
+
 // Captured DB calls so tests can assert on them. The drizzle chain stubs
 // below push into these in order.
 const selectReturns: Array<Array<Record<string, unknown>>> = []
@@ -109,6 +130,15 @@ beforeEach(() => {
   createHydeAgentMock.mockReset()
   createStringCallerMock.mockReset()
   loadOpenRouterConfigMock.mockReset()
+  ensureAgentSchemaMock.mockReset().mockResolvedValue({
+    wikiKey: '',
+    mode: 'heal',
+    written: { description: false, hyde_synthetic: false },
+    staled: { hyde_synthetic: false },
+    shortCircuited: false,
+  })
+  findWikisMissingDescriptionRowMock.mockReset().mockResolvedValue([])
+  findWikisMissingHydeRowMock.mockReset().mockResolvedValue([])
   selectReturns.length = 0
   updateCapture.length = 0
   whereCapture.length = 0
@@ -208,36 +238,43 @@ describe('processEmbeddingRetryJob — issue #151', () => {
   })
 })
 
-// ── Agent-schema heal pass (#69 D6 follow-up) ─────────────────────────────
+// ── Agent-schema heal pass (#69 D6 follow-up; Stream S decouple) ──────────
 
 describe('processEmbeddingRetryJob — agent_schema heal pass', () => {
-  it('writes a kind=description row for each wiki missing one', async () => {
-    // Three retryTable selects (fragments, wikis, people): all empty.
+  it("calls ensureAgentSchema(mode='heal') for each wiki missing a description row", async () => {
     selectReturns.push([], [], [])
-    // Two execute() calls in the heal pass: description targets, then hyde.
-    executeReturns.push(
-      [{ wiki_key: 'wiki1', description: 'first wiki' }, { wiki_key: 'wiki2', description: 'second wiki' }],
-      [],
-    )
+    findWikisMissingDescriptionRowMock.mockResolvedValueOnce([
+      { wikiKey: 'wiki1', description: 'first wiki' },
+      { wikiKey: 'wiki2', description: 'second wiki' },
+    ])
+    findWikisMissingHydeRowMock.mockResolvedValueOnce([])
     embedTextMock.mockResolvedValue([0.5, 0.5, 0.5])
+    ensureAgentSchemaMock.mockImplementation(async (_db: unknown, wikiKey: string) => ({
+      wikiKey,
+      mode: 'heal',
+      written: { description: true, hyde_synthetic: false },
+      staled: { hyde_synthetic: false },
+      shortCircuited: false,
+    }))
 
     const res = await processEmbeddingRetryJob(baseJob())
     expect(res.success).toBe(true)
 
-    // One INSERT per wiki, all into wiki_agent_schema with kind=description.
-    const descInserts = insertCapture.filter(
-      (c) => (c.values as Record<string, unknown>).kind === 'description'
-    )
-    expect(descInserts).toHaveLength(2)
-    expect(descInserts[0].values.wikiKey).toBe('wiki1')
-    expect(descInserts[0].values.embedding).toEqual([0.5, 0.5, 0.5])
-    expect(descInserts[0].values.generatorVersion).toBe('hyde_v1')
-    expect(descInserts[1].values.wikiKey).toBe('wiki2')
+    const calls = ensureAgentSchemaMock.mock.calls
+    expect(calls).toHaveLength(2)
+    expect(calls[0][1]).toBe('wiki1')
+    expect(calls[0][2].mode).toBe('heal')
+    expect(calls[0][2].precomputedEmbedding).toEqual([0.5, 0.5, 0.5])
+    expect(calls[0][2].context.source).toBe('system')
+    expect(calls[0][2].context.triggeredBy).toBe('embedding-retry')
+    expect(calls[0][2].hydeCaller).toBeUndefined()
+    expect(calls[1][1]).toBe('wiki2')
   })
 
   it('does not LLM-call when no wikis need hyde rows', async () => {
     selectReturns.push([], [], [])
-    executeReturns.push([], []) // both heal queries empty
+    findWikisMissingDescriptionRowMock.mockResolvedValueOnce([])
+    findWikisMissingHydeRowMock.mockResolvedValueOnce([])
 
     const res = await processEmbeddingRetryJob(baseJob())
     expect(res.success).toBe(true)
@@ -245,41 +282,61 @@ describe('processEmbeddingRetryJob — agent_schema heal pass', () => {
     expect(createStringCallerMock).not.toHaveBeenCalled()
   })
 
-  it('skips a wiki when its embed returns null and continues to the next', async () => {
+  it('passes the hyde caller for hyde-target wikis only', async () => {
     selectReturns.push([], [], [])
-    executeReturns.push(
-      [
-        { wiki_key: 'wiki-bad', description: 'will fail' },
-        { wiki_key: 'wiki-good', description: 'will succeed' },
-      ],
-      [],
-    )
-    embedTextMock
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce([0.7, 0.7, 0.7])
+    findWikisMissingDescriptionRowMock.mockResolvedValueOnce([])
+    findWikisMissingHydeRowMock.mockResolvedValueOnce(['wiki-hyde'])
+    createHydeAgentMock.mockReturnValueOnce({})
+    createStringCallerMock.mockReturnValueOnce(async () => 'synth')
+    ensureAgentSchemaMock.mockResolvedValueOnce({
+      wikiKey: 'wiki-hyde',
+      mode: 'heal',
+      written: { description: false, hyde_synthetic: true },
+      staled: { hyde_synthetic: false },
+      shortCircuited: false,
+    })
 
     const res = await processEmbeddingRetryJob(baseJob())
     expect(res.success).toBe(true)
 
-    const descInserts = insertCapture.filter(
-      (c) => (c.values as Record<string, unknown>).kind === 'description'
-    )
-    expect(descInserts).toHaveLength(1)
-    expect(descInserts[0].values.wikiKey).toBe('wiki-good')
+    const calls = ensureAgentSchemaMock.mock.calls
+    expect(calls).toHaveLength(1)
+    expect(calls[0][1]).toBe('wiki-hyde')
+    expect(calls[0][2].mode).toBe('heal')
+    expect(calls[0][2].hydeCaller).toBeDefined()
+  })
+
+  it('skips a wiki when its embed returns null and continues to the next', async () => {
+    selectReturns.push([], [], [])
+    findWikisMissingDescriptionRowMock.mockResolvedValueOnce([
+      { wikiKey: 'wiki-bad', description: 'will fail' },
+      { wikiKey: 'wiki-good', description: 'will succeed' },
+    ])
+    findWikisMissingHydeRowMock.mockResolvedValueOnce([])
+    embedTextMock
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([0.7, 0.7, 0.7])
+    ensureAgentSchemaMock.mockImplementation(async (_db: unknown, wikiKey: string) => ({
+      wikiKey,
+      mode: 'heal',
+      written: { description: true, hyde_synthetic: false },
+      staled: { hyde_synthetic: false },
+      shortCircuited: false,
+    }))
+
+    const res = await processEmbeddingRetryJob(baseJob())
+    expect(res.success).toBe(true)
+
+    const calls = ensureAgentSchemaMock.mock.calls
+    expect(calls).toHaveLength(1)
+    expect(calls[0][1]).toBe('wiki-good')
   })
 
   it('does not abort the worker when the heal pass throws', async () => {
     selectReturns.push([], [], [])
-    // Both heal queries throw via undefined return for executeReturns;
-    // simulate by pushing nothing and making execute throw via a marker.
-    // Easier: have findWikisMissingDescriptionRow's first execute throw by
-    // making executeReturns shift undefined (the real query throws on
-    // undefined.map). We rely on the worker's outer try/catch around the
-    // heal pass to swallow it.
-    executeReturns.push(undefined as unknown as Array<Record<string, unknown>>)
+    findWikisMissingDescriptionRowMock.mockRejectedValueOnce(new Error('db blew up'))
 
     const res = await processEmbeddingRetryJob(baseJob())
-    // The worker swallows the heal failure and still completes the cron tick.
     expect(res.success).toBe(true)
   })
 })
