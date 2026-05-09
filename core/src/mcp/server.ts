@@ -794,6 +794,12 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
           }
         }
 
+        // Stream V (migration 0015): groups owns its own source_client
+        // text column. Stamp the originating MCP client name on the row
+        // and stop duplicating it into audit_log.detail.
+        const ci = deps.getClientInfo?.()
+        const sourceClient = ci?.name ?? null
+
         const [group] = await deps.db
           .insert(groups)
           .values({
@@ -802,10 +808,10 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
             icon: icon ?? '',
             color: color ?? '',
             description: description ?? '',
+            sourceClient,
           })
           .returning()
 
-        const ci = deps.getClientInfo?.()
         await emitAuditEvent(deps.db, {
           entityType: 'group',
           entityId: group.id,
@@ -815,9 +821,6 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
           detail: {
             groupId: group.id,
             slug,
-            ...(ci?.name
-              ? { source_client: ci.version ? { name: ci.name, version: ci.version } : { name: ci.name } }
-              : {}),
           },
         })
 
@@ -870,7 +873,12 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
           .values({ groupId, wikiId })
           .onConflictDoNothing()
 
-        const ci = deps.getClientInfo?.()
+        // Stream V: adding a wiki to a group is a membership tweak,
+        // not a group authoring event, so we drop the audit detail
+        // source_client stamp. The group's column captures the
+        // creating surface (set at insert time); the audit row's
+        // `source: 'mcp'` field already records this membership came
+        // through the MCP surface.
         await emitAuditEvent(deps.db, {
           entityType: 'group',
           entityId: groupId,
@@ -880,9 +888,6 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
           detail: {
             groupId,
             wikiId,
-            ...(ci?.name
-              ? { source_client: ci.version ? { name: ci.name, version: ci.version } : { name: ci.name } }
-              : {}),
           },
         })
 

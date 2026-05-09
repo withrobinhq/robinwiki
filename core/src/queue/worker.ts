@@ -347,6 +347,11 @@ async function processExtractionJob(job: ExtractionJob): Promise<JobResult> {
           entryId: (f.entryId as string | null) ?? null,
           state: (f.state as 'PENDING' | 'LINKING' | 'RESOLVED') ?? 'PENDING',
           dedupHash: content ? computeContentHash(content) : null,
+          // Stream V (migration 0015): pipeline-produced fragments carry
+          // forward the originating surface from the job payload (mcp,
+          // web, api, etc.) so the column reflects whoever logged the
+          // entry that produced this fragment.
+          sourceClient,
         })
       },
       insertEdge: insertEdgeRow,

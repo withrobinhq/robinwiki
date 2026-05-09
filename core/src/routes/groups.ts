@@ -59,6 +59,10 @@ groupsRouter.post('/', zValidator('json', createGroupBodySchema, validationHook)
       icon: body.icon,
       color: body.color,
       description: body.description,
+      // Stream V (migration 0015): groups carries its own source_client
+      // text column. Web-UI creates stamp the row so audit consumers can
+      // distinguish HTTP-route creates from MCP creates without a join.
+      sourceClient: 'web',
     })
     .returning()
 
@@ -115,6 +119,8 @@ groupsRouter.put('/:id', zValidator('json', updateGroupBodySchema, validationHoo
   if (body.icon != null) updates.icon = body.icon
   if (body.color != null) updates.color = body.color
   if (body.description != null) updates.description = body.description
+  // Stream V (migration 0015): record the most recent editing surface.
+  updates.sourceClient = 'web'
 
   const [group] = await db.update(groups).set(updates).where(eq(groups.id, id)).returning()
 

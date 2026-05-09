@@ -207,6 +207,10 @@ wikiTypesRouter.put(
         descriptor: result.spec.display_description ?? existing.descriptor,
         shortDescriptor: result.spec.display_short_descriptor ?? existing.shortDescriptor,
         updatedAt: new Date(),
+        // Stream V (migration 0015): record the editing surface on the
+        // wiki_types row. Web-UI edits stamp 'web' so the column
+        // tracks the most recent editor without a join to audit_log.
+        sourceClient: 'web',
       })
       .where(eq(wikiTypes.slug, slug))
 
@@ -348,6 +352,8 @@ wikiTypesRouter.post(
         prompt: body.prompt,
         isDefault: false,
         userModified: true,
+        // Stream V (migration 0015): web-UI creates stamp the row.
+        sourceClient: 'web',
       })
       .returning()
 

@@ -41,17 +41,14 @@ export interface PublishWikiInput {
    */
   origin?: string | null
   source: PublishSource
-  /**
-   * Optional `source_client` snapshot (Stream I Phase 2). When set, gets
-   * spread into `audit_log.detail.source_client`. Lets operators tell
-   * which client pushed which publish months later.
-   */
-  sourceClient?: { name: string; version?: string }
+  // Stream V (migration 0015): `sourceClient` removed. The wiki row
+  // carries its own `source_client` column populated at create/edit
+  // time, so publish events no longer mirror the value into audit
+  // detail. Callers that previously passed it should drop the field.
 }
 
 export interface UnpublishWikiInput {
   source: PublishSource
-  sourceClient?: { name: string; version?: string }
 }
 
 export type PublishResult =
@@ -99,7 +96,6 @@ export async function publishWiki(
       wikiKey: wikiId,
       publishedSlug: slug,
       publishedOrigin: origin,
-      ...(input.sourceClient ? { source_client: input.sourceClient } : {}),
     },
   })
 
@@ -138,7 +134,6 @@ export async function unpublishWiki(
     summary: `Wiki unpublished: ${row.name}`,
     detail: {
       wikiKey: wikiId,
-      ...(input.sourceClient ? { source_client: input.sourceClient } : {}),
     },
   })
 
