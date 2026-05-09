@@ -32,8 +32,11 @@ export type {
   CandidateMention,
   LegacyMention,
 } from './specs/people-extraction.schema.js'
-export { wikiClassificationSchema } from './specs/wiki-classification.schema.js'
-export type { WikiClassificationOutput } from './specs/wiki-classification.schema.js'
+export { wikiClassificationSchema, citationSpanSchema } from './specs/wiki-classification.schema.js'
+export type {
+  WikiClassificationOutput,
+  CitationSpan,
+} from './specs/wiki-classification.schema.js'
 export { wikiRelevanceSchema } from './specs/wiki-relevance.schema.js'
 export type { WikiRelevanceOutput } from './specs/wiki-relevance.schema.js'
 export { fragmentRelevanceSchema } from './specs/fragment-relevance.schema.js'

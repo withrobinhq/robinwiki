@@ -1,5 +1,5 @@
 name: MarcelTheClassifier
-version: 3
+version: 4
 category: classification
 system_only: true
 task: wiki_classification
@@ -44,7 +44,15 @@ template: |
      just a keyword overlap.
   3. Zero assignments is valid. Not every fragment fits an existing wiki.
   4. For each assignment, provide a confidence score and one-sentence reason.
-  5. Respond ONLY with the JSON object. No preamble, no explanation,
+  5. For each assignment, identify the specific span(s) of fragment text
+     that support routing the fragment to that wiki. Return them as
+     `citationSpans` with character offsets `start` and `end` measured
+     from the start of the fragment text, plus the literal `text` you
+     are pointing to. Each span should be a meaningful phrase or
+     sentence (not a single word, not the entire fragment). Emit 1 to 3
+     spans per matched wiki, drawn verbatim from the fragment. Offsets
+     are zero-based, half-open: `text === fragmentText.slice(start, end)`.
+  6. Respond ONLY with the JSON object. No preamble, no explanation,
      no markdown fences.
 
   [REINFORCEMENT]
@@ -99,7 +107,8 @@ few_shot_examples:
       wikis: '[{"key": "wiki01A", "name": "API Architecture Decisions", "wikiType": "decision", "description": "Technical decisions about API design and protocols."}]'
     output: >
       {"assignments": [{"wikiKey": "wiki01A", "wikiName": "API Architecture Decisions",
-      "confidence": 0.92, "reasoning": "Fragment directly expresses a preference for GraphQL over REST — fits the API architecture decisions topic."}]}
+      "confidence": 0.92, "reasoning": "Fragment directly expresses a preference for GraphQL over REST — fits the API architecture decisions topic.",
+      "citationSpans": [{"start": 19, "end": 65, "text": "should use GraphQL instead of REST for the API"}]}]}
   - input: >
       content: "Had coffee with Sarah"
       wikis: '[{"key": "wiki01A", "name": "API Architecture Decisions", "wikiType": "decision", "description": "Technical decisions about API design and protocols."}]'
