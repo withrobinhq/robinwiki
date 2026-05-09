@@ -299,6 +299,7 @@ export default function WikiDetailPage() {
       chipLabel={typeLabel}
       title={wiki.name}
       promptOverride={wiki.prompt}
+      structureOverride={wiki.structure ?? ''}
       description={wiki.description ?? wiki.shortDescriptor ?? ''}
       bouncerMode={wiki.bouncerMode as 'auto' | 'review' | undefined}
       published={wiki.published === true}

@@ -87,13 +87,20 @@ export default function AddWikiModal({
   const [description, setDescription] = useState("");
   const [subtitle, setSubtitle] = useState<string | undefined>(undefined);
   /**
-   * #240: Wiki Structure (UI label rename) — inline override of the
-   * type's system_message. Empty string === "use the type default".
-   * `wikis.prompt` storage stays a system_message override; only the UI
-   * label and presentation changed.
+   * Wiki Style override (#358), persisted to `wikis.prompt`. Swaps the
+   * type's `system_message` (LLM persona / tone) at regen time. Empty
+   * string === "use the type default".
    */
   const [wikiPrompt, setWikiPrompt] = useState<string>("");
   const [wikiPromptEdited, setWikiPromptEdited] = useState<boolean>(false);
+  /**
+   * Document Format override (#358), persisted to `wikis.structure`.
+   * Swaps the type's `default_structure` (document skeleton, used as
+   * `{{structure}}` in the wiki-type template) at regen time. Sibling of
+   * `wikiPrompt`; same empty-string semantics.
+   */
+  const [wikiStructure, setWikiStructure] = useState<string>("");
+  const [wikiStructureEdited, setWikiStructureEdited] = useState<boolean>(false);
   /** Existing-wiki settings: form read-only until user clicks Edit Wiki */
   const [fieldsEditable, setFieldsEditable] = useState(true);
   const [showSavedToast, setShowSavedToast] = useState(false);
@@ -136,6 +143,15 @@ export default function AddWikiModal({
       .sort((a, b) => a.displayLabel.localeCompare(b.displayLabel));
   }, [wikiTypesData?.wikiTypes]);
 
+  // Per-type defaults used as field placeholders so the empty-state of
+  // Document Format / Wiki Style shows what the override would replace.
+  const activeType = useMemo(() => {
+    if (!wikiType) return null;
+    return sortedTypes.find((t) => t.slug === wikiType) ?? null;
+  }, [wikiType, sortedTypes]);
+  const activeTypeDefaultStructure = activeType?.defaultStructure ?? "";
+  const activeTypeDefaultSystemMessage = activeType?.defaultSystemMessage ?? "";
+
   useEffect(() => {
     if (open) {
       if (!wasOpen.current) {
@@ -158,6 +174,12 @@ export default function AddWikiModal({
               prefill.promptOverride && prefill.promptOverride.length > 0,
             ),
           );
+          setWikiStructure(prefill.structureOverride ?? "");
+          setWikiStructureEdited(
+            Boolean(
+              prefill.structureOverride && prefill.structureOverride.length > 0,
+            ),
+          );
           prevWikiTypeRef.current = nextType;
           const bm = prefill.bouncerMode ?? "auto";
           setBouncerMode(bm);
@@ -177,6 +199,8 @@ export default function AddWikiModal({
           setSubtitle(undefined);
           setWikiPrompt("");
           setWikiPromptEdited(false);
+          setWikiStructure("");
+          setWikiStructureEdited(false);
           prevWikiTypeRef.current = "";
           setBouncerMode("auto");
           initialBouncerModeRef.current = "auto";
@@ -329,10 +353,20 @@ export default function AddWikiModal({
       setSubmitting(true);
       setSubmitError(null);
       try {
-        // Empty string clears the override; non-empty sets it.
-        // Never send null — Zod rejects.
-        const payload: { name?: string; type?: string; description?: string; prompt: string } = {
+        // Empty string clears the override; non-empty sets it. Never send
+        // null because Zod rejects. Wiki Style edits `wikis.prompt`,
+        // Document Format edits `wikis.structure`. The two are independent
+        // overrides and both ride on every save so a cleared field reaches
+        // the server as "".
+        const payload: {
+          name?: string;
+          type?: string;
+          description?: string;
+          prompt: string;
+          structure: string;
+        } = {
           prompt: wikiPrompt,
+          structure: wikiStructure,
         };
         if (prefill && trimmedName !== prefill.name) {
           payload.name = trimmedName;
@@ -396,11 +430,13 @@ export default function AddWikiModal({
     setSubmitError(null);
     try {
       const trimmedPrompt = wikiPrompt.trim();
+      const trimmedStructure = wikiStructure.trim();
       const body = {
         name: trimmedName,
         type: wikiType,
         description: description.trim() || undefined,
         prompt: trimmedPrompt.length > 0 ? trimmedPrompt : undefined,
+        structure: trimmedStructure.length > 0 ? trimmedStructure : undefined,
       };
       const res = await fetch("/api/wikis", {
         method: "POST",
@@ -585,6 +621,54 @@ export default function AddWikiModal({
             />
           </div>
 
+          {/* Document Format (#358). Binds to wikis.structure, overrides
+              the type's default_structure (the {{structure}} block in the
+              wiki-type template). Sits next to Description because both
+              shape WHAT the wiki contains. Empty value = "use the type
+              default"; the Revert button clears the override. */}
+          <div className="px-5 pt-4 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <FieldLabel>
+                Document Format <InfoIcon className="text-[#545353]" />
+              </FieldLabel>
+              <button
+                type="button"
+                onClick={() => {
+                  setWikiStructure("");
+                  setWikiStructureEdited(false);
+                }}
+                disabled={locked || !wikiStructureEdited}
+                aria-label="Revert Document Format to default"
+                className="text-[11px] leading-4 underline disabled:opacity-50 disabled:no-underline"
+                style={{ color: "var(--wiki-link)", background: "none", border: "none", padding: 0, cursor: locked || !wikiStructureEdited ? "default" : "pointer" }}
+              >
+                Revert to default
+              </button>
+            </div>
+            <Textarea
+              value={wikiStructure}
+              onChange={(e) => {
+                const next = e.target.value;
+                setWikiStructure(next);
+                setWikiStructureEdited(next.trim().length > 0);
+              }}
+              placeholder={
+                activeTypeDefaultStructure ||
+                "# Section\n- bullet\n## Another section"
+              }
+              rows={6}
+              disabled={locked || !wikiType}
+              className="min-h-[120px] resize-none font-mono"
+            />
+            <span className="text-[11px] leading-4" style={{ color: "#676d76" }}>
+              {wikiStructureEdited
+                ? "Custom format overrides the type's default structure at regen time."
+                : activeTypeDefaultStructure
+                  ? "Showing the type default. Type to override."
+                  : "Empty, uses the wiki type's default structure."}
+            </span>
+          </div>
+
           {/* Collections — visible in both create and settings mode. In create
               mode, selections are staged locally and applied after POST /wikis
               succeeds (see handleConfirm). In settings mode, add/remove fire
@@ -679,13 +763,15 @@ export default function AddWikiModal({
             ) : null}
           </div>
 
-          {/* Wiki Structure (#240) — inline textarea matching the
-              Description field's shape. Empty value = "use the type
-              default"; the Revert button clears the override. */}
+          {/* Wiki Style (#358). Binds to wikis.prompt, swaps the type's
+              system_message at regen time. Sits below Document Format
+              because tone is a customization on top of the document the
+              user just shaped. Empty value = "use the type default";
+              the Revert button clears the override. */}
           <div className="px-5 pt-4 flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
               <FieldLabel>
-                Wiki Structure <InfoIcon className="text-[#545353]" />
+                Wiki Style <InfoIcon className="text-[#545353]" />
               </FieldLabel>
               <button
                 type="button"
@@ -694,7 +780,7 @@ export default function AddWikiModal({
                   setWikiPromptEdited(false);
                 }}
                 disabled={locked || !wikiPromptEdited}
-                aria-label="Revert to default"
+                aria-label="Revert Wiki Style to default"
                 className="text-[11px] leading-4 underline disabled:opacity-50 disabled:no-underline"
                 style={{ color: "var(--wiki-link)", background: "none", border: "none", padding: 0, cursor: locked || !wikiPromptEdited ? "default" : "pointer" }}
               >
@@ -708,15 +794,20 @@ export default function AddWikiModal({
                 setWikiPrompt(next);
                 setWikiPromptEdited(next.trim().length > 0);
               }}
-              placeholder={"# Type: title\n## Section\n- bullet\n## Another section"}
+              placeholder={
+                activeTypeDefaultSystemMessage ||
+                "Tone, voice, and persona instructions for this wiki."
+              }
               rows={6}
               disabled={locked || !wikiType}
               className="min-h-[120px] resize-none font-mono"
             />
             <span className="text-[11px] leading-4" style={{ color: "#676d76" }}>
               {wikiPromptEdited
-                ? "Custom structure overrides the type default at regen time."
-                : "Empty — uses the wiki type's default structure."}
+                ? "Custom style overrides the type's tone and voice at regen time."
+                : activeTypeDefaultSystemMessage
+                  ? "Showing the type's tone and voice. Type to override."
+                  : "Empty, uses the wiki type's tone and voice."}
             </span>
           </div>
 

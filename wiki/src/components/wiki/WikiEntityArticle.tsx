@@ -277,8 +277,10 @@ export type WikiEntityArticleProps = {
    * Optional sections rendered after divider and before modal.
    */
   customBottomSections?: ReactNode;
-  /** Per-wiki prompt override to prefill in settings modal */
+  /** Per-wiki Wiki Style override to prefill in settings modal (wikis.prompt). */
   promptOverride?: string;
+  /** Per-wiki Document Format override to prefill in settings modal (wikis.structure). */
+  structureOverride?: string;
   /** Wiki description / shortDescriptor to prefill in settings modal */
   description?: string;
   /** Current bouncer mode for settings modal prefill */
@@ -339,6 +341,7 @@ export function WikiEntityArticle({
   renderCustomInfobox,
   customBottomSections,
   promptOverride,
+  structureOverride,
   description,
   wikiId,
   bouncerMode,
@@ -408,14 +411,20 @@ export function WikiEntityArticle({
 
   const wikiSettingsPrefill = useMemo(
     () => ({
-      ...wikiEntitySettingsPrefill({ title: displayTitle, chipLabel: displayChipLabel, description, promptOverride }),
+      ...wikiEntitySettingsPrefill({
+        title: displayTitle,
+        chipLabel: displayChipLabel,
+        description,
+        promptOverride,
+        structureOverride,
+      }),
       bouncerMode,
       published,
       publishedSlug,
       publishedOrigin,
       collections,
     }),
-    [displayTitle, displayChipLabel, description, promptOverride, bouncerMode, published, publishedSlug, publishedOrigin, collections],
+    [displayTitle, displayChipLabel, description, promptOverride, structureOverride, bouncerMode, published, publishedSlug, publishedOrigin, collections],
   );
 
   const tabs = ["Read", "Edit", "View history"] as const;
