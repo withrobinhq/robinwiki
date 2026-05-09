@@ -397,15 +397,16 @@ export async function handleLogFragment(
       })
       .onConflictDoNothing()
 
-    // Stream E lifecycle: bump to 'learning' on attach (skip when wiki is
-    // currently being regenerated; the regen completion will reset it).
+    // T4-bundle (v0.2.2): stamp dirty_since on attach so editorialStateOf
+    // returns 'learning'. Skip when wiki is currently in LINKING state
+    // (dreaming), the regen completion will clear dirty_since.
     await deps.db
       .update(wikisTable)
-      .set({ lifecycleState: 'learning' })
+      .set({ dirtySince: new Date() })
       .where(
         and(
           eq(wikisTable.lookupKey, threadResult.lookupKey),
-          ne(wikisTable.lifecycleState, 'dreaming')
+          ne(wikisTable.state, 'LINKING')
         )
       )
 

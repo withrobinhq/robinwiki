@@ -1,8 +1,8 @@
 {
   "_meta": {
-    "generatedAt": "2026-05-07T12:05:45.971Z",
+    "generatedAt": "2026-05-09T09:20:37.521Z",
     "description": "Route + JSON Schema manifest for OpenAPI generation. Feed to /apidoc.",
-    "schemaCount": 63,
+    "schemaCount": 64,
     "routeCount": 58
   },
   "info": {
@@ -523,9 +523,9 @@
     },
     {
       "method": "PATCH",
-      "path": "/wikis/{id}/regenerate",
-      "operationId": "toggleRegenerate",
-      "summary": "Toggle regenerate flag on a wiki",
+      "path": "/wikis/{id}/auto-regen",
+      "operationId": "toggleAutoRegen",
+      "summary": "Toggle autoregen flag on a wiki",
       "tags": [
         "Wikis"
       ],
@@ -535,13 +535,13 @@
           "id": "lookupKey"
         },
         "body": {
-          "schemaName": "toggleRegenerateBodySchema"
+          "schemaName": "autoRegenBodySchema"
         }
       },
       "responses": {
         "200": {
-          "description": "Updated regenerate flag",
-          "schemaName": "toggleRegenerateResponseSchema"
+          "description": "Updated autoregen flag",
+          "schemaName": "autoRegenResponseSchema"
         },
         "404": {
           "description": "Not found",
@@ -567,10 +567,6 @@
         "200": {
           "description": "Regeneration result",
           "schemaName": "okResponseSchema"
-        },
-        "400": {
-          "description": "Regeneration disabled",
-          "schemaName": "errorResponseSchema"
         },
         "404": {
           "description": "Not found",
@@ -2224,6 +2220,9 @@
             },
             "prompt": {
               "type": "string"
+            },
+            "autoregen": {
+              "type": "boolean"
             }
           },
           "additionalProperties": false
@@ -2352,6 +2351,11 @@
               "nullable": true,
               "default": null
             },
+            "publishedOrigin": {
+              "type": "string",
+              "nullable": true,
+              "default": null
+            },
             "collections": {
               "type": "array",
               "items": {
@@ -2379,6 +2383,26 @@
                 "additionalProperties": false
               },
               "default": []
+            },
+            "autoregen": {
+              "type": "boolean",
+              "default": false
+            },
+            "dirtySince": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "default": null
+            },
+            "editorialState": {
+              "type": "string",
+              "enum": [
+                "empty",
+                "learning",
+                "dreaming",
+                "filed"
+              ],
+              "default": "empty"
             }
           },
           "required": [
@@ -2520,6 +2544,11 @@
               "nullable": true,
               "default": null
             },
+            "publishedOrigin": {
+              "type": "string",
+              "nullable": true,
+              "default": null
+            },
             "collections": {
               "type": "array",
               "items": {
@@ -2547,6 +2576,26 @@
                 "additionalProperties": false
               },
               "default": []
+            },
+            "autoregen": {
+              "type": "boolean",
+              "default": false
+            },
+            "dirtySince": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "default": null
+            },
+            "editorialState": {
+              "type": "string",
+              "enum": [
+                "empty",
+                "learning",
+                "dreaming",
+                "filed"
+              ],
+              "default": "empty"
             },
             "wikiContent": {
               "type": "string"
@@ -2697,6 +2746,11 @@
                     "nullable": true,
                     "default": null
                   },
+                  "publishedOrigin": {
+                    "type": "string",
+                    "nullable": true,
+                    "default": null
+                  },
                   "collections": {
                     "type": "array",
                     "items": {
@@ -2724,6 +2778,26 @@
                       "additionalProperties": false
                     },
                     "default": []
+                  },
+                  "autoregen": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "dirtySince": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true,
+                    "default": null
+                  },
+                  "editorialState": {
+                    "type": "string",
+                    "enum": [
+                      "empty",
+                      "learning",
+                      "dreaming",
+                      "filed"
+                    ],
+                    "default": "empty"
                   }
                 },
                 "required": [
@@ -2872,6 +2946,11 @@
               "nullable": true,
               "default": null
             },
+            "publishedOrigin": {
+              "type": "string",
+              "nullable": true,
+              "default": null
+            },
             "collections": {
               "type": "array",
               "items": {
@@ -2899,6 +2978,26 @@
                 "additionalProperties": false
               },
               "default": []
+            },
+            "autoregen": {
+              "type": "boolean",
+              "default": false
+            },
+            "dirtySince": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true,
+              "default": null
+            },
+            "editorialState": {
+              "type": "string",
+              "enum": [
+                "empty",
+                "learning",
+                "dreaming",
+                "filed"
+              ],
+              "default": "empty"
             },
             "wikiContent": {
               "type": "string"
@@ -3289,7 +3388,12 @@
               "format": "date-time",
               "nullable": true
             },
-            "regenerate": {
+            "publishedOrigin": {
+              "type": "string",
+              "nullable": true,
+              "default": null
+            },
+            "autoregen": {
               "type": "boolean"
             }
           },
@@ -3297,7 +3401,7 @@
             "published",
             "publishedSlug",
             "publishedAt",
-            "regenerate"
+            "autoregen"
           ],
           "additionalProperties": false
         }
@@ -3579,42 +3683,56 @@
         }
       }
     },
-    "toggleRegenerateBodySchema": {
-      "$ref": "#/definitions/toggleRegenerateBodySchema",
+    "autoRegenBodySchema": {
+      "$ref": "#/definitions/autoRegenBodySchema",
       "definitions": {
-        "toggleRegenerateBodySchema": {
+        "autoRegenBodySchema": {
           "type": "object",
           "properties": {
-            "regenerate": {
+            "autoregen": {
               "type": "boolean"
             }
           },
           "required": [
-            "regenerate"
+            "autoregen"
           ],
           "additionalProperties": false
         }
       }
     },
-    "toggleRegenerateResponseSchema": {
-      "$ref": "#/definitions/toggleRegenerateResponseSchema",
+    "autoRegenResponseSchema": {
+      "$ref": "#/definitions/autoRegenResponseSchema",
       "definitions": {
-        "toggleRegenerateResponseSchema": {
+        "autoRegenResponseSchema": {
           "type": "object",
           "properties": {
             "id": {
               "type": "string",
               "minLength": 1
             },
-            "regenerate": {
+            "autoregen": {
               "type": "boolean"
             }
           },
           "required": [
             "id",
-            "regenerate"
+            "autoregen"
           ],
           "additionalProperties": false
+        }
+      }
+    },
+    "editorialStateSchema": {
+      "$ref": "#/definitions/editorialStateSchema",
+      "definitions": {
+        "editorialStateSchema": {
+          "type": "string",
+          "enum": [
+            "empty",
+            "learning",
+            "dreaming",
+            "filed"
+          ]
         }
       }
     },

@@ -89,7 +89,7 @@ export async function seedFixture(): Promise<SeedFixtureResult> {
         metadata: projected.wiki.metadata,
         // citationDeclarations need fragmentIds patched after fragment
         // upserts resolve real lookup keys — set below.
-        regenerate: false,
+        autoregen: false,
         updatedAt: new Date(),
       })
       .where(eq(wikis.lookupKey, wikiKey))
@@ -103,7 +103,7 @@ export async function seedFixture(): Promise<SeedFixtureResult> {
       content: projected.wiki.content,
       state: 'RESOLVED',
       metadata: projected.wiki.metadata,
-      regenerate: false,
+      autoregen: false,
     })
     log.info({ wikiKey, slug: projected.wiki.slug }, 'inserted new wiki')
   }

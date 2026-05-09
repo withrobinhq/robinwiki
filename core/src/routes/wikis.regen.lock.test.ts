@@ -6,10 +6,13 @@ import { Hono } from 'hono'
 // Covers wikiRegenLock wrapping on POST /wikis/:id/regenerate (#audit-M5).
 // Asserts:
 //   - Concurrent calls produce one 200 + one 409
-//   - Disabled-regenerate wikis short-circuit with 400 (no lock attempted)
 //   - successState='PENDING' (and failureState='PENDING') is observed in the
 //     params passed to wikiRegenLock.using
 //   - CasLock contended error translates to 409 with the documented body
+//
+// T4-bundle (v0.2.2): the per-wiki regenerate gate was dropped, so on-demand
+// regen no longer 400s on a disabled flag. The autoregen flag governs the
+// batch worker only.
 
 const mockDbSelect = vi.fn()
 const mockUsing = vi.fn()
@@ -27,7 +30,8 @@ vi.mock('../db/schema.js', () => ({
     name: 'wikis.name',
     type: 'wikis.type',
     state: 'wikis.state',
-    regenerate: 'wikis.regenerate',
+    autoregen: 'wikis.autoregen',
+    dirtySince: 'wikis.dirty_since',
   },
   edges: {},
   wikiTypes: {},
@@ -101,7 +105,8 @@ function makeWiki(overrides: Record<string, unknown> = {}) {
     lookupKey: 'wiki01TEST',
     name: 'Engineering Log',
     type: 'log',
-    regenerate: true,
+    autoregen: true,
+    dirtySince: null,
     state: 'PENDING',
     ...overrides,
   }
@@ -156,14 +161,23 @@ describe('POST /wikis/:id/regenerate — wikiRegenLock wrapping (#audit-M5)', ()
     expect(mockRegenerateWiki).not.toHaveBeenCalled()
   })
 
-  it('400s on regenerate=false without acquiring the lock', async () => {
-    mockDbSelect.mockReturnValueOnce(selectChainMock([makeWiki({ regenerate: false })]))
+  it('still acquires the lock when autoregen=false (on-demand bypasses the batch gate)', async () => {
+    mockDbSelect.mockReturnValueOnce(selectChainMock([makeWiki({ autoregen: false })]))
+    mockUsing.mockImplementationOnce(async (_params, routine) => {
+      await routine()
+    })
+    mockRegenerateWiki.mockResolvedValueOnce({
+      content: 'x',
+      fragmentCount: 0,
+      hasEmbedding: false,
+      timing: { classify: 0, gatherFragments: 0, llmCall: 0, embed: 0, total: 0 },
+    })
 
     const app = createApp()
     const res = await app.request('/wikis/wiki01TEST/regenerate', { method: 'POST' })
-    expect(res.status).toBe(400)
-    expect(mockUsing).not.toHaveBeenCalled()
-    expect(mockRegenerateWiki).not.toHaveBeenCalled()
+    expect(res.status).toBe(200)
+    expect(mockUsing).toHaveBeenCalledTimes(1)
+    expect(mockRegenerateWiki).toHaveBeenCalledTimes(1)
   })
 
   it('404s on unknown wiki without acquiring the lock', async () => {

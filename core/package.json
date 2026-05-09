@@ -11,6 +11,7 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
+    "db:migrate": "tsx scripts/migrate-with-preserve.ts",
     "format": "biome format --write ./src",
     "lint": "biome lint ./src",
     "mcp:inspect": "npx @modelcontextprotocol/inspector",

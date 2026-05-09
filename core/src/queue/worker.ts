@@ -168,10 +168,10 @@ async function insertEdgeRow(edge: Record<string, unknown>): Promise<void> {
     })
     .onConflictDoNothing()
     .returning({ id: edges.id })
-  // Stream E lifecycle: bump dirty-state to 'learning' when we just inserted
-  // a NEW FRAGMENT_IN_WIKI edge (not when the conflict path hit). Skip if
-  // the wiki is currently 'dreaming' — that state belongs to the regen
-  // worker and gets reset to 'filed' on completion.
+  // T4-bundle (v0.2.2): stamp dirty_since when we just inserted a NEW
+  // FRAGMENT_IN_WIKI edge (not when the conflict path hit). Skip if the wiki
+  // is currently in LINKING state (dreaming), that transition belongs to the
+  // regen worker and clears dirty_since on completion.
   if (
     inserted.length > 0 &&
     edge.edgeType === 'FRAGMENT_IN_WIKI' &&
@@ -179,8 +179,8 @@ async function insertEdgeRow(edge: Record<string, unknown>): Promise<void> {
   ) {
     await db
       .update(wikis)
-      .set({ lifecycleState: 'learning' })
-      .where(and(eq(wikis.lookupKey, edge.dstId), ne(wikis.lifecycleState, 'dreaming')))
+      .set({ dirtySince: new Date() })
+      .where(and(eq(wikis.lookupKey, edge.dstId), ne(wikis.state, 'LINKING')))
   }
 }
 

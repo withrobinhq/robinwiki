@@ -481,12 +481,13 @@ export async function regenerateWiki(
   // backstop for the regen-worker queue path which does not yet sit behind
   // the same CasLock.
   //
-  // Stream E (lifecycle): also flip lifecycle_state to 'dreaming' here. The
-  // CAS on `state != 'LINKING'` doubles as the lifecycle gate — only one
+  // T4-bundle (v0.2.2): the editorial state is now derived. state='LINKING'
+  // alone is the dreaming signal (see editorialStateOf in wiki-editorial-state).
+  // The CAS on `state != 'LINKING'` doubles as the lifecycle gate, only one
   // regen can hold the lock so only one transition happens.
   const [lockedWiki] = await database
     .update(wikis)
-    .set({ state: 'LINKING', lifecycleState: 'dreaming' })
+    .set({ state: 'LINKING' })
     .where(and(eq(wikis.lookupKey, wikiKey), ne(wikis.state, 'LINKING')))
     .returning()
   if (!lockedWiki) {
@@ -689,13 +690,15 @@ export async function regenerateWiki(
       skipped = true
       log.info({ wikiKey, integratedCount: integratedFrags.length }, 'regen skipped: empty partition')
 
-      // Still flip lifecycle back to filed and bump last_rebuilt_at so the
-      // partition window is honoured on the next pass.
+      // Still flip back to RESOLVED, clear dirty_since (the empty partition
+      // means there is nothing left to integrate), and bump last_rebuilt_at
+      // so the partition window is honoured on the next pass. With dirty_since
+      // null and state RESOLVED, editorialStateOf returns 'filed'.
       await database
         .update(wikis)
         .set({
           state: 'RESOLVED',
-          lifecycleState: 'filed',
+          dirtySince: null,
           lastRebuiltAt: partitionNow,
           updatedAt: partitionNow,
         })
@@ -960,11 +963,11 @@ export async function regenerateWiki(
   //
   // E1 keystone: use `partitionNow` (captured at function entry) for both
   // last_rebuilt_at and updatedAt so the partition window honoured by the
-  // *next* regen lines up exactly with the snapshot this regen made. Stream
-  // E lifecycle: flip lifecycle_state back to 'filed' and stamp last_regen_at
-  // for UI surfaces. last_regen_at is wall-clock now (when the body actually
-  // landed) — it could differ from partitionNow by the LLM duration but for
-  // the chip's purposes wall-clock-now is more honest.
+  // *next* regen lines up exactly with the snapshot this regen made. T4-bundle
+  // (v0.2.2): clear dirty_since on success so editorialStateOf returns 'filed'.
+  // last_regen_at is wall-clock now (when the body actually landed); it could
+  // differ from partitionNow by the LLM duration but for the chip's purposes
+  // wall-clock-now is more honest.
   const completedAt = new Date()
   await database
     .update(wikis)
@@ -973,7 +976,7 @@ export async function regenerateWiki(
       metadata: mergedMetadata,
       citationDeclarations: llmCitations,
       state: 'RESOLVED',
-      lifecycleState: 'filed',
+      dirtySince: null,
       lastRebuiltAt: partitionNow,
       lastRegenAt: completedAt,
       updatedAt: completedAt,

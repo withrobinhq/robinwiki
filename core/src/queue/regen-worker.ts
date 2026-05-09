@@ -6,6 +6,7 @@ import { regenerateWiki } from '../lib/regen.js'
 import { logger } from '../lib/logger.js'
 import { emitAuditEvent } from '../db/audit.js'
 import { emitPipelineEvent } from '../db/pipeline-events.js'
+import { editorialStateWhere } from '../lib/wiki-editorial-state.js'
 import { enqueueWikiRegen, filterDebouncedWikiKeys, regenDebounceMs } from './regen-debounce.js'
 
 const log = logger.child({ component: 'regen-worker' })
@@ -109,35 +110,28 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
     const hasUnfiled = (unfiledCount?.count ?? 0) > 0
 
     if (hasUnfiled) {
-      // Only wikis with regenerate=true participate in unfiled fragment classification
+      // Only wikis with autoregen=true participate in unfiled fragment classification
       const rows = await db
         .select({ lookupKey: wikis.lookupKey })
         .from(wikis)
-        .where(and(isNull(wikis.deletedAt), eq(wikis.regenerate, true)))
+        .where(and(isNull(wikis.deletedAt), eq(wikis.autoregen, true)))
       for (const r of rows) debounceCandidates.add(r.lookupKey)
-      log.info({ unfiled: unfiledCount?.count, wikis: rows.length }, 'batch: unfiled fragments → regen-enabled wikis')
+      log.info({ unfiled: unfiledCount?.count, wikis: rows.length }, 'batch: unfiled fragments to autoregen-enabled wikis')
     }
 
     // ── Reason 2: Wikis with new fragments since last rebuild ──
+    // T4-bundle (v0.2.2): dirty_since is now a column. Read it directly
+    // instead of joining edges to derive freshness at query time.
     const wikisWithNewFragments = await db
       .select({ lookupKey: wikis.lookupKey })
       .from(wikis)
-      .innerJoin(
-        edges,
-        and(
-          eq(edges.dstId, wikis.lookupKey),
-          eq(edges.edgeType, 'FRAGMENT_IN_WIKI'),
-          isNull(edges.deletedAt),
-        )
-      )
       .where(
         and(
           isNull(wikis.deletedAt),
-          eq(wikis.regenerate, true),
-          sql`${edges.createdAt} > COALESCE(${wikis.lastRebuiltAt}, '1970-01-01'::timestamptz)`,
+          eq(wikis.autoregen, true),
+          sql`${wikis.dirtySince} IS NOT NULL`,
         )
       )
-      .groupBy(wikis.lookupKey)
     for (const r of wikisWithNewFragments) debounceCandidates.add(r.lookupKey)
     if (wikisWithNewFragments.length > 0) {
       log.info({ count: wikisWithNewFragments.length }, 'batch: wikis with new fragments since last rebuild')
@@ -163,11 +157,12 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
       log.info({ count: stuckWikis.length }, 'batch: wikis in non-RESOLVED state')
     }
 
-    // ── Reason 4: Stream E5 auto-regen — auto_regen=true AND lifecycle='learning' ──
+    // ── Reason 4: Stream E5 auto-regen, autoregen=true AND editorial='learning' ──
     // Andrew lock #259: midnight cron sweeps wikis the user has explicitly
     // opted into auto-regen for, where new fragments have landed since the
-    // last regen (lifecycle_state='learning' is the dirty-state tag from E8).
-    // Explicit-cadence path -- bypasses debounce; the cron firing is the
+    // last regen. Editorial 'learning' is now derived in app code from
+    // dirty_since being set and state not LINKING; see editorialStateWhere.
+    // Explicit-cadence path, bypasses debounce; the cron firing is the
     // intended trigger.
     const autoRegenWikis = await db
       .select({ lookupKey: wikis.lookupKey })
@@ -175,8 +170,8 @@ export async function processRegenBatchJob(job: RegenBatchJob): Promise<JobResul
       .where(
         and(
           isNull(wikis.deletedAt),
-          eq(wikis.autoRegen, true),
-          eq(wikis.lifecycleState, 'learning')
+          eq(wikis.autoregen, true),
+          editorialStateWhere.learning,
         )
       )
     for (const r of autoRegenWikis) bypassCandidates.add(r.lookupKey)

@@ -306,25 +306,25 @@ export const wikis = pgTable(
     structure: text('structure').notNull().default(''),
     lastRebuiltAt: timestamp('last_rebuilt_at'),
     /**
-     * Stream E dirty-state lifecycle (migration 0004). Sibling of `state`
-     * (the LINKING/RESOLVED object_state machine) — kept as a separate text
-     * column so the two state machines stay orthogonal. Values:
-     *   * 'learning' — at least one fragment attached since the last regen
-     *   * 'dreaming' — regen worker is currently rewriting the body
-     *   * 'filed'    — clean, all fragments processed (default)
+     * Auto-regen toggle (migration 0014 renamed the column to one word).
+     * When true, the midnight batch worker rewrites this wiki on its
+     * scheduled tick. Also gates the ingest-driven Reasons 1 and 2 in the
+     * regen worker as of v0.2.2 (T4-bundle): autoregen is now the sole
+     * regen gate, replacing the dropped `regenerate` flag. Default false,
+     * opt-in per wiki.
      */
-    lifecycleState: text('lifecycle_state').notNull().default('filed'),
+    autoregen: boolean('autoregen').notNull().default(false),
     /**
-     * Stream E auto-regen toggle (#259, migration 0004). When true, the
-     * midnight batch worker considers this wiki for auto-rewrite if its
-     * lifecycle_state is 'learning'. Default false — feature is opt-in per
-     * Andrew lock.
+     * Column-backed dirty signal (migration 0014). Set to NOW() when a new
+     * FRAGMENT_IN_WIKI edge lands or a member fragment is un-attached;
+     * cleared to NULL on successful regen completion. Replaces the v0.2.1
+     * MAX(edges.created_at) query-time derivation.
      */
-    autoRegen: boolean('auto_regen').notNull().default(false),
+    dirtySince: timestamp('dirty_since'),
     /**
-     * Stream E last-regen-completed timestamp (migration 0004). Distinct from
-     * `last_rebuilt_at` (which the E1 partition reads). UI surfaces (chip
-     * tooltip, profile counter) read this for human-friendly display.
+     * Last-regen-completed timestamp. Distinct from `last_rebuilt_at`
+     * (which the E1 partition reads). UI surfaces (chip tooltip, profile
+     * counter) read this for human-friendly display.
      */
     lastRegenAt: timestamp('last_regen_at'),
     published: boolean('published').notNull().default(false),
@@ -338,7 +338,6 @@ export const wikis = pgTable(
      * `window.location.origin` or `process.env.SERVER_PUBLIC_URL`.
      */
     publishedOrigin: text('published_origin'),
-    regenerate: boolean('regenerate').notNull().default(true),
     bouncerMode: text('bouncer_mode').notNull().default('auto'), // 'auto' | 'review'
     embedding: vector('embedding', { dimensions: 1536 }),
     // Embedding retry bookkeeping — same shape as fragments. The retry

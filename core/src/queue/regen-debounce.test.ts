@@ -71,9 +71,8 @@ vi.mock('../db/schema.js', () => ({
     lookupKey: 'wikis.lookupKey',
     slug: 'wikis.slug',
     deletedAt: 'wikis.deletedAt',
-    regenerate: 'wikis.regenerate',
-    autoRegen: 'wikis.autoRegen',
-    lifecycleState: 'wikis.lifecycleState',
+    autoregen: 'wikis.autoregen',
+    dirtySince: 'wikis.dirtySince',
     state: 'wikis.state',
     updatedAt: 'wikis.updatedAt',
     lastRebuiltAt: 'wikis.lastRebuiltAt',
@@ -108,12 +107,12 @@ describe('regen-debounce: filterDebouncedWikiKeys', () => {
     delete process.env.REGEN_DEBOUNCE_MS
   })
 
-  it('marks a wiki as debounced when its last fragment edge is fresher than now - debounce', async () => {
+  it('marks a wiki as debounced when its dirty_since is fresher than now - debounce', async () => {
     process.env.REGEN_DEBOUNCE_MS = '300000' // 5 min
     const now = new Date('2026-05-08T12:00:00.000Z')
-    const recentEdge = new Date(now.getTime() - 60_000) // 1 min ago
+    const recentDirty = new Date(now.getTime() - 60_000) // 1 min ago
     stageDbResponses([
-      [{ wikiKey: 'wiki-chatty', lastEdgeAt: recentEdge }],
+      [{ wikiKey: 'wiki-chatty', dirtySince: recentDirty }],
     ])
     const { eligible, debounced } = await filterDebouncedWikiKeys(
       // biome-ignore lint/suspicious/noExplicitAny: drizzle stub
@@ -127,12 +126,12 @@ describe('regen-debounce: filterDebouncedWikiKeys', () => {
     expect(debounced[0].etaMs).toBeGreaterThan(0)
   })
 
-  it('marks a wiki eligible when its last fragment edge is older than the window', async () => {
+  it('marks a wiki eligible when its dirty_since is older than the window', async () => {
     process.env.REGEN_DEBOUNCE_MS = '300000' // 5 min
     const now = new Date('2026-05-08T12:00:00.000Z')
-    const oldEdge = new Date(now.getTime() - 600_000) // 10 min ago
+    const oldDirty = new Date(now.getTime() - 600_000) // 10 min ago
     stageDbResponses([
-      [{ wikiKey: 'wiki-quiet', lastEdgeAt: oldEdge }],
+      [{ wikiKey: 'wiki-quiet', dirtySince: oldDirty }],
     ])
     const { eligible, debounced } = await filterDebouncedWikiKeys(
       // biome-ignore lint/suspicious/noExplicitAny: drizzle stub
@@ -144,9 +143,9 @@ describe('regen-debounce: filterDebouncedWikiKeys', () => {
     expect(debounced).toEqual([])
   })
 
-  it('treats a wiki with no fragment edges as eligible (no last-edge to wait on)', async () => {
+  it('treats a wiki with dirty_since=null as eligible (nothing to wait on)', async () => {
     process.env.REGEN_DEBOUNCE_MS = '300000'
-    stageDbResponses([[]]) // edges query returns nothing
+    stageDbResponses([[{ wikiKey: 'wiki-empty', dirtySince: null }]])
     const { eligible, debounced } = await filterDebouncedWikiKeys(
       // biome-ignore lint/suspicious/noExplicitAny: drizzle stub
       mockDb as any,
@@ -188,15 +187,15 @@ describe('processRegenBatchJob honours the per-wiki debounce', () => {
     delete process.env.REGEN_DEBOUNCE_MS
   })
 
-  it('does NOT enqueue a wiki whose last fragment edge landed inside the window', async () => {
+  it('does NOT enqueue a wiki whose dirty_since landed inside the window', async () => {
     const now = Date.now()
-    const fresh = new Date(now - 30_000) // 30s ago - well inside the 5min window
+    const fresh = new Date(now - 30_000) // 30s ago, well inside the 5min window
     stageDbResponses([
-      [{ count: 0 }],                                    // unfiled count
-      [{ lookupKey: 'wiki-chatty' }],                    // new-fragment wikis (Reason 2, debounce-gated)
-      [],                                                // stuck wikis (Reason 3)
-      [],                                                // auto-regen wikis (Reason 4)
-      [{ wikiKey: 'wiki-chatty', lastEdgeAt: fresh }],   // debounce filter MAX(edges.created_at)
+      [{ count: 0 }],                                      // unfiled count
+      [{ lookupKey: 'wiki-chatty' }],                      // Reason 2: autoregen+dirty wikis
+      [],                                                  // stuck wikis (Reason 3)
+      [],                                                  // auto-regen wikis (Reason 4)
+      [{ wikiKey: 'wiki-chatty', dirtySince: fresh }],     // debounce filter reads wikis.dirty_since
     ])
 
     const result = await processRegenBatchJob({
@@ -209,7 +208,7 @@ describe('processRegenBatchJob honours the per-wiki debounce', () => {
     expect(mockEnqueueRegen).not.toHaveBeenCalled()
   })
 
-  it('enqueues a wiki whose last fragment edge landed before the window', async () => {
+  it('enqueues a wiki whose dirty_since landed before the window', async () => {
     const now = Date.now()
     const old = new Date(now - 10 * 60_000) // 10 min ago
     stageDbResponses([
@@ -217,7 +216,7 @@ describe('processRegenBatchJob honours the per-wiki debounce', () => {
       [{ lookupKey: 'wiki-quiet' }],
       [],
       [],
-      [{ wikiKey: 'wiki-quiet', lastEdgeAt: old }],
+      [{ wikiKey: 'wiki-quiet', dirtySince: old }],
     ])
 
     await processRegenBatchJob({
