@@ -146,22 +146,26 @@ describe('resolvePerson', () => {
 describe('entityExtract', () => {
   beforeEach(resetKeyCounter)
 
-  it('matches known people and DROPS unmatched mentions (#237 — matcher-only)', async () => {
-    // Even if the LLM mistakenly returns a matchedKey: null candidate
-    // (i.e. ignores the prompt's instruction to drop unknowns), the
-    // stage must still drop it: no peopleMap entry, no newPeople push.
-    // resolvePerson will report isNew = true because the score floor
-    // is unmet against the lone known person, and the stage now
-    // treats isNew as a "no match" signal rather than a "create new"
-    // signal.
+  it('matched and candidate mentions both surface (Stream P, extractor)', async () => {
+    // Stream P (#PEOPLE-EXTRACT-Q): the extractor surfaces matched and
+    // candidate buckets. Matched mentions land in peopleMap pointing
+    // to the existing row. Candidates with no dedup hit get a new
+    // pending row inserted via the helper. The legacy v2 payload
+    // (`people: [{matchedKey: string|null}]`) is still accepted via
+    // the schema's optional passthrough; it was used by mocks before
+    // the v3 prompt landed.
+    const insertPerson = vi.fn().mockResolvedValue(undefined)
     const mockDeps: EntityExtractDeps = {
       loadAllPeople: vi
         .fn()
         .mockResolvedValue([
           { lookupKey: 'personABC', canonicalName: 'Sarah Ouma', aliases: ['Sarah'] },
         ]),
+      loadPendingPeople: vi.fn().mockResolvedValue([]),
+      loadAutoAcceptPersons: vi.fn().mockResolvedValue(false),
+      insertPerson,
       llmCall: vi.fn().mockResolvedValue({
-        people: [
+        matched: [
           {
             mention: 'Sarah',
             inferredName: 'Sarah Ouma',
@@ -169,11 +173,12 @@ describe('entityExtract', () => {
             confidence: 0.9,
             sourceSpan: 'with Sarah',
           },
+        ],
+        candidates: [
           {
             mention: 'Bob',
             inferredName: 'Bob',
-            matchedKey: null,
-            confidence: 0.8,
+            confidence: 0.7,
             sourceSpan: 'Bob said',
           },
         ],
@@ -189,26 +194,30 @@ describe('entityExtract', () => {
       jobId: 'job001',
     })
 
-    // Only the matched mention survives.
-    expect(result.data.peopleMap.size).toBe(1)
+    // Both mentions land in peopleMap: Sarah maps to the existing
+    // verified row, Bob maps to the freshly minted pending row.
+    expect(result.data.peopleMap.size).toBe(2)
     expect(result.data.peopleMap.get('Sarah')).toBe('personABC')
-    expect(result.data.peopleMap.has('Bob')).toBe(false)
+    expect(result.data.peopleMap.get('Bob')).toMatch(/^person/)
+    expect(insertPerson).toHaveBeenCalledTimes(1)
+    expect(insertPerson).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canonicalName: 'Bob',
+        status: 'pending',
+        createdVia: 'extractor_pending',
+      })
+    )
 
-    // Elfie no longer creates Person rows.
-    expect(result.data.newPeople).toHaveLength(0)
-
-    // extractions returned to persist must also be filtered down so
-    // matchMentionsToFragments cannot re-introduce a dropped mention.
-    expect(result.data.extractions).toHaveLength(1)
-    expect(result.data.extractions[0].mention).toBe('Sarah')
-
+    // Both surface in extractions so persist's mention-to-fragment edge
+    // logic can write FRAGMENT_MENTIONS_PERSON for each.
+    expect(result.data.extractions).toHaveLength(2)
     expect(result.durationMs).toBeGreaterThanOrEqual(0)
   })
 
   it('returns empty results when no people found', async () => {
     const mockDeps: EntityExtractDeps = {
       loadAllPeople: vi.fn().mockResolvedValue([]),
-      llmCall: vi.fn().mockResolvedValue({ people: [] }),
+      llmCall: vi.fn().mockResolvedValue({ matched: [], candidates: [] }),
       emitEvent: vi.fn().mockResolvedValue(undefined),
       config: DEFAULT_RESOLUTION_CONFIG,
       makePeopleKey: makeKey,

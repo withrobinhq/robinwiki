@@ -2230,6 +2230,123 @@
         }
       }
     },
+    "/admin/people": {
+      "get": {
+        "operationId": "listAdminPeople",
+        "summary": "List people by status (Stream P)",
+        "description": "Triage list. Defaults to status=pending so the admin UI can render the quarantine queue without a query string.",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "verified", "rejected"],
+              "default": "pending"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "format": "date-time" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persons list with total"
+          }
+        }
+      }
+    },
+    "/admin/people/{lookupKey}/approve": {
+      "post": {
+        "operationId": "approvePendingPerson",
+        "summary": "Approve a pending person (Stream P)",
+        "description": "Flips the row to status='verified'. Existing edges become fully involved with no backfill.",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lookupKey",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Person approved" },
+          "404": { "description": "Person not found" }
+        }
+      }
+    },
+    "/admin/people/{lookupKey}/reject": {
+      "post": {
+        "operationId": "rejectPendingPerson",
+        "summary": "Reject a pending person (Stream P)",
+        "description": "Default: status='rejected'. With { hardDelete: true } the row and edges are deleted.",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lookupKey",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "hardDelete": { "type": "boolean", "default": false }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Person rejected" },
+          "404": { "description": "Person not found" }
+        }
+      }
+    },
     "/mcp": {
       "post": {
         "operationId": "mcpTransport",

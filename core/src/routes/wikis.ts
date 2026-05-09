@@ -371,7 +371,15 @@ wikisRouter.get('/:id', async (c) => {
   const peopleRows =
     personKeys.length > 0
       ? await db
-          .select({ lookupKey: people.lookupKey, name: people.name })
+          .select({
+            lookupKey: people.lookupKey,
+            name: people.name,
+            // Stream P quarantine: edge reads carry status through so
+            // consumers can render the quarantine indicator without
+            // a second fetch. Pending persons stay visible in this
+            // listing per the locked matrix.
+            status: people.status,
+          })
           .from(people)
           .where(inArray(people.lookupKey, personKeys))
       : []
@@ -398,6 +406,10 @@ wikisRouter.get('/:id', async (c) => {
       people: peopleRows.map((p) => ({
         id: p.lookupKey,
         name: p.name,
+        status: ((p as { status?: string }).status ?? 'verified') as
+          | 'verified'
+          | 'pending'
+          | 'rejected',
       })),
     })
   }
@@ -423,6 +435,10 @@ wikisRouter.get('/:id', async (c) => {
       people: peopleRows.map((p) => ({
         id: p.lookupKey,
         name: p.name,
+        status: ((p as { status?: string }).status ?? 'verified') as
+          | 'verified'
+          | 'pending'
+          | 'rejected',
       })),
       refs: sidecar.refs,
       infobox: sidecar.infobox,

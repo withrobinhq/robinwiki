@@ -175,6 +175,30 @@ export interface KnownPerson {
 
 export interface EntityExtractDeps {
   loadAllPeople: () => Promise<KnownPerson[]>
+  /**
+   * Stream P (#PEOPLE-EXTRACT-Q). Pending persons participate in
+   * extract-time dedup so we do not mint duplicate rows for the same
+   * unknown name across fragments. Optional for backward compat: if
+   * undefined the resolver behaves as before (verified-only matcher
+   * with no quarantine).
+   */
+  loadPendingPeople?: () => Promise<KnownPerson[]>
+  /**
+   * Stream P. Insert a new person row directly from the extractor
+   * path. The implementation lives in core (it owns the schema and
+   * audit-log). Optional for callers that want the legacy behaviour
+   * where new people land in `newPeople[]` and the `persist` stage
+   * does the upsert.
+   */
+  insertPerson?: (input: {
+    lookupKey: string
+    canonicalName: string
+    status: 'verified' | 'pending'
+    createdVia: 'extractor_pending' | 'extractor_auto'
+    extractedFromFragmentId: string | null
+  }) => Promise<void>
+  /** Stream P. Read `app_settings.auto_accept_persons` once per run. */
+  loadAutoAcceptPersons?: () => Promise<boolean>
   llmCall: (system: string, user: string) => Promise<PeopleExtractionOutput>
   emitEvent: EmitEvent
   config: ResolutionConfig
@@ -184,6 +208,12 @@ export interface EntityExtractDeps {
 export interface EntityExtractResult {
   peopleMap: Map<string, string>
   newAliases: Map<string, string[]>
-  extractions: PeopleExtractionOutput['people']
-  newPeople: Array<{ personKey: string; canonicalName: string; verified: boolean }>
+  extractions: Array<{ mention: string; sourceSpan: string }>
+  newPeople: Array<{
+    personKey: string
+    canonicalName: string
+    verified: boolean
+    /** Stream P quarantine status, surfaced for telemetry only. */
+    status?: 'verified' | 'pending'
+  }>
 }

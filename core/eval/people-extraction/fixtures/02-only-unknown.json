@@ -1,0 +1,7 @@
+{
+  "input": "Met Diana and Eric at the office. They run the analytics group.",
+  "knownPeople": [],
+  "expectedMatched": [],
+  "expectedCandidates": ["Diana", "Eric"],
+  "notes": "No known people seeded. Both names must surface as candidates rather than being silently dropped."
+}

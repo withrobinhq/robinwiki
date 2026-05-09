@@ -141,6 +141,13 @@ interface PersonDetail {
     slug: string
     aliases: string[]
     relationship: string
+    /**
+     * Stream P quarantine status. 'pending' rows render with a
+     * full-width quarantine topbar in the frontend; consumers should
+     * always carry this through so downstream UI can render the
+     * indicator without a second fetch.
+     */
+    status: 'verified' | 'pending' | 'rejected'
   }
   body: string
   fragments: FragmentSnippet[]
@@ -698,6 +705,7 @@ export async function findPersonById(
       aliases: people.aliases,
       content: people.content,
       createdAt: people.createdAt,
+      status: people.status,
     })
     .from(people)
     .where(and(eq(people.lookupKey, id), isNull(people.deletedAt)))
@@ -759,6 +767,7 @@ export async function findPersonById(
       slug: person.slug,
       aliases: person.aliases ?? [],
       relationship: person.relationship,
+      status: (person.status ?? 'verified') as 'verified' | 'pending' | 'rejected',
     },
     body,
     fragments: fragmentSnippets,
@@ -794,6 +803,7 @@ export async function findPersonByQuery(
       aliases: people.aliases,
       content: people.content,
       createdAt: people.createdAt,
+      status: people.status,
     })
     .from(people)
     .where(isNull(people.deletedAt))
@@ -864,6 +874,7 @@ export async function findPersonByQuery(
       slug: person.slug,
       aliases: resolved.match.aliases,
       relationship: person.relationship,
+      status: (person.status ?? 'verified') as 'verified' | 'pending' | 'rejected',
     },
     body,
     fragments: fragmentSnippets,
@@ -1018,6 +1029,12 @@ export async function briefPerson(
   // Assemble markdown
   const lines: string[] = []
   lines.push(`# ${person.name}`)
+  if (person.status === 'pending') {
+    // Stream P quarantine: brief_person shows the same banner the
+    // frontend renders so AI agents see the "not yet approved" state
+    // without having to re-fetch /admin/people.
+    lines.push('> Quarantine: this person is awaiting operator approval (status=pending).')
+  }
   if (summary) lines.push(summary)
   if (person.relationship) lines.push(`Relationship: ${person.relationship}`)
   if (person.aliases.length > 0) lines.push(`Aliases: ${person.aliases.join(', ')}`)

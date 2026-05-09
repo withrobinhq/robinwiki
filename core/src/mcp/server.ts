@@ -22,7 +22,7 @@ import { eq, and, isNull, inArray, sql } from 'drizzle-orm'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { listWikis, getWiki, getFragment, findPersonById, findPersonByQuery, listWikiTypes, briefPerson, resolveWikiBySlug } from './resolvers.js'
 import type { McpResolverDeps } from './resolvers.js'
-import { handleLogEntry, handleLogFragment, handleCreateWikiType, handleCreateWiki, handleEditWiki, handleAttachFragments, handlePublishWiki, handleUnpublishWiki, handleRegenNow, handleRegenStatus } from './handlers.js'
+import { handleLogEntry, handleLogFragment, handleCreateWikiType, handleCreateWiki, handleEditWiki, handleAttachFragments, handlePublishWiki, handleUnpublishWiki, handleRegenNow, handleRegenStatus, handleCreatePerson, handleUpdatePerson, handleAddRelationship, handleListPendingPersons, handleSetAutoAcceptPersons } from './handlers.js'
 import type { McpServerDeps } from './handlers.js'
 import { wikis, wikiTypes, edges, auditLog, groups, groupWikis } from '../db/schema.js'
 import { hybridSearch } from '../lib/search.js'
@@ -286,6 +286,137 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
     },
     async ({ recentLimit }, extra) => {
       return handleRegenStatus(deps, { recentLimit }, extra.authInfo?.clientId as string)
+    }
+  )
+
+  /***********************************************************************
+   * ## People tools (Stream P)
+   ***********************************************************************/
+
+  const relationshipInput = z
+    .object({
+      type: z.enum(['KNOWS', 'RELATED_TO', 'WORKS_AT', 'AFFILIATED_WITH']),
+      target: z
+        .string()
+        .describe('person:<key|canonical-name> or wiki:<key|slug>'),
+      direction: z.enum(['bidirectional', 'outbound']).optional(),
+      role: z.string().optional(),
+      note: z.string().optional(),
+      sourceFragmentId: z.string().optional(),
+    })
+
+  server.registerTool(
+    'create_person',
+    {
+      description:
+        'Create a new Person row. MCP creation is the explicit "I know who this is" path: ' +
+        'rows always land status="verified" and bypass the quarantine queue (auto-extracted ' +
+        'persons go to quarantine instead). Returns lookupKey + slug + resolved/pending ' +
+        'relationships.',
+      inputSchema: {
+        canonicalName: z.string().describe('Canonical display name'),
+        aliases: z.array(z.string()).optional().describe('Optional aliases (deduped)'),
+        relationship: z
+          .string()
+          .optional()
+          .describe('Freeform relationship descriptor ("manager", "colleague")'),
+        isOwner: z.boolean().optional().describe('Set true to flag this as the owner Person'),
+        metadata: z
+          .object({
+            relationships: z.array(relationshipInput).optional(),
+            notes: z.string().optional(),
+          })
+          .optional(),
+      },
+    },
+    async (input, extra) => {
+      return handleCreatePerson(deps, input, extra.authInfo?.clientId as string)
+    }
+  )
+
+  server.registerTool(
+    'update_person',
+    {
+      description:
+        'Apply field updates to an existing Person row. Aliases and notes append unless ' +
+        '`replaceAliases` is true. Pending persons stay pending unless `promoteFromQuarantine` ' +
+        'is true (adding context is a recognition signal but the operator must opt in).',
+      inputSchema: {
+        personLookupKey: z.string().describe('Person lookup key'),
+        updates: z.object({
+          canonicalName: z.string().optional(),
+          aliases: z.array(z.string()).optional(),
+          notes: z.string().optional(),
+          relationships: z.array(relationshipInput).optional(),
+        }),
+        options: z
+          .object({
+            promoteFromQuarantine: z.boolean().optional(),
+            replaceAliases: z.boolean().optional(),
+          })
+          .optional(),
+      },
+    },
+    async (input, extra) => {
+      return handleUpdatePerson(deps, input, extra.authInfo?.clientId as string)
+    }
+  )
+
+  server.registerTool(
+    'list_pending_persons',
+    {
+      description:
+        'List Persons in the quarantine queue (status="pending"). Read-only triage view. ' +
+        'Approval and rejection are HTTP-only via /admin/people/:key/approve and /admin/people/:key/reject; ' +
+        'this tool only surfaces the queue contents so AI agents can plan their next step.',
+      inputSchema: {
+        limit: z.number().optional().describe('Max rows (default 50, max 200)'),
+        offset: z.number().optional().describe('Pagination offset'),
+        since: z
+          .string()
+          .optional()
+          .describe('ISO timestamp; only persons created after this'),
+      },
+    },
+    async (input, extra) => {
+      return handleListPendingPersons(deps, input, extra.authInfo?.clientId as string)
+    }
+  )
+
+  server.registerTool(
+    'set_auto_accept_persons',
+    {
+      description:
+        'Toggle the instance-wide `auto_accept_persons` flag (app_settings). When true, ' +
+        'the extractor flips new candidates straight to status="verified" instead of ' +
+        'routing them through the quarantine queue. Returns { previous, current }.',
+      inputSchema: { value: z.boolean() },
+    },
+    async (input, extra) => {
+      return handleSetAutoAcceptPersons(deps, input, extra.authInfo?.clientId as string)
+    }
+  )
+
+  server.registerTool(
+    'add_relationship',
+    {
+      description:
+        'Add a single edge between an existing Person and a Person or Wiki. ' +
+        'Idempotent — re-running the same triple is a no-op.',
+      inputSchema: {
+        source: z.string().describe('person:<key>'),
+        target: z.string().describe('person:<key> or wiki:<key|slug>'),
+        type: z.enum(['KNOWS', 'RELATED_TO', 'WORKS_AT', 'AFFILIATED_WITH']),
+        attrs: z
+          .object({
+            note: z.string().optional(),
+            sourceFragmentId: z.string().optional(),
+          })
+          .optional(),
+      },
+    },
+    async (input, extra) => {
+      return handleAddRelationship(deps, input, extra.authInfo?.clientId as string)
     }
   )
 

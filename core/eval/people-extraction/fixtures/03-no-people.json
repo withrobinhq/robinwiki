@@ -1,0 +1,7 @@
+{
+  "input": "Just shipped the v2 release. The build went green at 3pm.",
+  "knownPeople": [],
+  "expectedMatched": [],
+  "expectedCandidates": [],
+  "notes": "No person-like mentions. Both buckets stay empty."
+}

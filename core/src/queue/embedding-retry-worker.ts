@@ -149,6 +149,10 @@ async function retryTable<TableName extends 'fragments' | 'wikis' | 'people'>(
         and(
           isNull(people.embedding),
           isNull(people.deletedAt),
+          // Stream P quarantine: pending persons stay out of the
+          // embedding heal pass. They become eligible the moment they
+          // are approved (status flips to 'verified').
+          sql`${people.status} = 'verified'`,
           sql`${people.embeddingAttemptCount} < ${MAX_ATTEMPTS}`,
           or(
             isNull(people.embeddingLastAttemptAt),

@@ -1,5 +1,6 @@
 import * as fuzz from 'fuzzball'
-import { loadPeopleExtractionSpec } from '@robin/shared'
+import { loadPeopleExtractionSpec, normalisePeopleExtraction } from '@robin/shared'
+import { resolveOrDrop } from '../people/resolveOrDrop.js'
 import type {
   EntityExtractDeps,
   EntityExtractResult,
@@ -136,14 +137,16 @@ export async function entityExtract(
     metadata: { substage: 'entity-extract' },
   })
 
-  // 1. Load known people
-  const knownPeople = await deps.loadAllPeople()
+  // 1. Load known people (verified + optionally pending for dedup)
+  const verifiedPeople = await deps.loadAllPeople()
+  const pendingPeople = deps.loadPendingPeople ? await deps.loadPendingPeople() : []
 
-  // 2. Build known people JSON for prompt
+  // 2. Build known people JSON for prompt (verified only — pending
+  //    persons are not graph-visible to the LLM yet).
   const knownPeopleJson =
-    knownPeople.length > 0
+    verifiedPeople.length > 0
       ? JSON.stringify(
-          knownPeople.map((p) => ({
+          verifiedPeople.map((p) => ({
             key: p.lookupKey,
             canonicalName: p.canonicalName,
             aliases: p.aliases,
@@ -157,41 +160,104 @@ export async function entityExtract(
     knownPeople: knownPeopleJson,
   })
 
-  // 4. Call LLM (returns Zod-validated output)
+  // 4. Call LLM (returns Zod-validated output, accepts both v3 buckets
+  //    and the legacy v2 flat array).
   const parsed = await deps.llmCall(spec.system, spec.user)
+  const buckets = normalisePeopleExtraction(parsed)
+  const rawMentionsSeen = buckets.matched.length + buckets.candidates.length
 
-  // 6. Resolve each extraction. #237: Elfie is matcher-only — unmatched
-  // mentions are DROPPED instead of becoming new Person rows. The
-  // resolvePerson() helper is still the score-based matcher; when it
-  // reports `isNew: true` we treat that as a "no match" signal and
-  // skip the mention entirely. Authorship for first-person pronouns is
-  // handled downstream by the classifier's [AUTHORSHIP] block (#238),
-  // not here.
+  // 5. Resolve every mention through the shared helper. Worker pipeline
+  //    and MCP `log_fragment` both call this — same input, same outcome.
+  const autoAccept = deps.loadAutoAcceptPersons
+    ? await deps.loadAutoAcceptPersons()
+    : false
+
+  // Backward-compat path: if no insertPerson dep was wired, the legacy
+  // pipeline still routes new persons through `persist.ts` via the
+  // `newPeople[]` array. We mark them as pending in that case so the
+  // upsertPerson code path can apply the right status.
+  const newPeople: EntityExtractResult['newPeople'] = []
   const peopleMap = new Map<string, string>()
   const newAliases = new Map<string, string[]>()
-  const newPeople: EntityExtractResult['newPeople'] = []
+  const matchedExtractions: Array<{ mention: string; sourceSpan: string }> = []
   let unmatchedDropped = 0
+  let createdPersons = 0
 
-  for (const extraction of parsed.people) {
-    const resolved = resolvePerson(extraction, knownPeople, deps.config, deps.makePeopleKey)
+  const insertPerson =
+    deps.insertPerson ??
+    (async (input) => {
+      // Legacy persist-driven path: the helper ran (and assigned a
+      // lookupKey) but we route the row through `newPeople[]` so the
+      // existing persist stage's `upsertPerson` can de-dup against
+      // canonical_name (case-insensitive).
+      newPeople.push({
+        personKey: input.lookupKey,
+        canonicalName: input.canonicalName,
+        verified: input.status === 'verified',
+        status: input.status,
+      })
+    })
 
-    if (resolved.isNew) {
-      // No matching Person row — drop this mention. Do NOT add it to
-      // peopleMap (which would seed a FRAGMENT_MENTIONS_PERSON edge to
-      // a non-existent person) and do NOT push it onto newPeople
-      // (which would have persist.ts upsert a Person on its behalf).
+  const outcomes = await resolveOrDrop(
+    {
+      matched: buckets.matched,
+      candidates: buckets.candidates,
+    },
+    {
+      // Worker pipeline does not have a fragment id yet at extract
+      // time (fragments persist later in the same run). Pass null and
+      // let the persist stage backfill the linkage via FRAGMENT_MENTIONS_PERSON.
+      fragmentId: null,
+      autoAccept,
+      verifiedPeople,
+      pendingPeople,
+      makePersonKey: deps.makePeopleKey,
+      insertPerson,
+      resolutionConfig: deps.config,
+    }
+  )
+
+  for (const outcome of outcomes) {
+    if (outcome.kind === 'dropped') {
       unmatchedDropped++
       continue
     }
+    if (outcome.kind === 'created_pending' || outcome.kind === 'created_verified') {
+      createdPersons++
+    }
+    peopleMap.set(outcome.mention, outcome.lookupKey)
+    matchedExtractions.push({
+      mention: outcome.mention,
+      sourceSpan: outcome.sourceSpan.text,
+    })
+  }
 
-    peopleMap.set(extraction.mention, resolved.personKey)
-
-    if (resolved.newAlias) {
-      const existing = newAliases.get(resolved.personKey) ?? []
-      existing.push(resolved.newAlias)
-      newAliases.set(resolved.personKey, existing)
+  // Alias merging: matched + pending + verified outcomes whose mention
+  // surface form differs from the canonical name should be appended as
+  // aliases on the existing row. This preserves the v2 newAliases
+  // behaviour for downstream merging in the persist stage.
+  for (const outcome of outcomes) {
+    if (outcome.kind !== 'matched' && outcome.kind !== 'pending') continue
+    const known = [...verifiedPeople, ...pendingPeople].find(
+      (p) => p.lookupKey === outcome.lookupKey
+    )
+    if (!known) continue
+    const lower = outcome.mention.toLowerCase()
+    const isCanonical = known.canonicalName.toLowerCase() === lower
+    const isKnownAlias = known.aliases.some((a) => a.toLowerCase() === lower)
+    if (isCanonical || isKnownAlias) continue
+    const list = newAliases.get(outcome.lookupKey) ?? []
+    if (!list.some((a) => a.toLowerCase() === lower)) {
+      list.push(outcome.mention)
+      newAliases.set(outcome.lookupKey, list)
     }
   }
+
+  const denominator = rawMentionsSeen
+  const dropRatePct =
+    denominator > 0
+      ? Math.round(((denominator - peopleMap.size - createdPersons) / denominator) * 100)
+      : 0
 
   await deps.emitEvent({
     entryKey: input.entryKey,
@@ -200,9 +266,16 @@ export async function entityExtract(
     status: 'completed',
     metadata: {
       substage: 'entity-extract',
-      totalMentions: parsed.people.length,
+      // Stream P telemetry. `rawMentionsSeen` is what the LLM surfaced
+      // (matched + candidates). `dropRatePct` is the share of those
+      // mentions that did not become a graph edge (resolver
+      // disagreement only — created pending/verified count as kept).
+      rawMentionsSeen,
       matchedMentions: peopleMap.size,
+      createdPersons,
       unmatchedDropped,
+      dropRatePct,
+      autoAccept,
       newPeople: newPeople.length,
     },
   })
@@ -211,10 +284,7 @@ export async function entityExtract(
     data: {
       peopleMap,
       newAliases,
-      // Filter extractions down to those that matched so persist's
-      // mention-to-fragment edge logic can't re-introduce a dropped
-      // mention. Unmatched mentions never reach persist.
-      extractions: parsed.people.filter((e) => peopleMap.has(e.mention)),
+      extractions: matchedExtractions,
       newPeople,
     },
     durationMs: Date.now() - start,
