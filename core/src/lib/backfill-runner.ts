@@ -68,10 +68,13 @@ export async function runWikiAgentSchemaBackfill(
   let failed = 0
   let scanned = 0
 
-  let config: Awaited<ReturnType<typeof loadOpenRouterConfig>> | null = null
-  if (!dryRun) {
-    config = await loadOpenRouterConfig()
-  }
+  // Embed config is required for the live (non-dryRun) path. Narrow it
+  // once at the top so the inner loops can pass the typed config without
+  // re-asserting on each call.
+  const config = dryRun ? null : await loadOpenRouterConfig()
+  const embedConfig = config
+    ? { apiKey: config.apiKey, model: config.models.embedding }
+    : null
 
   // Single-wiki scope: skip the paged sweep, target one row.
   if (wikiKey) {
@@ -90,14 +93,11 @@ export async function runWikiAgentSchemaBackfill(
       }
     }
     scanned = 1
-    if (dryRun) {
+    if (dryRun || !embedConfig) {
       ok = 1
     } else {
       try {
-        const vec = await embedText(target.description, {
-          apiKey: config!.apiKey,
-          model: config!.models.embedding,
-        })
+        const vec = await embedText(target.description, embedConfig)
         if (vec) {
           await upsertDescriptionAgentSchemaRow(db, target.wikiKey, target.description, vec)
           ok = 1
@@ -132,16 +132,13 @@ export async function runWikiAgentSchemaBackfill(
     scanned += chunk.length
 
     for (const target of chunk) {
-      if (dryRun) {
+      if (dryRun || !embedConfig) {
         ok++
         processed++
         continue
       }
       try {
-        const vec = await embedText(target.description, {
-          apiKey: config!.apiKey,
-          model: config!.models.embedding,
-        })
+        const vec = await embedText(target.description, embedConfig)
         if (vec) {
           await upsertDescriptionAgentSchemaRow(db, target.wikiKey, target.description, vec)
           ok++
