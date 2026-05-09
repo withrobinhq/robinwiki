@@ -52,6 +52,11 @@ vi.mock('@robin/agent', () => ({
   probeEmbeddingReachable: vi.fn(),
 }))
 
+const validateMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+vi.mock('../../lib/validate-openrouter-key.js', () => ({
+  validateOpenRouterKey: (...args: unknown[]) => validateMock(...args),
+}))
+
 const logInfoMock = vi.fn()
 const logWarnMock = vi.fn()
 const logErrorMock = vi.fn()

@@ -22,6 +22,7 @@ import { signMcpToken, clearKidCache } from '../mcp/jwt.js'
 import { validationHook } from '../lib/validation.js'
 import { getConfig, setConfig } from '../lib/config.js'
 import { logger } from '../lib/logger.js'
+import { validateOpenRouterKey } from '../lib/validate-openrouter-key.js'
 import { emitAuditEvent } from '../db/audit.js'
 import { buildExportZip } from '../lib/export-zip.js'
 import { stream } from 'hono/streaming'
@@ -111,6 +112,36 @@ usersRouter.get('/profile', async (c) => {
       onboardedAt: user.onboardedAt?.toISOString() ?? null,
     })
   )
+})
+
+// POST /users/openrouter-key/validate — verify a key against the real
+// OpenRouter API. Body may be { key: string } to validate an explicit key,
+// or omitted to validate the currently-configured OPENROUTER_API_KEY env var.
+//
+// Response shape is intentionally generic. We never echo OpenRouter's raw
+// error body to the client because it can include rate-limit or token
+// metadata that we don't want to leak.
+usersRouter.post('/openrouter-key/validate', async (c) => {
+  let candidate: string | undefined
+  try {
+    const body = (await c.req.json().catch(() => null)) as
+      | { key?: unknown }
+      | null
+    if (body && typeof body.key === 'string') candidate = body.key
+  } catch {
+    // ignore, fall back to env var
+  }
+  const key = candidate ?? process.env.OPENROUTER_API_KEY ?? ''
+  if (!key) {
+    return c.json({ ok: false, error: 'No OpenRouter key configured' }, 200)
+  }
+  const result = await validateOpenRouterKey(key)
+  if (result.ok) return c.json({ ok: true })
+  if (result.status === 401) return c.json({ ok: false, error: 'Invalid API key' })
+  if (result.error?.startsWith('Key is empty')) {
+    return c.json({ ok: false, error: 'Key is empty or too short' })
+  }
+  return c.json({ ok: false, error: 'Could not reach OpenRouter' })
 })
 
 // PATCH /users/onboard — mark onboarding complete (skip button)

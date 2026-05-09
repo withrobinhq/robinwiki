@@ -34,6 +34,7 @@ export default function CompleteStep() {
   const { data: profile, isLoading: profileLoading } = useProfile();
   const [copied, setCopied] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [validateError, setValidateError] = useState<string | null>(null);
   const mcpEndpoint = profile?.mcpEndpointUrl ?? "";
 
   // Poll for MCP endpoint until it becomes available (keypair may still be generating)
@@ -194,26 +195,65 @@ export default function CompleteStep() {
         </CardContent>
       </Card>
 
+      {validateError && (
+        <p
+          className="text-center"
+          style={{
+            ...T.micro,
+            marginTop: 16,
+            color: "var(--destructive)",
+            maxWidth: 320,
+          }}
+        >
+          {validateError}
+        </p>
+      )}
+
       {/* GO TO WIKI BUTTON */}
       <ActionButton
         type="button"
         onClick={async () => {
           setCompleting(true);
+          setValidateError(null);
           try {
+            // Gate completion on a real OpenRouter API check so a typo'd
+            // or revoked key surfaces here rather than silently breaking
+            // the user's first ingest.
+            const res = await fetch("/api/users/openrouter-key/validate", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({}),
+            });
+            const result = (await res.json().catch(() => null)) as
+              | { ok?: boolean; error?: string }
+              | null;
+            if (!result?.ok) {
+              setValidateError(
+                result?.error ??
+                  "Could not validate your OpenRouter API key. Check OPENROUTER_API_KEY and try again.",
+              );
+              setCompleting(false);
+              return;
+            }
             await fetch("/api/users/onboard", {
               method: "PATCH",
               credentials: "include",
             });
             await queryClient.invalidateQueries({ queryKey: ["profile"] });
           } catch {
-            // proceed even if onboard call fails -- user can retry
+            setValidateError(
+              "Could not reach the server to validate your key. Try again.",
+            );
+            setCompleting(false);
+            return;
           }
           router.push("/wiki");
         }}
         disabled={completing}
         className="mt-10"
       >
-        {completing ? "Finishing..." : "Go to your wiki"}
+        {completing ? "Validating..." : "Go to your wiki"}
       </ActionButton>
     </div>
   );

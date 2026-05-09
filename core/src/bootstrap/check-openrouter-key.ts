@@ -5,6 +5,7 @@ import { configs, users } from '../db/schema.js'
 import { setConfig } from '../lib/config.js'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
 import { logger } from '../lib/logger.js'
+import { validateOpenRouterKey } from '../lib/validate-openrouter-key.js'
 
 const log = logger.child({ component: 'bootstrap' })
 
@@ -20,6 +21,25 @@ export async function checkOpenRouterKey(): Promise<void> {
     .from(configs)
     .where(and(eq(configs.kind, 'llm_key'), eq(configs.key, 'openrouter')))
     .limit(1)
+
+  // If the env var is set, ping OpenRouter once at boot so a typo'd or
+  // revoked key surfaces in the logs instead of silently breaking the
+  // first ingest job. Non-fatal: non-LLM traffic still works.
+  const envKey = process.env.OPENROUTER_API_KEY
+  if (envKey) {
+    const result = await validateOpenRouterKey(envKey).catch((err) => ({
+      ok: false as const,
+      error: err instanceof Error ? err.message : String(err),
+    }))
+    if (result.ok) {
+      log.info('OPENROUTER_API_KEY validated against OpenRouter')
+    } else {
+      log.warn(
+        { status: 'status' in result ? result.status : undefined, error: result.error },
+        'OPENROUTER_API_KEY failed live validation, ingest will fail until fixed',
+      )
+    }
+  }
 
   if (rows.length === 0) {
     const apiKey = process.env.OPENROUTER_API_KEY
