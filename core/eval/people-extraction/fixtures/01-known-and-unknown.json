@@ -1,0 +1,13 @@
+{
+  "input": "Had coffee with Sarah. Bob said hello and Carol waved.",
+  "knownPeople": [
+    {
+      "key": "person01ABC",
+      "canonicalName": "Sarah Ouma",
+      "aliases": ["Sarah"]
+    }
+  ],
+  "expectedMatched": ["Sarah"],
+  "expectedCandidates": ["Bob", "Carol"],
+  "notes": "Mixed bucket: one match, two candidates. Verifies the extractor surfaces unknown names instead of dropping them."
+}

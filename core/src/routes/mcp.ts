@@ -50,7 +50,7 @@ mcp.all('/', async (c) => {
     db,
     producer,
     spawnWriteWorker: () => {},
-    entityExtractCall: async () => ({ people: [] }),
+    entityExtractCall: async () => ({ matched: [], candidates: [] }),
     loadUserPeople: async () => [],
   }
 
