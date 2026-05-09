@@ -282,4 +282,27 @@ describe('persist — Postgres inserts', () => {
     expect(entryHasFragment).toHaveLength(2)
     expect(fragmentInVault).toHaveLength(2)
   })
+
+  it("ENTRY_HAS_FRAGMENT edges write with src_type='raw_source'", async () => {
+    const deps = makeMockDeps()
+    const fragments = [makeFragment(), makeFragment({ title: 'Second' })]
+
+    await persist(deps, { ...baseInput, fragments })
+
+    const edgeCalls = (deps.insertEdge as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c) => c[0] as Record<string, unknown>
+    )
+    const entryHasFragment = edgeCalls.filter((e) => e.edgeType === 'ENTRY_HAS_FRAGMENT')
+
+    // Migration 0016 canonicalised src_type. Persist must emit
+    // 'raw_source', not the legacy 'entry' string. The CHECK
+    // constraint added in 0016 will reject 'entry' if this ever
+    // regresses.
+    expect(entryHasFragment.length).toBeGreaterThan(0)
+    for (const edge of entryHasFragment) {
+      expect(edge.srcType).toBe('raw_source')
+      expect(edge.srcId).toBe(baseInput.entryKey)
+      expect(edge.dstType).toBe('fragment')
+    }
+  })
 })
