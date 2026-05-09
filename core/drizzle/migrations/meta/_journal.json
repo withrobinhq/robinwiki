@@ -106,6 +106,13 @@
       "when": 1747008000000,
       "tag": "0015_source_client_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1747094400000,
+      "tag": "0017_people_status_and_quarantine",
+      "breakpoints": true
     }
   ]
 }
