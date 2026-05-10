@@ -32,6 +32,10 @@ export default function WikiLayout({
       data-sidebar={sidebarOpen ? "open" : "closed"}
       style={{ background: "var(--bg)" }}
     >
+      {/* Portal slot for QuarantineTopbar: renders in document flow
+          before the header so it pushes content down naturally. */}
+      <div id="quarantine-banner-root" />
+
       {/* Header */}
       <div
         className="wiki-header-bar absolute z-20"

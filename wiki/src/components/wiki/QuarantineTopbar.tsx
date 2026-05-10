@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { ShieldAlert, Check, X } from "lucide-react";
 import { T } from "@/lib/typography";
@@ -10,15 +12,7 @@ import {
   useRejectPerson,
 } from "@/hooks/usePendingPersons";
 
-// Stream U: full-width banner that renders at the top of a pending
-// person's wiki page. Reminds the operator that the person is in
-// quarantine (excluded from retrieval, classification, and wiki
-// generation) and provides Approve / Reject affordances inline so the
-// triage flow does not require leaving the page.
-//
-// On success either action redirects back to /settings/people so the
-// next pending person surfaces. The hooks invalidate ['people'] so the
-// list re-fetches automatically when the operator returns.
+export const QUARANTINE_SLOT_ID = "quarantine-banner-root";
 
 interface Props {
   personKey: string;
@@ -29,7 +23,12 @@ export function QuarantineTopbar({ personKey, personName }: Props) {
   const router = useRouter();
   const approve = useApprovePerson();
   const reject = useRejectPerson();
-  const pending = approve.isPending || reject.isPending;
+  const busy = approve.isPending || reject.isPending;
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setSlot(document.getElementById(QUARANTINE_SLOT_ID));
+  }, []);
 
   const handleApprove = () => {
     approve.mutate(personKey, {
@@ -43,10 +42,11 @@ export function QuarantineTopbar({ personKey, personName }: Props) {
     );
   };
 
-  return (
+  const banner = (
     <div
       role="alert"
       style={{
+        position: "relative",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -71,7 +71,7 @@ export function QuarantineTopbar({ personKey, personName }: Props) {
           size="sm"
           variant="default"
           onClick={handleApprove}
-          disabled={pending}
+          disabled={busy}
           aria-label={`Approve ${personName}`}
         >
           {approve.isPending ? <Spinner className="size-3" /> : <Check className="size-3" />}
@@ -81,7 +81,7 @@ export function QuarantineTopbar({ personKey, personName }: Props) {
           size="sm"
           variant="outline"
           onClick={handleReject}
-          disabled={pending}
+          disabled={busy}
           aria-label={`Reject ${personName}`}
         >
           {reject.isPending ? <Spinner className="size-3" /> : <X className="size-3" />}
@@ -90,4 +90,7 @@ export function QuarantineTopbar({ personKey, personName }: Props) {
       </div>
     </div>
   );
+
+  if (slot) return createPortal(banner, slot);
+  return banner;
 }
