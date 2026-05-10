@@ -8,7 +8,11 @@ interface TopBarProps {
   focusSubtype?: string;
 }
 
-const VIEW_OPTIONS: ReadonlyArray<{ key: string; label: string; active: boolean }> = [
+const VIEW_OPTIONS: ReadonlyArray<{
+  key: string;
+  label: string;
+  active: boolean;
+}> = [
   { key: "list", label: "List", active: false },
   { key: "wiki", label: "Wiki", active: false },
   { key: "ego", label: "Ego graph", active: true },
@@ -31,24 +35,22 @@ export function TopBar({ focusTitle, focusSubtype }: TopBarProps) {
 
   return (
     <header className={styles.topbar}>
-      <div className={styles.brand}>
-        <div className={styles.brandMark} aria-hidden="true">
-          R
+      <div className={styles.topbarL}>
+        <a className={styles.topbarBrand} href="#" aria-label="Robin">
+          <span className={styles.mark} aria-hidden="true">R</span>
+          <span>Robin</span>
+        </a>
+        <div className={styles.topbarCrumb} aria-label="Breadcrumb">
+          <span>Wiki</span>
+          <span className={styles.sep} aria-hidden="true">/</span>
+          <span>{middle}</span>
+          <span className={styles.sep} aria-hidden="true">/</span>
+          <span className={styles.here}>{focusTitle}</span>
         </div>
-        <div className={styles.wordmark}>Robin</div>
       </div>
-      <div className={styles.topbarSep} aria-hidden="true" />
-      <nav className={styles.breadcrumb} aria-label="Breadcrumb">
-        <span>Wiki</span>
-        <span aria-hidden="true">/</span>
-        <span>{middle}</span>
-        <span aria-hidden="true">/</span>
-        <span className={styles.breadcrumbCurrent}>{focusTitle}</span>
-      </nav>
-      <div className={styles.topbarSpacer} />
-      <div className={styles.topbarRight}>
+      <div className={styles.topbarR}>
         <div
-          className={styles.segmented}
+          className={styles.topbarSeg}
           role="group"
           aria-label="View mode"
         >
@@ -56,9 +58,7 @@ export function TopBar({ focusTitle, focusSubtype }: TopBarProps) {
             <button
               key={opt.key}
               type="button"
-              className={`${styles.segmentedItem} ${
-                opt.active ? styles.segmentedItemActive : ""
-              }`.trim()}
+              className={opt.active ? styles.isActive : ""}
               aria-pressed={opt.active}
               disabled={!opt.active}
             >
@@ -67,11 +67,11 @@ export function TopBar({ focusTitle, focusSubtype }: TopBarProps) {
           ))}
         </div>
         <button type="button" className={styles.topbarBtn}>
-          Export
+          <span>Export</span>
         </button>
         <button type="button" className={styles.topbarBtn}>
-          Search
-          <kbd className={styles.kbd}>{"⌘ K"}</kbd>
+          <span>Search</span>
+          <span className={styles.kbd}>⌘ K</span>
         </button>
       </div>
     </header>

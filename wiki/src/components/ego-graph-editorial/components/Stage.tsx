@@ -31,6 +31,12 @@ interface StageProps {
 }
 
 const HOP_OPACITY = [1, 1, 0.78, 0.5];
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 2.4;
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}
 
 /**
  * Read the node id from a pointer/mouse event by walking up the DOM
@@ -172,15 +178,13 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
     const path = curve(a.x, a.y, b.x, b.y);
     const kindClass =
       e.kind === "wikilink"
-        ? styles.edgeWikilink
+        ? styles.wikilink
         : e.kind === "mention"
-          ? styles.edgeMention
-          : styles.edgeFiling;
+          ? styles.mention
+          : styles.filing;
     let stateClass = "";
     if (neighborEdgeIds) {
-      stateClass = neighborEdgeIds.has(e.id)
-        ? styles.edgeIsHot
-        : styles.edgeIsDim;
+      stateClass = neighborEdgeIds.has(e.id) ? styles.isHot : styles.isDim;
     }
     const className = [styles.edge, kindClass, stateClass]
       .filter(Boolean)
@@ -205,19 +209,17 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
 
     let stateClass = "";
     if (neighborNodeIds) {
-      stateClass = neighborNodeIds.has(n.id)
-        ? styles.nodeIsHot
-        : styles.nodeIsDim;
+      stateClass = neighborNodeIds.has(n.id) ? styles.isHot : styles.isDim;
     }
     if (n.id === focusId) {
-      stateClass = `${stateClass} ${styles.nodeIsFocus}`.trim();
+      stateClass = `${stateClass} ${styles.isFocus}`.trim();
     }
 
     const typeClass =
       n.type === "fragment"
-        ? styles.nodeFrag
+        ? styles.frag
         : n.type === "person"
-          ? styles.nodePerson
+          ? styles.person
           : "";
 
     const className = [styles.node, typeClass, stateClass]
@@ -229,6 +231,7 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
         key={n.id}
         data-node-id={n.id}
         className={className}
+        style={{ color }}
         onPointerEnter={onNodeEnter}
         onPointerLeave={onNodeLeave}
       >
@@ -298,43 +301,34 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
     );
   }
 
-  // Focus cross marks reaching out toward each ring (purely decorative
-  // beyond the per-node ring drawn in renderFocus).
-  const focusOuter = (
-    <g>
-      <line
-        x1={CX}
-        y1={CY - 40}
-        x2={CX}
-        y2={CY - 60}
-        className={styles.ringTick}
-      />
-      <line
-        x1={CX}
-        y1={CY + 40}
-        x2={CX}
-        y2={CY + 60}
-        className={styles.ringTick}
-      />
-      <line
-        x1={CX - 40}
-        y1={CY}
-        x2={CX - 60}
-        y2={CY}
-        className={styles.ringTick}
-      />
-      <line
-        x1={CX + 40}
-        y1={CY}
-        x2={CX + 60}
-        y2={CY}
-        className={styles.ringTick}
-      />
-    </g>
-  );
+  const onZoomIn = () =>
+    dispatch({ type: "SET_ZOOM", zoom: clamp(state.zoom * 1.15, ZOOM_MIN, ZOOM_MAX) });
+  const onZoomOut = () =>
+    dispatch({ type: "SET_ZOOM", zoom: clamp(state.zoom * 0.87, ZOOM_MIN, ZOOM_MAX) });
+  const onZoomReset = () => {
+    dispatch({ type: "SET_ZOOM", zoom: 1 });
+    dispatch({ type: "SET_PAN", x: 0, y: 0 });
+  };
 
   return (
-    <div className={styles.stage}>
+    <main className={styles.stage}>
+      <div className={`${styles.stageCorner} ${styles.tl}`}>
+        <b>FIG. 01</b> · ego graph<br />
+        <span style={{ opacity: 0.7 }}>{`v = ${nodes.length} · e = ${edges.length}`}</span>
+      </div>
+      <div className={`${styles.stageCorner} ${styles.tr}`}>
+        <b>VAULT</b> · work<br />
+        <span style={{ opacity: 0.7 }}>profile · operating</span>
+      </div>
+      <div className={`${styles.stageCorner} ${styles.bl}`}>
+        <b>SCALE</b><br />
+        <span style={{ opacity: 0.7 }}>≈ 220 px / hop</span>
+      </div>
+      <div className={`${styles.stageCorner} ${styles.br}`}>
+        <b>UPDATED</b><br />
+        <span style={{ opacity: 0.7 }}>now · ⏵ live</span>
+      </div>
+
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
@@ -349,27 +343,16 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
           transform={`translate(${state.pan.x} ${state.pan.y}) scale(${state.zoom})`}
         >
           {ringDecor}
-          {focusOuter}
           {renderedEdges}
           {renderedNodes}
         </g>
       </svg>
-      <div className={styles.cornerTL}>
-        <div>FIG. 01 · ego graph</div>
-        <div>{`v = ${nodes.length} · e = ${edges.length}`}</div>
+
+      <div className={styles.stageTools}>
+        <button type="button" title="Zoom in" onClick={onZoomIn}>＋</button>
+        <button type="button" title="Zoom out" onClick={onZoomOut}>−</button>
+        <button type="button" title="Reset" onClick={onZoomReset}>⊕</button>
       </div>
-      <div className={styles.cornerTR}>
-        <div>VAULT · work</div>
-        <div>profile · operating</div>
-      </div>
-      <div className={styles.cornerBL}>
-        <div>SCALE</div>
-        <div>≈ 220 px / hop</div>
-      </div>
-      <div className={styles.cornerBR}>
-        <div>UPDATED</div>
-        <div>now · ⏵ live</div>
-      </div>
-    </div>
+    </main>
   );
 }

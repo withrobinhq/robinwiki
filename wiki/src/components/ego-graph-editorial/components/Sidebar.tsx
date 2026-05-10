@@ -29,10 +29,11 @@ const TYPE_ROWS: ReadonlyArray<{
   type: NodeType;
   label: string;
   color: string;
+  swatchClass?: string;
 }> = [
-  { type: "wiki", label: "Wiki", color: SUBTYPE_COLOR.belief },
-  { type: "fragment", label: "Fragment", color: FRAGMENT_FALLBACK },
-  { type: "person", label: "Person", color: PERSON_STROKE_FALLBACK },
+  { type: "wiki", label: "Wiki", color: "var(--blue)" },
+  { type: "fragment", label: "Fragment", color: "#7a8499", swatchClass: "frag" },
+  { type: "person", label: "Person", color: "#8a6d3a", swatchClass: "person" },
 ];
 
 const DEPTH_OPTIONS: ReadonlyArray<{ depth: 1 | 2 | 3; label: string }> = [
@@ -41,11 +42,18 @@ const DEPTH_OPTIONS: ReadonlyArray<{ depth: 1 | 2 | 3; label: string }> = [
   { depth: 3, label: "3 hops" },
 ];
 
-const HOP_OPACITIES: ReadonlyArray<{ opacity: number; label: string }> = [
-  { opacity: 1, label: "Hop 1" },
-  { opacity: 0.78, label: "Hop 2" },
-  { opacity: 0.5, label: "Hop 3" },
-];
+const SUBTYPE_LABEL: Record<WikiSubtype, string> = {
+  belief: "Belief",
+  decision: "Decision",
+  goal: "Goal",
+  project: "Project",
+  principle: "Principle",
+  log: "Log",
+  collection: "Collection",
+  skill: "Skill",
+  agent: "Agent",
+  voice: "Voice",
+};
 
 function capitalise(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -68,6 +76,8 @@ export function Sidebar({
     if (n.id === focusNode.id) continue;
     typeCounts[n.type] += 1;
   }
+  const totalShown = typeCounts.wiki + typeCounts.fragment + typeCounts.person;
+  const totalAll = nodes.length - 1;
 
   // Walk edges from the focus node to classify direct neighbors. The focus
   // card meta line wants per-type counts of 1-hop neighbors.
@@ -90,33 +100,44 @@ export function Sidebar({
     focusNeighborTypes[other.type] += 1;
   }
 
-  const focusSubtypeTag =
-    (focusNode.subtype ?? focusNode.type ?? "wiki").toString().toUpperCase();
+  const focusSubtypeRaw = focusNode.subtype ?? focusNode.type ?? "wiki";
+  const focusTypeUpper = focusNode.type.toUpperCase();
+  const focusSubtypeUpper = focusSubtypeRaw.toString().toUpperCase();
+  const focusTag = `${focusSubtypeUpper} · ${focusTypeUpper}`;
 
   return (
     <aside className={styles.sidebar}>
-      <section className={styles.sidebarSection}>
+      {/* Focus card */}
+      <section className={styles.sideSection}>
+        <div className={styles.sideH}>
+          <span>Focus node</span>
+          <span className={styles.count}>§ 01</span>
+        </div>
         <div className={styles.focusCard}>
-          <div className={styles.focusCardTag}>{focusSubtypeTag}</div>
-          <div className={styles.focusCardTitle}>{focusNode.label}</div>
-          <div className={styles.focusCardMeta}>
-            {`${focusNeighborTypes.fragment} fragments · ${focusNeighborTypes.wiki} wiki links · ${focusNeighborTypes.person} people`}
+          <div className={styles.fcTag}>{focusTag}</div>
+          <div className={styles.fcTitle}>{focusNode.label}</div>
+          <div className={styles.fcMeta}>
+            <span><b>{focusNeighborTypes.fragment}</b> fragments</span>
+            <span><b>{focusNeighborTypes.wiki}</b> wiki links</span>
+            <span><b>{focusNeighborTypes.person}</b> people</span>
           </div>
         </div>
       </section>
 
-      <section className={styles.sidebarSection}>
-        <h3 className={styles.sectionHeading}>Hop depth</h3>
-        <div className={styles.depthRow} role="group" aria-label="Hop depth">
+      {/* Hop depth */}
+      <section className={styles.sideSection}>
+        <div className={styles.sideH}>
+          <span>Hop depth</span>
+          <span className={styles.count}>{`${state.depth} HOPS`}</span>
+        </div>
+        <div className={styles.depth} role="group" aria-label="Hop depth">
           {DEPTH_OPTIONS.map((opt) => {
             const active = state.depth === opt.depth;
             return (
               <button
                 key={opt.depth}
                 type="button"
-                className={`${styles.depthBtn} ${
-                  active ? styles.depthBtnActive : ""
-                }`.trim()}
+                className={active ? styles.isActive : ""}
                 aria-pressed={active}
                 onClick={() => dispatch({ type: "SET_DEPTH", depth: opt.depth })}
               >
@@ -125,114 +146,159 @@ export function Sidebar({
             );
           })}
         </div>
-        <div className={styles.helpText}>
-          {`Showing nodes within ${state.depth} hop${state.depth === 1 ? "" : "s"} of focus.`}
+        <div className={styles.depthHelp}>
+          How far Robin will trace knowledge from the focus.
+          Hop 1 is direct neighbours; hop 3 is everything Robin still considers
+          relevant context.
         </div>
       </section>
 
-      <section className={styles.sidebarSection}>
-        <h3 className={styles.sectionHeading}>Types</h3>
-        {TYPE_ROWS.map((row) => {
-          const on = state.activeTypes.has(row.type);
-          return (
-            <button
-              key={row.type}
-              type="button"
-              className={`${styles.typeRow} ${on ? "" : styles.isOff}`.trim()}
-              aria-pressed={on}
-              onClick={() =>
-                dispatch({ type: "TOGGLE_TYPE", nodeType: row.type })
-              }
-            >
-              <span
-                className={styles.swatch}
-                style={{ background: row.color }}
-                aria-hidden="true"
-              />
-              <span className={styles.typeRowName}>{row.label}</span>
-              <span className={styles.typeRowCount}>
-                {typeCounts[row.type]}
-              </span>
-            </button>
-          );
-        })}
+      {/* Type filters */}
+      <section className={styles.sideSection}>
+        <div className={styles.sideH}>
+          <span>Node types</span>
+          <span className={styles.count}>{`${totalShown} · ${totalAll}`}</span>
+        </div>
+        <div className={styles.types}>
+          {TYPE_ROWS.map((row) => {
+            const on = state.activeTypes.has(row.type);
+            const swatchClass = [
+              styles.swatch,
+              row.swatchClass === "frag" ? styles.frag : "",
+              row.swatchClass === "person" ? styles.person : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return (
+              <button
+                key={row.type}
+                type="button"
+                className={`${styles.typeRow} ${on ? "" : styles.isOff}`.trim()}
+                style={{ color: row.color }}
+                aria-pressed={on}
+                onClick={() =>
+                  dispatch({ type: "TOGGLE_TYPE", nodeType: row.type })
+                }
+              >
+                <span className={swatchClass} aria-hidden="true" />
+                <span className={styles.name}>{row.label}</span>
+                <span className={styles.num}>{typeCounts[row.type]}</span>
+              </button>
+            );
+          })}
+        </div>
       </section>
 
-      <section className={styles.sidebarSection}>
-        <h3 className={styles.sectionHeading}>Wiki subtypes</h3>
-        <div className={styles.subtypeGrid}>
+      {/* Wiki subtypes */}
+      <section className={styles.sideSection}>
+        <div className={styles.sideH}>
+          <span>Wiki subtypes</span>
+          <span className={styles.count}>10</span>
+        </div>
+        <div className={styles.subGrid}>
           {(Object.entries(SUBTYPE_COLOR) as Array<[WikiSubtype, string]>).map(
             ([subtype, color]) => (
-              <div key={subtype} className={styles.subtypeRow}>
+              <div key={subtype} className={styles.subRow}>
                 <span
-                  className={styles.subtypeDot}
+                  className={styles.dot}
                   style={{ background: color }}
                   aria-hidden="true"
                 />
-                <span>{capitalise(subtype)}</span>
+                <span>{SUBTYPE_LABEL[subtype] ?? capitalise(subtype)}</span>
               </div>
             ),
           )}
         </div>
       </section>
 
-      <section className={styles.sidebarSection}>
-        <h3 className={styles.sectionHeading}>Edges</h3>
-        <div className={styles.edgeLegendRow}>
-          <svg width="16" height="6" aria-hidden="true">
-            <line
-              x1="0"
-              y1="3"
-              x2="16"
-              y2="3"
-              stroke="#a2a9b1"
-              strokeWidth="1"
-            />
-          </svg>
-          <span>Filing</span>
+      {/* Edge legend */}
+      <section className={styles.sideSection}>
+        <div className={styles.sideH}>
+          <span>Edges</span>
+          <span className={styles.count}>3</span>
         </div>
-        <div className={styles.edgeLegendRow}>
-          <svg width="16" height="6" aria-hidden="true">
-            <line
-              x1="0"
-              y1="3"
-              x2="16"
-              y2="3"
-              stroke="#3366cc"
-              strokeWidth="1"
+        <div className={styles.types}>
+          <div
+            className={styles.typeRow}
+            style={{ color: "var(--ink-3)", cursor: "default" }}
+          >
+            <span
+              style={{
+                display: "inline-block",
+                width: 18,
+                height: 0,
+                borderTop: "1px solid currentColor",
+              }}
+              aria-hidden="true"
             />
-          </svg>
-          <span>Wiki link</span>
-        </div>
-        <div className={styles.edgeLegendRow}>
-          <svg width="16" height="6" aria-hidden="true">
-            <line
-              x1="0"
-              y1="3"
-              x2="16"
-              y2="3"
-              stroke="#8a7a4f"
-              strokeWidth="1"
-              strokeDasharray="3 3"
+            <span className={styles.name}>Filing</span>
+            <span className={styles.num}>structural</span>
+          </div>
+          <div
+            className={styles.typeRow}
+            style={{ color: "var(--blue)", cursor: "default" }}
+          >
+            <span
+              style={{
+                display: "inline-block",
+                width: 18,
+                height: 0,
+                borderTop: "1.5px solid currentColor",
+              }}
+              aria-hidden="true"
             />
-          </svg>
-          <span>Mention</span>
+            <span className={styles.name}>Wikilink</span>
+            <span className={styles.num}>authored</span>
+          </div>
+          <div
+            className={styles.typeRow}
+            style={{ color: PERSON_STROKE_FALLBACK, cursor: "default" }}
+          >
+            <span
+              style={{
+                display: "inline-block",
+                width: 18,
+                height: 0,
+                borderTop: "1.5px dashed currentColor",
+              }}
+              aria-hidden="true"
+            />
+            <span className={styles.name}>Mention</span>
+            <span className={styles.num}>inferred</span>
+          </div>
         </div>
+        {/* FRAGMENT_FALLBACK reserved for future fragment-edge swatch use */}
+        <div hidden aria-hidden style={{ color: FRAGMENT_FALLBACK }} />
       </section>
 
-      <section className={styles.sidebarSection}>
-        <h3 className={styles.sectionHeading}>Hop styling</h3>
-        <div className={styles.hopLegend}>
-          {HOP_OPACITIES.map((h) => (
-            <div key={h.label} className={styles.hopLegendItem}>
-              <span
-                className={styles.hopDot}
-                style={{ opacity: h.opacity }}
-                aria-hidden="true"
-              />
-              <span>{h.label}</span>
-            </div>
-          ))}
+      {/* Hop styling legend */}
+      <section className={styles.sideSectionLast}>
+        <div className={styles.sideH}>
+          <span>Hop styling</span>
+        </div>
+        <div className={styles.hops} style={{ marginBottom: 6 }}>
+          <span className={styles.h} style={{ color: "var(--blue)" }}>
+            <span className={styles.b} style={{ background: "var(--blue)" }} />
+          </span>
+          <span>Focus</span>
+        </div>
+        <div className={styles.hops} style={{ marginBottom: 6 }}>
+          <span className={styles.h}>
+            <span className={styles.b} style={{ borderWidth: 2 }} />
+          </span>
+          <span>1-hop · direct</span>
+        </div>
+        <div className={styles.hops} style={{ marginBottom: 6, opacity: 0.7 }}>
+          <span className={styles.h}>
+            <span className={styles.b} />
+          </span>
+          <span>2-hop · related</span>
+        </div>
+        <div className={styles.hops} style={{ opacity: 0.45 }}>
+          <span className={styles.h}>
+            <span className={styles.b} />
+          </span>
+          <span>3-hop · adjacent</span>
         </div>
       </section>
     </aside>
