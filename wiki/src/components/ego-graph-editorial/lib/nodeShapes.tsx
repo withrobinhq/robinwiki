@@ -22,11 +22,15 @@ const SIZE_DEFAULT: Record<NodeType, readonly number[]> = {
   person: [22, 10, 9, 8],
 };
 
+// We intentionally ignore `n.size` from the upstream graph payload.
+// The canvas view uses degree-driven sizes that range from 1 to ~36; in
+// the editorial composition that produces a chaotic mix of pinprick
+// fragments and oversized hub wikis. The editorial rhythm relies on
+// (type, hop) tiers and we honor that exclusively.
 function baseR(n: LaidOutNode): number {
-  if (typeof n.size === "number" && n.size > 0) return n.size;
   if (n.hop === 0) return 23;
   const row = SIZE_DEFAULT[n.type];
-  return row[n.hop] ?? 10;
+  return row[Math.min(n.hop, 3)] ?? 10;
 }
 
 export function renderFocus(n: LaidOutNode, color: string): JSX.Element {

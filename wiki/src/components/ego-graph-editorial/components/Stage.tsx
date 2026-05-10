@@ -222,7 +222,12 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
           ? styles.person
           : "";
 
-    const className = [styles.node, typeClass, stateClass]
+    // Suppress labels for hop 2/3 nodes. The CSS hides the text element
+    // unless the node is the focus or actively hovered, keeping the
+    // outer rings as a visual halo without text spaghetti.
+    const hopClass = n.hop >= 2 ? styles.hopFar : "";
+
+    const className = [styles.node, typeClass, hopClass, stateClass]
       .filter(Boolean)
       .join(" ");
 

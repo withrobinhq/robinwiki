@@ -674,6 +674,12 @@
 .node.isDim { opacity: 0.18; }
 .node.isDim text { display: none; }
 
+/* Hide labels on hop 2 and 3 nodes by default. They reappear on hover
+   (.isHot) or when the node is the focus. Keeps the outer rings as a
+   visual halo without flooding the stage with overlapping text. */
+.hopFar { /* placeholder so CSS modules export the class */ }
+.node.hopFar:not(.isFocus):not(.isHot) text { display: none; }
+
 .node circle.halo {
   fill: none;
   stroke: currentColor;
