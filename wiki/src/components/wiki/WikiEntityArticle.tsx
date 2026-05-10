@@ -35,6 +35,7 @@ import { sanitizeWikiHtml } from "@/lib/sanitizeWikiHtml";
 import {
   type LucideIcon,
 } from "lucide-react";
+import { EditorialStateDot, type EditorialStateDotProps } from "@/components/wiki/EditorialStateDot";
 
 function EyeOpenIcon() {
   return (
@@ -300,6 +301,8 @@ export type WikiEntityArticleProps = {
   onSave?: (data: { title: string; chipLabel: string; content: string }) => void;
   /** Custom settings click handler — when provided, the header gear calls this instead of opening AddWikiModal. */
   onSettingsClick?: () => void;
+  /** Editorial state dot rendered inline with the title. */
+  editorialStateDot?: EditorialStateDotProps;
   children: ReactNode;
 };
 
@@ -351,6 +354,7 @@ export function WikiEntityArticle({
   collections,
   onSave,
   onSettingsClick: onSettingsClickProp,
+  editorialStateDot,
   children,
 }: WikiEntityArticleProps) {
   const [infoVisible, setInfoVisible] = useState(true);
@@ -583,9 +587,15 @@ export function WikiEntityArticle({
                       whiteSpace: titleEllipsis ? "nowrap" : undefined,
                       minWidth: 0,
                       flex: 1,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
                     }}
                   >
                     {displayTitle}
+                    {editorialStateDot && (
+                      <EditorialStateDot {...editorialStateDot} />
+                    )}
                   </h1>
                 )}
                 {/* Private badge — visible whenever the wiki is unpublished.
