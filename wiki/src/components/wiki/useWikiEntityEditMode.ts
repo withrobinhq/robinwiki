@@ -96,6 +96,12 @@ export function useWikiEntityEditMode({
     (content: string, title: string, chipLabel: string) => {
       if (content) lastReadHtmlRef.current = content;
       if (seededRef.current) return;
+      // Skip seeding a synthetic baseline when there's no real content to
+      // diff against — otherwise the first user save would diff against
+      // "" and render the entire article as an additive blob in history.
+      // handleSave will create the first revision as "Initial revision"
+      // (via diffSummary(null, …)) and flip seededRef itself.
+      if (htmlToPlainText(content).trim() === "") return;
       seededRef.current = true;
       setRevisions([
         {
@@ -222,6 +228,9 @@ export function useWikiEntityEditMode({
       };
       return [revision, ...prev];
     });
+    // Once a real revision exists, lock out further seeding — otherwise a
+    // later enterEditMode/openHistory would overwrite the saved history.
+    seededRef.current = true;
     exitEditMode();
   }, [draftChipLabel, draftContent, draftTitle, exitEditMode]);
 
