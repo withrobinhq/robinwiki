@@ -3,14 +3,12 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Check, LinkIcon, RefreshCw, Trash2, X } from "lucide-react";
+import { Check, LinkIcon, RefreshCw, Trash2 } from "lucide-react";
 import { T } from "@/lib/typography";
 import { Spinner } from "@/components/ui/spinner";
 import { useWiki } from "@/hooks/useWiki";
 import { useRegenerateWiki } from "@/hooks/useRegenerateWiki";
 import { useDeleteWiki } from "@/hooks/useDeleteWiki";
-import { useAcceptFragment } from "@/hooks/useAcceptFragment";
-import { useRejectFragment } from "@/hooks/useRejectFragment";
 import { useQueryClient } from "@tanstack/react-query";
 import DestructiveConfirmDialog from "@/components/prompts/DestructiveConfirmDialog";
 import SectionEditor from "@/components/editor/SectionEditor";
@@ -25,6 +23,7 @@ import { WikiChip } from "@/components/wiki/WikiChip";
 import { WikiCitations } from "@/components/wiki/WikiCitations";
 import { WikiCitationsSection } from "@/components/wiki/WikiCitationsSection";
 import { WikiEditLink } from "@/components/wiki/WikiFurniture";
+import { MemberFragmentsManagementTable } from "@/components/wiki/MemberFragmentsManagementTable";
 import { SectionedMarkdownBody } from "./SectionedMarkdownBody";
 import {
   parseSectionsFromMarkdown,
@@ -127,8 +126,6 @@ export default function WikiDetailPage() {
   const wiki = _wiki as typeof _wiki & { bouncerMode?: string; description?: string; fragments?: Array<{ id: string; slug: string; title: string; snippet: string; edgeStatus?: string }> } | undefined;
   const regenerate = useRegenerateWiki();
   const deleteWiki = useDeleteWiki();
-  const acceptFragment = useAcceptFragment();
-  const rejectFragment = useRejectFragment();
   const queryClient = useQueryClient();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -539,76 +536,13 @@ export default function WikiDetailPage() {
         }}
       />
 
-      {wiki.fragments && wiki.fragments.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <WikiSectionH2 title="Member Fragments" count={wiki.fragments.length} />
-          <ul
-            style={{
-              ...bodyStyle,
-              listStyle: "decimal",
-              paddingLeft: 20,
-              margin: "12px 0 0 0",
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-            }}
-          >
-            {wiki.fragments.map((frag) => (
-              <li key={frag.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Link
-                  href={ROUTES.fragment(frag.id)}
-                  style={{
-                    color: "var(--wiki-fragment-link)",
-                    textDecoration: "underline",
-                    textDecorationSkipInk: "none",
-                  }}
-                >
-                  {frag.title}
-                </Link>
-                {wiki.bouncerMode === "review" && (frag as typeof frag & { edgeStatus?: string }).edgeStatus === "pending" && (
-                  <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-                    <button
-                      type="button"
-                      title="Accept fragment"
-                      onClick={() => acceptFragment.mutate({ id: frag.id, wikiId: wiki.id })}
-                      disabled={acceptFragment.isPending}
-                      style={{
-                        background: "none",
-                        border: "1px solid var(--wiki-card-border)",
-                        cursor: "pointer",
-                        padding: "2px 4px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        color: "green",
-                      }}
-                    >
-                      <Check size={12} strokeWidth={2} />
-                    </button>
-                    <button
-                      type="button"
-                      title="Reject fragment"
-                      onClick={() => rejectFragment.mutate({ id: frag.id, wikiId: wiki.id })}
-                      disabled={rejectFragment.isPending}
-                      style={{
-                        background: "none",
-                        border: "1px solid var(--wiki-card-border)",
-                        cursor: "pointer",
-                        padding: "2px 4px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        color: "red",
-                      }}
-                    >
-                      <X size={12} strokeWidth={2} />
-                    </button>
-                    <span style={{ fontSize: 10, color: "var(--wiki-count)", fontStyle: "italic" }}>pending</span>
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <WikiSectionH2 title="Member Fragments" count={wiki.fragments?.length ?? 0} />
+        <MemberFragmentsManagementTable
+          wikiId={wiki.id}
+          fragments={wiki.fragments ?? []}
+        />
+      </div>
 
       {wiki.people && wiki.people.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
