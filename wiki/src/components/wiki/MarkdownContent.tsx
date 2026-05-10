@@ -6,6 +6,7 @@ import type { Components } from "react-markdown";
 import type { CSSProperties, ReactNode } from "react";
 import { T } from "@/lib/typography";
 import { WikiChip } from "@/components/wiki/WikiChip";
+import { fragmentCitationHref } from "@/components/wiki/WikiCitations";
 import remarkWikiTokens, { WIKI_CHIP_DATA_ATTR } from "@/lib/remarkWikiTokens";
 import { refToHref, type RefsMap } from "@/lib/htmlTokenSubstitute";
 
@@ -32,7 +33,18 @@ function resolveChipProps(
   return { chipKey: key, raw };
 }
 
-function buildComponents(refs: RefsMap | undefined): Components {
+/**
+ * Map from fragment ref id to its document-wide citation number.
+ * Built by SectionedMarkdownBody from the section citations array
+ * and threaded into MarkdownContent so inline [[fragment:slug]]
+ * tokens render as numbered superscripts instead of full-title chips.
+ */
+export type FragmentCitationMap = Map<string, number>;
+
+function buildComponents(
+  refs: RefsMap | undefined,
+  fragmentCitationMap?: FragmentCitationMap,
+): Components {
   const renderSpan: NonNullable<Components["span"]> = (rawProps) => {
     // react-markdown threads a `node` extra prop when `passNode` is on;
     // strip it so it never leaks onto the DOM where React would warn.
@@ -50,6 +62,20 @@ function buildComponents(refs: RefsMap | undefined): Components {
     if (!ref) {
       // Q1: unresolved tokens render as raw `[[kind:slug]]` plain text.
       return <>{resolved.raw}</>;
+    }
+
+    // Fragment refs render as numbered superscript citations (#351).
+    if (ref.kind === "fragment") {
+      const citationNum = fragmentCitationMap?.get(ref.id);
+      const label = citationNum != null
+        ? `[${citationNum}]`
+        : `[${ref.slug?.charAt(0) ?? "?"}]`;
+      const href = fragmentCitationHref(ref.id);
+      return (
+        <sup data-slot="wiki-citation-inline" className="cite">
+          <a href={href} title={ref.label}>{label}</a>
+        </sup>
+      );
     }
 
     // Q2: single chip style — pass label + href only, no kind variant.
@@ -242,10 +268,17 @@ interface MarkdownContentProps {
    * form — we never silently drop them).
    */
   refs?: RefsMap;
+  /**
+   * When provided, [[fragment:slug]] tokens are rendered as numbered
+   * superscript citations (<sup>[N]</sup>) instead of full-title chips.
+   * The map keys are fragment ids, values are 1-based citation numbers.
+   * Built by SectionedMarkdownBody from the per-section citation data.
+   */
+  fragmentCitationMap?: FragmentCitationMap;
 }
 
-export function MarkdownContent({ content, className, style, refs }: MarkdownContentProps) {
-  const components = buildComponents(refs);
+export function MarkdownContent({ content, className, style, refs, fragmentCitationMap }: MarkdownContentProps) {
+  const components = buildComponents(refs, fragmentCitationMap);
   return (
     <div className={className} style={style}>
       <ReactMarkdown

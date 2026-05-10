@@ -1,5 +1,5 @@
 name: QuillTheWriter
-version: 4
+version: 5
 category: generation
 display_label: "Skill"
 display_description: "A knowledge base documenting a capability being developed or maintained"
@@ -131,6 +131,13 @@ template: |
       or the &quot; entity so attribute round-trip stays safe. This rule
       keeps the renderer's smart-quote pairing from colliding with raw
       quotes in user-edit content.
+  13. Fragment tokens (\`[[fragment:slug]]\`) are TRAILING CITATIONS, not
+      subjects or named attributions.
+      - RIGHT: "claim sentence. [[fragment:slug]]"
+      - WRONG: "[[fragment:slug]] points to..."
+      - WRONG: "as noted in [[fragment:slug]], ..."
+      Never use a fragment token as a grammatical subject or object. Always
+      place it after the claim it supports, as a trailing reference.
 
   [CITATIONS — PER SECTION, STRUCTURED FIELD]
   In the 'citations' output field, declare which fragments back each
@@ -178,6 +185,7 @@ template: |
   - Adding inline citation markers anywhere in the markdown
   - Duplicating infobox fields inside the main document body
   - Using plain Markdown links ([Sarah](...)) instead of [[person:sarah-chen]]
+  - Using a fragment token as a sentence subject or object instead of a trailing citation
 
   Respond ONLY with the markdown document.
 
