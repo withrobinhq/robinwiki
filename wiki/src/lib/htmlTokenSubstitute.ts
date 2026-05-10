@@ -37,6 +37,7 @@
 
 import { useEffect, type RefObject } from 'react'
 import type { WikiRef } from '@/lib/sidecarTypes'
+import type { FragmentCitationMap } from '@/components/wiki/MarkdownContent'
 import { ROUTES } from '@/lib/routes'
 /** Matches `[[kind:slug]]` or `[[slug]]` wiki-link tokens. Kept in sync with @robin/shared/wiki-links. */
 const WIKI_LINK_RE = /\[\[(?:([a-z]+):)?([a-z0-9-]+)\]\]/g
@@ -66,6 +67,7 @@ function tokenReplacementFragment(
   value: string,
   refs: RefsMap,
   doc: Document,
+  fragmentCitationMap?: FragmentCitationMap,
 ): DocumentFragment | null {
   const re = new RegExp(WIKI_LINK_RE.source, WIKI_LINK_RE.flags)
   const frag = doc.createDocumentFragment()
@@ -86,12 +88,29 @@ function tokenReplacementFragment(
     const ref = refs[chipKey]
 
     if (ref) {
-      const anchor = doc.createElement('a')
-      anchor.className = 'wchip'
-      anchor.setAttribute('data-slot', 'wiki-chip')
-      anchor.setAttribute('href', refToHref(ref))
-      anchor.textContent = ref.label
-      frag.appendChild(anchor)
+      // #351: fragment refs render as numbered superscript citations
+      if (ref.kind === 'fragment' && fragmentCitationMap) {
+        const citationNum = fragmentCitationMap.get(ref.id)
+        const label = citationNum != null
+          ? `[${citationNum}]`
+          : `[${ref.slug?.charAt(0) ?? '?'}]`
+        const sup = doc.createElement('sup')
+        sup.setAttribute('data-slot', 'wiki-citation-inline')
+        sup.className = 'cite'
+        const anchor = doc.createElement('a')
+        anchor.setAttribute('href', `#fragment-${ref.id}`)
+        anchor.setAttribute('title', ref.label)
+        anchor.textContent = label
+        sup.appendChild(anchor)
+        frag.appendChild(sup)
+      } else {
+        const anchor = doc.createElement('a')
+        anchor.className = 'wchip'
+        anchor.setAttribute('data-slot', 'wiki-chip')
+        anchor.setAttribute('href', refToHref(ref))
+        anchor.textContent = ref.label
+        frag.appendChild(anchor)
+      }
     } else {
       // Q1: unresolved tokens render as raw literal text, not dropped.
       frag.appendChild(doc.createTextNode(rawToken))
@@ -117,6 +136,7 @@ function tokenReplacementFragment(
 export function substituteTokensInHtml(
   container: HTMLElement,
   refs: RefsMap,
+  fragmentCitationMap?: FragmentCitationMap,
 ): void {
   if (!container || !refs) return
   const doc = container.ownerDocument
@@ -146,7 +166,7 @@ export function substituteTokensInHtml(
 
   for (const textNode of pending) {
     const value = textNode.nodeValue ?? ''
-    const replacement = tokenReplacementFragment(value, refs, doc)
+    const replacement = tokenReplacementFragment(value, refs, doc, fragmentCitationMap)
     if (replacement) {
       textNode.replaceWith(replacement)
     }
@@ -167,10 +187,11 @@ export function useWikiTokenSubstitution(
   containerRef: RefObject<HTMLElement | null>,
   html: string | null | undefined,
   refs: RefsMap | null | undefined,
+  fragmentCitationMap?: FragmentCitationMap,
 ): void {
   useEffect(() => {
     const container = containerRef.current
     if (!container || !refs) return
-    substituteTokensInHtml(container, refs)
-  }, [containerRef, html, refs])
+    substituteTokensInHtml(container, refs, fragmentCitationMap)
+  }, [containerRef, html, refs, fragmentCitationMap])
 }

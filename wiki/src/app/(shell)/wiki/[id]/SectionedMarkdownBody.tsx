@@ -1,6 +1,9 @@
 import type { CSSProperties, ReactNode } from "react";
 import { T } from "@/lib/typography";
-import { MarkdownContent } from "@/components/wiki/MarkdownContent";
+import {
+  MarkdownContent,
+  type FragmentCitationMap,
+} from "@/components/wiki/MarkdownContent";
 import { WikiCitations } from "@/components/wiki/WikiCitations";
 import { WikiEditLink } from "@/components/wiki/WikiFurniture";
 import {
@@ -20,6 +23,30 @@ function buildCitationsByAnchor(
   if (!sections) return map;
   for (const s of sections) {
     map.set(s.anchor, s);
+  }
+  return map;
+}
+
+/**
+ * Build a document-wide map from fragment id to citation number.
+ * Walks sections in render order and assigns sequential 1-based
+ * numbers to each unique fragment id. Duplicate references to the
+ * same fragment keep the same number. (#351)
+ */
+function buildFragmentCitationMap(
+  parsed: SectionInfo[],
+  citationsByAnchor: Map<string, WikiSection>,
+): FragmentCitationMap {
+  const map: FragmentCitationMap = new Map();
+  let n = 1;
+  for (const section of parsed) {
+    if (section.level === 1) continue;
+    const matched = citationsByAnchor.get(section.anchor);
+    for (const c of matched?.citations ?? []) {
+      if (!map.has(c.fragmentId)) {
+        map.set(c.fragmentId, n++);
+      }
+    }
   }
   return map;
 }
@@ -152,6 +179,11 @@ export function SectionedMarkdownBody({
   const lines = content.split("\n");
   const citationsByAnchor = buildCitationsByAnchor(sections);
 
+  // #351 -- build document-wide citation numbering map before rendering
+  // so every <MarkdownContent> block can resolve fragment tokens to
+  // their correct [N] superscript.
+  const fragmentCitationMap = buildFragmentCitationMap(parsed, citationsByAnchor);
+
   // The preamble covers every line up to the first renderable (non-H1)
   // section. For docs that open with an H1 followed by intro prose before
   // the first H2 (the Transformer fixture's shape), this captures the
@@ -177,6 +209,7 @@ export function SectionedMarkdownBody({
         content={preamble}
         refs={refs}
         style={style}
+        fragmentCitationMap={fragmentCitationMap}
       />,
     );
   }
@@ -213,7 +246,7 @@ export function SectionedMarkdownBody({
             showEditLink={true}
           />
           {bodyOnly.trim().length > 0 && (
-            <MarkdownContent content={bodyOnly} refs={refs} style={style} />
+            <MarkdownContent content={bodyOnly} refs={refs} style={style} fragmentCitationMap={fragmentCitationMap} />
           )}
           {citations.length > 0 && (
             <WikiCitations citations={citations} startIndex={sectionStart} />
@@ -227,7 +260,7 @@ export function SectionedMarkdownBody({
     const body = lines.slice(section.startLine, bodyEnd + 1).join("\n");
     blocks.push(
       <div key={section.anchor} id={section.anchor}>
-        <MarkdownContent content={body} refs={refs} style={style} />
+        <MarkdownContent content={body} refs={refs} style={style} fragmentCitationMap={fragmentCitationMap} />
         {citations.length > 0 && (
           <WikiCitations citations={citations} startIndex={sectionStart} />
         )}

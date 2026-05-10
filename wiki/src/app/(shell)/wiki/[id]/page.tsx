@@ -32,6 +32,7 @@ import {
   type SectionInfo,
 } from "@/lib/sectionEdit";
 import { useWikiTokenSubstitution } from "@/lib/htmlTokenSubstitute";
+import type { FragmentCitationMap } from "@/components/wiki/MarkdownContent";
 import { sanitizeWikiHtml } from "@/lib/sanitizeWikiHtml";
 import type {
   WikiInfobox as WikiInfoboxData,
@@ -101,13 +102,15 @@ function HtmlWikiBody({
   html,
   refs,
   style,
+  fragmentCitationMap,
 }: {
   html: string;
   refs: Record<string, WikiRef>;
   style: CSSProperties;
+  fragmentCitationMap?: FragmentCitationMap;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  useWikiTokenSubstitution(containerRef, html, refs);
+  useWikiTokenSubstitution(containerRef, html, refs, fragmentCitationMap);
   return (
     <div
       ref={containerRef}
@@ -261,6 +264,21 @@ export default function WikiDetailPage() {
   const isHtmlBody =
     typeof wiki.wikiContent === "string" &&
     wiki.wikiContent.trim().startsWith("<");
+
+  // #351 -- build a document-wide citation number map for the HTML body
+  // path. The markdown path builds its own inside SectionedMarkdownBody.
+  const htmlFragmentCitationMap: FragmentCitationMap = (() => {
+    const map: FragmentCitationMap = new Map();
+    let n = 1;
+    for (const section of sidecarSections) {
+      for (const c of section.citations ?? []) {
+        if (!map.has(c.fragmentId)) {
+          map.set(c.fragmentId, n++);
+        }
+      }
+    }
+    return map;
+  })();
 
   // Resolve the currently-editing section's heading + body-only prefill.
   // Parses the live wiki content so a mid-session regeneration is
@@ -454,6 +472,7 @@ export default function WikiDetailPage() {
                 html={wiki.wikiContent}
                 refs={refs}
                 style={bodyStyle}
+                fragmentCitationMap={htmlFragmentCitationMap}
               />
             </div>
             {sidecarSections.length > 0 && (
