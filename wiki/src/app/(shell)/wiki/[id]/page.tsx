@@ -24,6 +24,7 @@ import { WikiCitations } from "@/components/wiki/WikiCitations";
 import { WikiCitationsSection } from "@/components/wiki/WikiCitationsSection";
 import { WikiEditLink } from "@/components/wiki/WikiFurniture";
 import { MemberFragmentsManagementTable } from "@/components/wiki/MemberFragmentsManagementTable";
+import { BouncerModeToggle } from "@/components/wiki/BouncerModeToggle";
 import { SectionedMarkdownBody } from "./SectionedMarkdownBody";
 import {
   parseSectionsFromMarkdown,
@@ -329,7 +330,12 @@ export default function WikiDetailPage() {
       onSave={handleSaveToApi}
       customBottomSections={
         <>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <BouncerModeToggle
+              wikiId={wiki.id}
+              bouncerMode={(wiki.bouncerMode as 'auto' | 'review') ?? 'auto'}
+            />
+            <span style={{ width: 1, height: 16, background: "var(--wiki-card-border)" }} />
             <button
               type="button"
               onClick={() => regenerate.mutate(wiki.id)}
