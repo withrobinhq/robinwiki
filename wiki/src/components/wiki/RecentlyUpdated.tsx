@@ -4,6 +4,8 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { T } from "@/lib/typography";
 import { useWikis } from "@/hooks/useWikis";
+import { EditorialStateDot } from "@/components/wiki/EditorialStateDot";
+import type { EditorialStateSchema } from "@/lib/generated/types.gen";
 
 function timeAgo(dateStr: string): string {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -32,12 +34,18 @@ const BulletDot = () => (
   </svg>
 );
 
+interface RecentItem {
+  title: string;
+  updatedAgo: string;
+  href: string;
+  editorialState?: EditorialStateSchema;
+}
+
 export default function RecentlyUpdated() {
   const wikisQuery = useWikis();
 
-  const items = useMemo(() => {
+  const items = useMemo<RecentItem[]>(() => {
     const threads = wikisQuery.data?.wikis ?? [];
-    // Sort by updatedAt descending and take the first 5
     return [...threads]
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 5)
@@ -45,6 +53,7 @@ export default function RecentlyUpdated() {
         title: t.name,
         updatedAgo: timeAgo(t.updatedAt),
         href: `/wiki/${t.lookupKey}`,
+        editorialState: t.editorialState,
       }));
   }, [wikisQuery.data]);
 
@@ -103,7 +112,11 @@ export default function RecentlyUpdated() {
                   flexShrink: 0,
                 }}
               >
-                <BulletDot />
+                {item.editorialState ? (
+                  <EditorialStateDot editorialState={item.editorialState} />
+                ) : (
+                  <BulletDot />
+                )}
               </div>
               <div
                 style={{

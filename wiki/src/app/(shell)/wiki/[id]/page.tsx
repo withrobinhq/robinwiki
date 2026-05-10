@@ -34,6 +34,8 @@ import {
 import { useWikiTokenSubstitution } from "@/lib/htmlTokenSubstitute";
 import type { FragmentCitationMap } from "@/components/wiki/MarkdownContent";
 import { sanitizeWikiHtml } from "@/lib/sanitizeWikiHtml";
+import { EditorialStateDot } from "@/components/wiki/EditorialStateDot";
+import WikiRegenTimeline from "@/components/wiki/WikiRegenTimeline";
 import type {
   WikiInfobox as WikiInfoboxData,
   WikiRef,
@@ -345,6 +347,12 @@ export default function WikiDetailPage() {
           : undefined
       }
       wikiId={wiki.id}
+      editorialStateDot={{
+        editorialState: wiki.editorialState,
+        state: wiki.state,
+        dirtySince: wiki.dirtySince,
+        lastRebuiltAt: wiki.lastRebuiltAt,
+      }}
       onSave={handleSaveToApi}
       customBottomSections={
         <>
@@ -600,6 +608,11 @@ export default function WikiDetailPage() {
           </ul>
         </div>
       )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <WikiSectionH2 title="Timeline" />
+        <WikiRegenTimeline wikiId={wiki.id} />
+      </div>
     </WikiEntityArticle>
   );
 }

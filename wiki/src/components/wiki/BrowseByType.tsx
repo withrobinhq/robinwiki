@@ -5,6 +5,8 @@ import Link from "next/link";
 import { FONT, T } from "@/lib/typography";
 import { useWikis } from "@/hooks/useWikis";
 import { useWikiTypesList } from "@/hooks/useWikiTypesList";
+import { EditorialStateDot } from "@/components/wiki/EditorialStateDot";
+import type { EditorialStateSchema } from "@/lib/generated/types.gen";
 
 function timeAgo(dateStr: string): string {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -62,6 +64,7 @@ interface WikiItem {
   title: string;
   date: string;
   href: string;
+  editorialState?: EditorialStateSchema;
 }
 
 interface WikiCategory {
@@ -127,7 +130,11 @@ function CategorySection({ category }: { category: WikiCategory }) {
                 flexShrink: 0,
               }}
             >
-              <BulletDot />
+              {item.editorialState ? (
+                <EditorialStateDot editorialState={item.editorialState} />
+              ) : (
+                <BulletDot />
+              )}
             </div>
             <div
               style={{
@@ -200,6 +207,7 @@ export default function BrowseByType() {
         title: t.name,
         date: timeAgo(t.updatedAt),
         href: `/wiki/${t.lookupKey}`,
+        editorialState: t.editorialState,
       });
     }
 
