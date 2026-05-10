@@ -80,8 +80,8 @@ export function EgoGraphPageClient({ id }: EgoGraphPageClientProps) {
     );
 
     // Materialize the ego nodes in the shape EgoGraphEditorial expects.
-    // The /graph payload doesn't carry a subtype; EgoGraphEditorial
-    // handles `subtype === undefined` with sensible color fallbacks.
+    // Wiki nodes carry a subtype that maps directly to SUBTYPE_COLOR;
+    // fragments and people have no subtype yet and fall back to neutral.
     const egoNodes: EgoNode[] = [];
     for (const nodeId of visibleNodeIds) {
       const apiNode = apiNodeById.get(nodeId);
@@ -91,6 +91,7 @@ export function EgoGraphPageClient({ id }: EgoGraphPageClientProps) {
         type: NODE_TYPE_MAP[apiNode.type]!,
         label: apiNode.label,
         size: apiNode.size,
+        subtype: apiNode.subtype ?? undefined,
       });
     }
 
