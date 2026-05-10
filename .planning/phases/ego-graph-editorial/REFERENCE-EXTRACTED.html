@@ -1,0 +1,1016 @@
+<body>
+
+<div class="app">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar__l">
+      <a class="topbar__brand" href="#"><span class="mark">R</span>Robin</a>
+      <div class="topbar__crumb">
+        <span>Wiki</span><span class="sep">/</span>
+        <span>Beliefs</span><span class="sep">/</span>
+        <span class="here">Q4 2026 Strategy</span>
+      </div>
+    </div>
+    <div class="topbar__r">
+      <div class="topbar__seg" id="view-seg">
+        <button data-view="list">List</button>
+        <button data-view="wiki">Wiki</button>
+        <button data-view="ego" class="is-active">Ego graph</button>
+      </div>
+      <button class="topbar__btn"><span>Export</span></button>
+      <button class="topbar__btn"><span>Search</span><span class="kbd">⌘ K</span></button>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+
+    <!-- Focus card -->
+    <div class="side-section">
+      <div class="side-h"><span>Focus node</span><span class="count">§ 01</span></div>
+      <div class="focus-card" id="focus-card">
+        <div class="fc-tag" id="fc-tag">Belief · Wiki</div>
+        <div class="fc-title" id="fc-title">Q4 2026 Strategy</div>
+        <div class="fc-meta" id="fc-meta">
+          <span><b>17</b> fragments</span>
+          <span><b>9</b> wiki links</span>
+          <span><b>4</b> people</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Depth -->
+    <div class="side-section">
+      <div class="side-h"><span>Hop depth</span><span class="count" id="depth-label">2 hops</span></div>
+      <div class="depth" id="depth">
+        <button data-depth="1">1 hop</button>
+        <button data-depth="2" class="is-active">2 hops</button>
+        <button data-depth="3">3 hops</button>
+      </div>
+      <div class="depth-help">
+        How far Robin will trace knowledge from the focus.
+        Hop 1 is direct neighbours; hop 3 is everything Robin still considers relevant context.
+      </div>
+    </div>
+
+    <!-- Type filters -->
+    <div class="side-section">
+      <div class="side-h"><span>Node types</span><span class="count" id="total-count">38 · 40</span></div>
+      <div class="types" id="type-filters">
+        <div class="type-row" data-type="wiki" style="color:var(--blue)">
+          <span class="swatch"></span>
+          <span class="name">Wiki</span>
+          <span class="num" data-count="wiki">19</span>
+        </div>
+        <div class="type-row" data-type="fragment" style="color:#7a8499">
+          <span class="swatch frag"></span>
+          <span class="name">Fragment</span>
+          <span class="num" data-count="fragment">14</span>
+        </div>
+        <div class="type-row" data-type="person" style="color:#8a6d3a">
+          <span class="swatch person"></span>
+          <span class="name">Person</span>
+          <span class="num" data-count="person">5</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Subtype legend -->
+    <div class="side-section">
+      <div class="side-h"><span>Wiki subtypes</span><span class="count">10</span></div>
+      <div class="sub-grid">
+        <div class="sub-row"><span class="dot" style="background:#3366cc"></span>Belief</div>
+        <div class="sub-row"><span class="dot" style="background:#c08a3e"></span>Decision</div>
+        <div class="sub-row"><span class="dot" style="background:#2f7a4f"></span>Goal</div>
+        <div class="sub-row"><span class="dot" style="background:#c2562a"></span>Project</div>
+        <div class="sub-row"><span class="dot" style="background:#1e2939"></span>Principle</div>
+        <div class="sub-row"><span class="dot" style="background:#6b6960"></span>Log</div>
+        <div class="sub-row"><span class="dot" style="background:#8a7a4f"></span>Collection</div>
+        <div class="sub-row"><span class="dot" style="background:#6b4f9e"></span>Skill</div>
+        <div class="sub-row"><span class="dot" style="background:#b54a6a"></span>Agent</div>
+        <div class="sub-row"><span class="dot" style="background:#2b7a7a"></span>Voice</div>
+      </div>
+    </div>
+
+    <!-- Edge legend -->
+    <div class="side-section">
+      <div class="side-h"><span>Edges</span><span class="count">3</span></div>
+      <div class="types">
+        <div class="type-row" style="color:var(--ink-3);cursor:default">
+          <span style="display:inline-block;width:18px;height:0;border-top:1px solid currentColor"></span>
+          <span class="name">Filing</span>
+          <span class="num">structural</span>
+        </div>
+        <div class="type-row" style="color:var(--blue);cursor:default">
+          <span style="display:inline-block;width:18px;height:0;border-top:1.5px solid currentColor"></span>
+          <span class="name">Wikilink</span>
+          <span class="num">authored</span>
+        </div>
+        <div class="type-row" style="color:#8a7a4f;cursor:default">
+          <span style="display:inline-block;width:18px;height:0;border-top:1.5px dashed currentColor"></span>
+          <span class="name">Mention</span>
+          <span class="num">inferred</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-section" style="border-bottom:none">
+      <div class="side-h"><span>Hop styling</span></div>
+      <div class="hops" style="margin-bottom:6px">
+        <span class="h" style="color:var(--blue)"><span class="b" style="background:var(--blue)"></span></span>
+        <span>Focus</span>
+        <span style="color:var(--ink-4);margin-left:auto">·</span>
+      </div>
+      <div class="hops" style="margin-bottom:6px"><span class="h"><span class="b" style="border-width:2px"></span></span><span>1-hop · direct</span></div>
+      <div class="hops" style="margin-bottom:6px"><span class="h" style="opacity:.7"><span class="b"></span></span><span>2-hop · related</span></div>
+      <div class="hops" style="opacity:.45"><span class="h"><span class="b"></span></span><span>3-hop · adjacent</span></div>
+    </div>
+
+  </aside>
+
+  <!-- Stage -->
+  <main class="stage" id="stage">
+    <div class="stage__corner tl">
+      <b>FIG. 01</b> · ego graph<br>
+      <span style="opacity:.7">v = 84 · e = 142</span>
+    </div>
+    <div class="stage__corner tr">
+      <b>VAULT</b> · work<br>
+      <span style="opacity:.7">profile · operating</span>
+    </div>
+    <div class="stage__corner bl">
+      <b>SCALE</b><br>
+      <span style="opacity:.7">≈ 220 px / hop</span>
+    </div>
+    <div class="stage__corner br">
+      <b>UPDATED</b><br>
+      <span style="opacity:.7">2 mins ago · ⏵ live</span>
+    </div>
+
+    <svg id="graph" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="1.5"></feGaussianBlur>
+      </filter>
+    </defs>
+    <g transform="translate(0 0) scale(1)">
+      
+      <circle class="ring-circle" cx="500" cy="350" r="150"></circle>
+      <text class="ring-label" x="650" y="346" transform="translate(8,0)">HOP 1</text>
+    
+      <circle class="ring-circle" cx="500" cy="350" r="285"></circle>
+      <text class="ring-label" x="785" y="346" transform="translate(8,0)">HOP 2</text>
+    
+      <g class="edges"><path class="edge wikilink" d="M 500 350 Q 506.9416646849912 408.0374263540348 518.5111058266433 504.7664702774261" data-edge="w_q4_strategy|w_revenue_target"></path><path class="edge wikilink" d="M 500 350 Q 557.5788634639705 355.73864732937784 653.5436359039214 365.3030595450076" data-edge="w_q4_strategy|w_apac_margin"></path><path class="edge wikilink" d="M 500 350 Q 550.8681954388328 369.9375258230344 635.6485211702206 403.16673552809164" data-edge="w_q4_strategy|w_hiring_freeze"></path><path class="edge wikilink" d="M 500 350 Q 530.5795451825809 396.6864354096172 581.5454538202157 474.4971610923126" data-edge="w_q4_strategy|w_ai_strategy"></path><path class="edge filing" d="M 500 350 Q 449.44702348943645 367.3947509627109 365.19206263849713 396.3860025672291" data-edge="w_q4_strategy|w_board_voice"></path><path class="edge wikilink" d="M 500 350 Q 481.03023709965817 404.3555708942008 449.41396559908844 494.94818905120223" data-edge="w_q4_strategy|w_focus_principle"></path><path class="edge wikilink" d="M 500 350 Q 460.3318682842439 389.25775287776025 394.21831542465037 454.6873410073606" data-edge="w_q4_strategy|w_q4_launch"></path><path class="edge filing" d="M 500 350 Q 443.6241328384315 344.0382595113071 349.6643542358172 334.10202536348555" data-edge="w_q4_strategy|f_revbeats"></path><path class="edge filing" d="M 500 350 Q 489.23222020825835 296.1363928894861 471.2859205553556 206.36371437196294" data-edge="w_q4_strategy|f_cfo_apac"></path><path class="edge filing" d="M 500 350 Q 450.8746738055779 325.42489920893763 368.9991301482078 284.4663978905004" data-edge="w_q4_strategy|f_freeze_q2"></path><path class="edge filing" d="M 500 350 Q 468.2486081768144 300.2271188795388 415.32962180483827 217.27231701210354" data-edge="w_q4_strategy|f_doubledown"></path><path class="edge filing" d="M 500 350 Q 517.6918515324053 298.3078668218966 547.1782707530806 212.15431152505758" data-edge="w_q4_strategy|f_quote_paige"></path><path class="edge mention" d="M 500 350 Q 539.4595350546741 310.9486857876793 605.2254268124643 245.86316210047823" data-edge="w_q4_strategy|p_paige"></path><path class="edge mention" d="M 500 350 Q 548.9784150219435 323.24468843821614 630.6091067251828 278.6525025019098" data-edge="w_q4_strategy|p_marcus"></path><path class="edge wikilink" d="M 518.5111058266433 504.7664702774261 Q 552.8412129180248 507.52495488905873 622.3987952880894 615.3000760933971" data-edge="w_revenue_target|w_pricing"></path><path class="edge wikilink" d="M 518.5111058266433 504.7664702774261 Q 594.4984039795922 470.2578354925162 733.4846381189361 515.9210910359504" data-edge="w_revenue_target|w_runway"></path><path class="edge filing" d="M 518.5111058266433 504.7664702774261 Q 400.40215755307975 418.52393237645185 215.89464764823606 377.9640160597788" data-edge="w_revenue_target|f_fact_cac"></path><path class="edge filing" d="M 653.5436359039214 365.3030595450076 Q 551.5063955290464 458.30905062964433 483.80675217353564 623.5210754673773" data-edge="w_apac_margin|w_apac_log"></path><path class="edge filing" d="M 653.5436359039214 365.3030595450076 Q 522.8748796388702 256.36317667241497 407.456043133066 84.99874491476567" data-edge="w_apac_margin|f_obs_apac"></path><path class="edge mention" d="M 653.5436359039214 365.3030595450076 Q 633.93577296839 282.7652622657489 703.6184253451188 155.4043064969895" data-edge="w_apac_margin|p_juno"></path><path class="edge wikilink" d="M 635.6485211702206 403.16673552809164 Q 571.6612681266347 470.92787807161505 555.4481938341388 619.3076059962152" data-edge="w_hiring_freeze|w_eng_hiring"></path><path class="edge wikilink" d="M 635.6485211702206 403.16673552809164 Q 638.4249347334338 432.15793496151576 733.4846381189361 515.9210910359504" data-edge="w_hiring_freeze|w_runway"></path><path class="edge wikilink" d="M 581.5454538202157 474.4971610923126 Q 636.8649172671854 399.9982329794293 783.4276588922787 358.8314601861656" data-edge="w_ai_strategy|w_agent_pm"></path><path class="edge wikilink" d="M 581.5454538202157 474.4971610923126 Q 632.4161322218437 418.68140000190107 771.5642321047009 408.6532389127569" data-edge="w_ai_strategy|w_agent_brief"></path><path class="edge wikilink" d="M 581.5454538202157 474.4971610923126 Q 611.42643029092 471.1649412154481 715.5916936222377 548.609348815549" data-edge="w_ai_strategy|w_competitor_lib"></path><path class="edge mention" d="M 581.5454538202157 474.4971610923126 Q 551.2336183516059 288.35517010616525 555.0775284507332 61.11662585746137" data-edge="w_ai_strategy|f_quote_hashi"></path><path class="edge filing" d="M 581.5454538202157 474.4971610923126 Q 452.16950095381173 329.7292245721346 290.9065487232823 171.44743776671314" data-edge="w_ai_strategy|f_idea_partners"></path><path class="edge wikilink" d="M 365.19206263849713 396.3860025672291 Q 348.7013380326388 412.2563229654653 231.3448387818728 469.6308586740117" data-edge="w_board_voice|w_writing_voice"></path><path class="edge wikilink" d="M 449.41396559908844 494.94818905120223 Q 420.0147783938168 493.1917209352413 337.29211011775635 586.8964001094412" data-edge="w_focus_principle|w_principle_async"></path><path class="edge wikilink" d="M 394.21831542465037 454.6873410073606 Q 427.42533326159764 494.5165469689035 412.24923993961 630.690117576382" data-edge="w_q4_launch|w_design_review"></path><path class="edge filing" d="M 394.21831542465037 454.6873410073606 Q 459.15092363280075 286.51453962389013 496.85081426281823 76.01809798967975" data-edge="w_q4_launch|f_obs_meeting"></path><path class="edge mention" d="M 394.21831542465037 454.6873410073606 Q 553.4891740898022 336.5097693758433 748.4194821481555 209.33871066155487" data-edge="w_q4_launch|p_anika"></path><path class="edge mention" d="M 394.21831542465037 454.6873410073606 Q 566.340928271824 360.1829208173713 782.690826633547 272.46711450562964" data-edge="w_q4_launch|p_devon"></path><path class="edge mention" d="M 349.6643542358172 334.10202536348555 Q 385.62996630205816 256.1944930313962 345.34888923633804 115.74995605357094" data-edge="f_revbeats|f_obs_churn"></path><path class="edge mention" d="M 471.2859205553556 206.36371437196294 Q 392.3435966881032 258.8208336001915 241.6303372795864 250.49184189521438" data-edge="f_cfo_apac|f_idea_tier"></path><path class="edge mention" d="M 415.32962180483827 217.27231701210354 Q 521.7797170705703 208.34693220737825 642.7496237166827 104.98616887423842" data-edge="f_doubledown|f_quote_lin"></path><path class="edge filing" d="M 605.2254268124643 245.86316210047823 Q 557.1513865870793 259.2565526095759 547.1782707530806 212.15431152505758" data-edge="p_paige|f_quote_paige"></path><path class="edge mention" d="M 630.6091067251828 278.6525025019098 Q 594.877963254977 422.7322169732401 622.3987952880894 615.3000760933971" data-edge="p_marcus|w_pricing"></path><path class="edge mention" d="M 407.456043133066 84.99874491476567 Q 541.6529256793193 177.6511442794082 703.6184253451188 155.4043064969895" data-edge="f_obs_apac|p_juno"></path><path class="edge filing" d="M 703.6184253451188 155.4043064969895 Q 570.2844415694954 379.59701823663755 483.80675217353564 623.5210754673773" data-edge="p_juno|w_apac_log"></path></g>
+      <g class="nodes"><g class="node is-focus" data-node="w_q4_strategy" style="color:#3366cc">
+      <circle class="focus-ring" cx="500" cy="350" r="38"></circle>
+               <line class="focus-cross" x1="454" y1="350" x2="470" y2="350"></line>
+               <line class="focus-cross" x1="530" y1="350" x2="546" y2="350"></line>
+               <line class="focus-cross" x1="500" y1="304" x2="500" y2="320"></line>
+               <line class="focus-cross" x1="500" y1="380" x2="500" y2="396"></line>
+               <circle cx="500" cy="350" r="27" fill="#3366cc" opacity=".12"></circle>
+               <circle class="bg" cx="500" cy="350" r="24" fill="#3366cc"></circle>
+               <circle cx="500" cy="350" r="20" fill="#3366cc" stroke="#fff" stroke-width="1.5"></circle>
+      <circle class="halo" cx="500" cy="350" r="32"></circle>
+      <text x="500" y="380">Q4 2026 Strategy</text>
+    </g><g class="node" data-node="w_revenue_target" style="color:#2f7a4f">
+      <circle class="bg" cx="518.5111058266433" cy="504.7664702774261" r="18" fill="#2f7a4f" opacity="1"></circle>
+               <circle cx="518.5111058266433" cy="504.7664702774261" r="15" fill="#2f7a4f" opacity="1" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="518.5111058266433" cy="504.7664702774261" r="26"></circle>
+      <text x="518.5111058266433" y="528.7664702774262">Revenue Target · Q4</text>
+    </g><g class="node" data-node="w_apac_margin" style="color:#3366cc">
+      <circle class="bg" cx="653.5436359039214" cy="365.3030595450076" r="16" fill="#3366cc" opacity="1"></circle>
+               <circle cx="653.5436359039214" cy="365.3030595450076" r="13" fill="#3366cc" opacity="1" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="653.5436359039214" cy="365.3030595450076" r="24"></circle>
+      <text x="653.5436359039214" y="387.3030595450076">APAC Margin Risk</text>
+    </g><g class="node" data-node="w_hiring_freeze" style="color:#c08a3e">
+      <circle class="bg" cx="635.6485211702206" cy="403.16673552809164" r="16" fill="#c08a3e" opacity="1"></circle>
+               <circle cx="635.6485211702206" cy="403.16673552809164" r="13" fill="#c08a3e" opacity="1" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="635.6485211702206" cy="403.16673552809164" r="24"></circle>
+      <text x="635.6485211702206" y="425.16673552809164">Hiring Freeze</text>
+    </g><g class="node" data-node="w_ai_strategy" style="color:#c08a3e">
+      <circle class="bg" cx="581.5454538202157" cy="474.4971610923126" r="18" fill="#c08a3e" opacity="1"></circle>
+               <circle cx="581.5454538202157" cy="474.4971610923126" r="15" fill="#c08a3e" opacity="1" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="581.5454538202157" cy="474.4971610923126" r="26"></circle>
+      <text x="581.5454538202157" y="498.4971610923126">AI Strategy</text>
+    </g><g class="node" data-node="w_board_voice" style="color:#2b7a7a">
+      <circle class="bg" cx="365.19206263849713" cy="396.3860025672291" r="14" fill="#2b7a7a" opacity="1"></circle>
+               <circle cx="365.19206263849713" cy="396.3860025672291" r="11" fill="#2b7a7a" opacity="1" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="365.19206263849713" cy="396.3860025672291" r="22"></circle>
+      <text x="365.19206263849713" y="416.3860025672291">Voice · Board Comms</text>
+    </g><g class="node" data-node="w_focus_principle" style="color:#1e2939">
+      <circle class="bg" cx="449.41396559908844" cy="494.94818905120223" r="13" fill="#1e2939" opacity="1"></circle>
+               <circle cx="449.41396559908844" cy="494.94818905120223" r="10" fill="#1e2939" opacity="1" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="449.41396559908844" cy="494.94818905120223" r="21"></circle>
+      <text x="449.41396559908844" y="513.9481890512022">Focus over breadth</text>
+    </g><g class="node" data-node="w_q4_launch" style="color:#c2562a">
+      <circle class="bg" cx="394.21831542465037" cy="454.6873410073606" r="17" fill="#c2562a" opacity="1"></circle>
+               <circle cx="394.21831542465037" cy="454.6873410073606" r="14" fill="#c2562a" opacity="1" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="394.21831542465037" cy="454.6873410073606" r="25"></circle>
+      <text x="394.21831542465037" y="477.6873410073606">Q4 Launch · Robin OS</text>
+    </g><g class="node frag" data-node="f_revbeats" style="color:#0284c7">
+      <circle class="bg" cx="349.6643542358172" cy="334.10202536348555" r="8" fill="#0284c7" stroke="#0284c7" stroke-width="1" opacity="0.8"></circle>
+               <circle cx="349.6643542358172" cy="334.10202536348555" r="11" fill="none" stroke="#0284c7" stroke-width=".8" stroke-dasharray="2 2" opacity="0.6"></circle>
+      <circle class="halo" cx="349.6643542358172" cy="334.10202536348555" r="16"></circle>
+      <text x="349.6643542358172" y="348.10202536348555">Q4 revenue beat 8%</text>
+    </g><g class="node frag" data-node="f_cfo_apac" style="color:#4a8f8f">
+      <circle class="bg" cx="471.2859205553556" cy="206.36371437196294" r="8" fill="#4a8f8f" stroke="#4a8f8f" stroke-width="1" opacity="0.8"></circle>
+               <circle cx="471.2859205553556" cy="206.36371437196294" r="11" fill="none" stroke="#4a8f8f" stroke-width=".8" stroke-dasharray="2 2" opacity="0.6"></circle>
+      <circle class="halo" cx="471.2859205553556" cy="206.36371437196294" r="16"></circle>
+      <text x="471.2859205553556" y="220.36371437196294">CFO flagged APAC</text>
+    </g><g class="node frag" data-node="f_freeze_q2" style="color:#0284c7">
+      <circle class="bg" cx="368.9991301482078" cy="284.4663978905004" r="8" fill="#0284c7" stroke="#0284c7" stroke-width="1" opacity="0.8"></circle>
+               <circle cx="368.9991301482078" cy="284.4663978905004" r="11" fill="none" stroke="#0284c7" stroke-width=".8" stroke-dasharray="2 2" opacity="0.6"></circle>
+      <circle class="halo" cx="368.9991301482078" cy="284.4663978905004" r="16"></circle>
+      <text x="368.9991301482078" y="298.4663978905004">Freeze through Q2</text>
+    </g><g class="node frag" data-node="f_doubledown" style="color:#7a4fbf">
+      <circle class="bg" cx="415.32962180483827" cy="217.27231701210354" r="8" fill="#7a4fbf" stroke="#7a4fbf" stroke-width="1" opacity="0.8"></circle>
+               <circle cx="415.32962180483827" cy="217.27231701210354" r="11" fill="none" stroke="#7a4fbf" stroke-width=".8" stroke-dasharray="2 2" opacity="0.6"></circle>
+      <circle class="halo" cx="415.32962180483827" cy="217.27231701210354" r="16"></circle>
+      <text x="415.32962180483827" y="231.27231701210354">Double down · AI</text>
+    </g><g class="node frag" data-node="f_quote_paige" style="color:#a06030">
+      <circle class="bg" cx="547.1782707530806" cy="212.15431152505758" r="8" fill="#a06030" stroke="#a06030" stroke-width="1" opacity="0.8"></circle>
+               <circle cx="547.1782707530806" cy="212.15431152505758" r="11" fill="none" stroke="#a06030" stroke-width=".8" stroke-dasharray="2 2" opacity="0.6"></circle>
+      <circle class="halo" cx="547.1782707530806" cy="212.15431152505758" r="16"></circle>
+      <text x="547.1782707530806" y="226.15431152505758">"ship one thing well"</text>
+    </g><g class="node person" data-node="p_paige" style="color:#8a6d3a">
+      <circle class="bg" cx="605.2254268124643" cy="245.86316210047823" r="11" fill="var(--paper-2)" stroke="#8a6d3a" stroke-width="2" opacity="1"></circle>
+               <circle cx="605.2254268124643" cy="245.86316210047823" r="7" fill="#8a6d3a" opacity=".15"></circle>
+      <circle class="halo" cx="605.2254268124643" cy="245.86316210047823" r="19"></circle>
+      <text x="605.2254268124643" y="262.86316210047823">Paige Lin</text>
+    </g><g class="node person" data-node="p_marcus" style="color:#8a6d3a">
+      <circle class="bg" cx="630.6091067251828" cy="278.6525025019098" r="11" fill="var(--paper-2)" stroke="#8a6d3a" stroke-width="2" opacity="1"></circle>
+               <circle cx="630.6091067251828" cy="278.6525025019098" r="7" fill="#8a6d3a" opacity=".15"></circle>
+      <circle class="halo" cx="630.6091067251828" cy="278.6525025019098" r="19"></circle>
+      <text x="630.6091067251828" y="295.6525025019098">Marcus Wei</text>
+    </g><g class="node" data-node="w_pricing" style="color:#c08a3e">
+      <circle class="bg" cx="622.3987952880894" cy="615.3000760933971" r="13" fill="#c08a3e" opacity="0.78"></circle>
+               <circle cx="622.3987952880894" cy="615.3000760933971" r="10" fill="#c08a3e" opacity="0.9359999999999999" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="622.3987952880894" cy="615.3000760933971" r="21"></circle>
+      
+    </g><g class="node" data-node="w_sales_skill" style="color:#6b4f9e">
+      <circle class="bg" cx="285.13235972740074" cy="521.560444189696" r="12" fill="#6b4f9e" opacity="0.78"></circle>
+               <circle cx="285.13235972740074" cy="521.560444189696" r="9" fill="#6b4f9e" opacity="0.9359999999999999" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="285.13235972740074" cy="521.560444189696" r="20"></circle>
+      
+    </g><g class="node" data-node="w_apac_log" style="color:#6b6960">
+      <circle class="bg" cx="483.80675217353564" cy="623.5210754673773" r="12" fill="#6b6960" opacity="0.78"></circle>
+               <circle cx="483.80675217353564" cy="623.5210754673773" r="9" fill="#6b6960" opacity="0.9359999999999999" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="483.80675217353564" cy="623.5210754673773" r="20"></circle>
+      
+    </g><g class="node" data-node="w_competitor_lib" style="color:#8a7a4f">
+      <circle class="bg" cx="715.5916936222377" cy="548.609348815549" r="12" fill="#8a7a4f" opacity="0.78"></circle>
+               <circle cx="715.5916936222377" cy="548.609348815549" r="9" fill="#8a7a4f" opacity="0.9359999999999999" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="715.5916936222377" cy="548.609348815549" r="20"></circle>
+      
+    </g><g class="node" data-node="w_writing_voice" style="color:#2b7a7a">
+      <circle class="bg" cx="231.3448387818728" cy="469.6308586740117" r="11" fill="#2b7a7a" opacity="0.78"></circle>
+               <circle cx="231.3448387818728" cy="469.6308586740117" r="8" fill="#2b7a7a" opacity="0.9359999999999999" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="231.3448387818728" cy="469.6308586740117" r="19"></circle>
+      
+    </g><g class="node" data-node="w_agent_pm" style="color:#b54a6a">
+      <circle class="bg" cx="783.4276588922787" cy="358.8314601861656" r="13" fill="#b54a6a" opacity="0.78"></circle>
+               <circle cx="783.4276588922787" cy="358.8314601861656" r="10" fill="#b54a6a" opacity="0.9359999999999999" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="783.4276588922787" cy="358.8314601861656" r="21"></circle>
+      
+    </g><g class="node" data-node="w_agent_brief" style="color:#b54a6a">
+      <circle class="bg" cx="771.5642321047009" cy="408.6532389127569" r="12" fill="#b54a6a" opacity="0.78"></circle>
+               <circle cx="771.5642321047009" cy="408.6532389127569" r="9" fill="#b54a6a" opacity="0.9359999999999999" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="771.5642321047009" cy="408.6532389127569" r="20"></circle>
+      
+    </g><g class="node" data-node="w_principle_async" style="color:#1e2939">
+      <circle class="bg" cx="337.29211011775635" cy="586.8964001094412" r="11" fill="#1e2939" opacity="0.78"></circle>
+               <circle cx="337.29211011775635" cy="586.8964001094412" r="8" fill="#1e2939" opacity="0.9359999999999999" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="337.29211011775635" cy="586.8964001094412" r="19"></circle>
+      
+    </g><g class="node" data-node="w_runway" style="color:#3366cc">
+      <circle class="bg" cx="733.4846381189361" cy="515.9210910359504" r="13" fill="#3366cc" opacity="0.78"></circle>
+               <circle cx="733.4846381189361" cy="515.9210910359504" r="10" fill="#3366cc" opacity="0.9359999999999999" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="733.4846381189361" cy="515.9210910359504" r="21"></circle>
+      
+    </g><g class="node" data-node="w_eng_hiring" style="color:#2f7a4f">
+      <circle class="bg" cx="555.4481938341388" cy="619.3076059962152" r="12" fill="#2f7a4f" opacity="0.78"></circle>
+               <circle cx="555.4481938341388" cy="619.3076059962152" r="9" fill="#2f7a4f" opacity="0.9359999999999999" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="555.4481938341388" cy="619.3076059962152" r="20"></circle>
+      
+    </g><g class="node" data-node="w_design_review" style="color:#6b6960">
+      <circle class="bg" cx="412.24923993961" cy="630.690117576382" r="11" fill="#6b6960" opacity="0.78"></circle>
+               <circle cx="412.24923993961" cy="630.690117576382" r="8" fill="#6b6960" opacity="0.9359999999999999" stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>
+      <circle class="halo" cx="412.24923993961" cy="630.690117576382" r="19"></circle>
+      
+    </g><g class="node frag" data-node="f_quote_hashi" style="color:#a06030">
+      <circle class="bg" cx="555.0775284507332" cy="61.11662585746137" r="7" fill="#a06030" stroke="#a06030" stroke-width="1" opacity="0.6240000000000001"></circle>
+               <circle cx="555.0775284507332" cy="61.11662585746137" r="10" fill="none" stroke="#a06030" stroke-width=".8" stroke-dasharray="2 2" opacity="0.46799999999999997"></circle>
+      <circle class="halo" cx="555.0775284507332" cy="61.11662585746137" r="15"></circle>
+      
+    </g><g class="node frag" data-node="f_idea_tier" style="color:#7a4fbf">
+      <circle class="bg" cx="241.6303372795864" cy="250.49184189521438" r="7" fill="#7a4fbf" stroke="#7a4fbf" stroke-width="1" opacity="0.6240000000000001"></circle>
+               <circle cx="241.6303372795864" cy="250.49184189521438" r="10" fill="none" stroke="#7a4fbf" stroke-width=".8" stroke-dasharray="2 2" opacity="0.46799999999999997"></circle>
+      <circle class="halo" cx="241.6303372795864" cy="250.49184189521438" r="15"></circle>
+      
+    </g><g class="node frag" data-node="f_obs_churn" style="color:#4a8f8f">
+      <circle class="bg" cx="345.34888923633804" cy="115.74995605357094" r="7" fill="#4a8f8f" stroke="#4a8f8f" stroke-width="1" opacity="0.6240000000000001"></circle>
+               <circle cx="345.34888923633804" cy="115.74995605357094" r="10" fill="none" stroke="#4a8f8f" stroke-width=".8" stroke-dasharray="2 2" opacity="0.46799999999999997"></circle>
+      <circle class="halo" cx="345.34888923633804" cy="115.74995605357094" r="15"></circle>
+      
+    </g><g class="node frag" data-node="f_fact_cac" style="color:#0284c7">
+      <circle class="bg" cx="215.89464764823606" cy="377.9640160597788" r="7" fill="#0284c7" stroke="#0284c7" stroke-width="1" opacity="0.6240000000000001"></circle>
+               <circle cx="215.89464764823606" cy="377.9640160597788" r="10" fill="none" stroke="#0284c7" stroke-width=".8" stroke-dasharray="2 2" opacity="0.46799999999999997"></circle>
+      <circle class="halo" cx="215.89464764823606" cy="377.9640160597788" r="15"></circle>
+      
+    </g><g class="node frag" data-node="f_quote_lin" style="color:#a06030">
+      <circle class="bg" cx="642.7496237166827" cy="104.98616887423842" r="7" fill="#a06030" stroke="#a06030" stroke-width="1" opacity="0.6240000000000001"></circle>
+               <circle cx="642.7496237166827" cy="104.98616887423842" r="10" fill="none" stroke="#a06030" stroke-width=".8" stroke-dasharray="2 2" opacity="0.46799999999999997"></circle>
+      <circle class="halo" cx="642.7496237166827" cy="104.98616887423842" r="15"></circle>
+      
+    </g><g class="node frag" data-node="f_obs_apac" style="color:#4a8f8f">
+      <circle class="bg" cx="407.456043133066" cy="84.99874491476567" r="7" fill="#4a8f8f" stroke="#4a8f8f" stroke-width="1" opacity="0.6240000000000001"></circle>
+               <circle cx="407.456043133066" cy="84.99874491476567" r="10" fill="none" stroke="#4a8f8f" stroke-width=".8" stroke-dasharray="2 2" opacity="0.46799999999999997"></circle>
+      <circle class="halo" cx="407.456043133066" cy="84.99874491476567" r="15"></circle>
+      
+    </g><g class="node frag" data-node="f_idea_partners" style="color:#7a4fbf">
+      <circle class="bg" cx="290.9065487232823" cy="171.44743776671314" r="7" fill="#7a4fbf" stroke="#7a4fbf" stroke-width="1" opacity="0.6240000000000001"></circle>
+               <circle cx="290.9065487232823" cy="171.44743776671314" r="10" fill="none" stroke="#7a4fbf" stroke-width=".8" stroke-dasharray="2 2" opacity="0.46799999999999997"></circle>
+      <circle class="halo" cx="290.9065487232823" cy="171.44743776671314" r="15"></circle>
+      
+    </g><g class="node frag" data-node="f_fact_runway" style="color:#0284c7">
+      <circle class="bg" cx="209.38477776822083" cy="311.68232257802134" r="7" fill="#0284c7" stroke="#0284c7" stroke-width="1" opacity="0.6240000000000001"></circle>
+               <circle cx="209.38477776822083" cy="311.68232257802134" r="10" fill="none" stroke="#0284c7" stroke-width=".8" stroke-dasharray="2 2" opacity="0.46799999999999997"></circle>
+      <circle class="halo" cx="209.38477776822083" cy="311.68232257802134" r="15"></circle>
+      
+    </g><g class="node frag" data-node="f_obs_meeting" style="color:#4a8f8f">
+      <circle class="bg" cx="496.85081426281823" cy="76.01809798967975" r="7" fill="#4a8f8f" stroke="#4a8f8f" stroke-width="1" opacity="0.6240000000000001"></circle>
+               <circle cx="496.85081426281823" cy="76.01809798967975" r="10" fill="none" stroke="#4a8f8f" stroke-width=".8" stroke-dasharray="2 2" opacity="0.46799999999999997"></circle>
+      <circle class="halo" cx="496.85081426281823" cy="76.01809798967975" r="15"></circle>
+      
+    </g><g class="node person" data-node="p_juno" style="color:#8a6d3a">
+      <circle class="bg" cx="703.6184253451188" cy="155.4043064969895" r="9" fill="var(--paper-2)" stroke="#8a6d3a" stroke-width="2" opacity="0.78"></circle>
+               <circle cx="703.6184253451188" cy="155.4043064969895" r="5" fill="#8a6d3a" opacity=".15"></circle>
+      <circle class="halo" cx="703.6184253451188" cy="155.4043064969895" r="17"></circle>
+      
+    </g><g class="node person" data-node="p_anika" style="color:#8a6d3a">
+      <circle class="bg" cx="748.4194821481555" cy="209.33871066155487" r="9" fill="var(--paper-2)" stroke="#8a6d3a" stroke-width="2" opacity="0.78"></circle>
+               <circle cx="748.4194821481555" cy="209.33871066155487" r="5" fill="#8a6d3a" opacity=".15"></circle>
+      <circle class="halo" cx="748.4194821481555" cy="209.33871066155487" r="17"></circle>
+      
+    </g><g class="node person" data-node="p_devon" style="color:#8a6d3a">
+      <circle class="bg" cx="782.690826633547" cy="272.46711450562964" r="9" fill="var(--paper-2)" stroke="#8a6d3a" stroke-width="2" opacity="0.78"></circle>
+               <circle cx="782.690826633547" cy="272.46711450562964" r="5" fill="#8a6d3a" opacity=".15"></circle>
+      <circle class="halo" cx="782.690826633547" cy="272.46711450562964" r="17"></circle>
+      
+    </g></g>
+    </g>
+  </svg>
+
+    <div class="stage__tools">
+      <button id="zoom-in" title="Zoom in">＋</button>
+      <button id="zoom-out" title="Zoom out">−</button>
+      <button id="zoom-fit" title="Fit">◎</button>
+      <button id="zoom-reset" title="Reset" style="font-size:10px">⤺</button>
+    </div>
+
+    <div class="tooltip" id="tooltip">
+      <div class="tooltip__t"><span class="dot"></span><span id="tt-type">—</span><span style="margin-left:auto" id="tt-hop">—</span></div>
+      <div class="tooltip__title" id="tt-title">—</div>
+      <div class="tooltip__meta">
+        <span id="tt-conns">—</span>
+        <span id="tt-updated">—</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- Detail panel -->
+  <aside class="detail">
+    <div class="detail__head">
+      <div style="flex:1;min-width:0">
+        <div class="detail__pretitle" id="d-pretitle">
+          <span class="dot" style="background: rgb(51, 102, 204);"></span>
+          <span id="d-type">Belief · Wiki</span>
+          <span class="hop" id="d-hop">hop 0 · focus</span>
+        </div>
+        <div class="detail__title" id="d-title">Q4 2026 Strategy</div>
+        <div class="detail__subtitle" id="d-subtitle">A live wiki distilling beliefs about how Q4 should run, updated by Robin from every meeting and decision.</div>
+      </div>
+      <button class="detail__close" id="d-close" title="Clear selection">esc</button>
+    </div>
+
+    <div class="detail__section">
+      <h4>At a glance</h4>
+      <div class="stats">
+        <div class="stat"><div class="stat__n" id="d-frag">17</div><div class="stat__l">fragments</div></div>
+        <div class="stat"><div class="stat__n" id="d-link">9</div><div class="stat__l">wiki links</div></div>
+        <div class="stat"><div class="stat__n" id="d-people">4</div><div class="stat__l">people</div></div>
+      </div>
+    </div>
+
+    <div class="detail__section">
+      <h4>Summary <span class="muted" style="font-family:var(--mono);letter-spacing:.04em;text-transform:none;font-weight:400">· auto-synthesised</span></h4>
+      <p id="d-summary">Robin currently holds <em>high confidence</em> that revenue will land near $32m for Q4, with active risk concentrated in <em>APAC margin</em> and an open question on <em>hiring pace.</em> The strategy is anchored in three decisions made between weeks 38–42, and depends on six skills the team has codified.</p>
+    </div>
+
+    <div class="detail__section">
+      <h4>Direct connections <span class="muted" id="d-conn-count" style="font-family:var(--mono);letter-spacing:.04em;text-transform:none;font-weight:400">· 14</span></h4>
+      <div class="conn-list" id="d-conn-list"><div class="conn" data-go="w_revenue_target" style="color:#2f7a4f">
+      <span class="dot " style="background:#2f7a4f"></span>
+      <span class="conn__t" style="color:var(--ink)">Revenue Target · Q4</span>
+      <span class="conn__sub">goal</span>
+    </div><div class="conn" data-go="w_apac_margin" style="color:#3366cc">
+      <span class="dot " style="background:#3366cc"></span>
+      <span class="conn__t" style="color:var(--ink)">APAC Margin Risk</span>
+      <span class="conn__sub">belief</span>
+    </div><div class="conn" data-go="w_hiring_freeze" style="color:#c08a3e">
+      <span class="dot " style="background:#c08a3e"></span>
+      <span class="conn__t" style="color:var(--ink)">Hiring Freeze</span>
+      <span class="conn__sub">decision</span>
+    </div><div class="conn" data-go="w_ai_strategy" style="color:#c08a3e">
+      <span class="dot " style="background:#c08a3e"></span>
+      <span class="conn__t" style="color:var(--ink)">AI Strategy</span>
+      <span class="conn__sub">decision</span>
+    </div><div class="conn" data-go="w_board_voice" style="color:#2b7a7a">
+      <span class="dot " style="background:#2b7a7a"></span>
+      <span class="conn__t" style="color:var(--ink)">Voice · Board Comms</span>
+      <span class="conn__sub">voice</span>
+    </div><div class="conn" data-go="w_focus_principle" style="color:#1e2939">
+      <span class="dot " style="background:#1e2939"></span>
+      <span class="conn__t" style="color:var(--ink)">Focus over breadth</span>
+      <span class="conn__sub">principle</span>
+    </div><div class="conn" data-go="w_q4_launch" style="color:#c2562a">
+      <span class="dot " style="background:#c2562a"></span>
+      <span class="conn__t" style="color:var(--ink)">Q4 Launch · Robin OS</span>
+      <span class="conn__sub">project</span>
+    </div><div class="conn" data-go="f_revbeats" style="color:#0284c7">
+      <span class="dot frag-dot" style="background:#0284c7"></span>
+      <span class="conn__t" style="color:var(--ink)">Q4 revenue beat 8%</span>
+      <span class="conn__sub">fact</span>
+    </div><div class="conn" data-go="f_cfo_apac" style="color:#4a8f8f">
+      <span class="dot frag-dot" style="background:#4a8f8f"></span>
+      <span class="conn__t" style="color:var(--ink)">CFO flagged APAC</span>
+      <span class="conn__sub">observation</span>
+    </div></div>
+    </div>
+
+    <div class="detail__section" style="border-bottom:none">
+      <h4>Provenance</h4>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--ink-3);line-height:1.7;letter-spacing:.02em">
+        <span class="muted">id</span> &nbsp; w_q4_2026_strategy<br>
+        <span class="muted">created</span> &nbsp; 2026-09-12 · 14:22 UTC<br>
+        <span class="muted">last edit</span> &nbsp; 2 mins ago · by Robin<br>
+        <span class="muted">last reindex</span> &nbsp; profile v.4 · 1,204 frags<br>
+        <span class="muted">vault</span> &nbsp; work / Robin Co.
+      </p>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+/* ─────────────────────────────────────────────
+   Data — Robin knowledge ego graph
+   Nodes: focus + 1-hop + 2-hop + 3-hop
+───────────────────────────────────────────── */
+const SUBTYPE_COLOR = {
+  belief:"#3366cc", decision:"#c08a3e", goal:"#2f7a4f", project:"#c2562a",
+  principle:"#1e2939", log:"#6b6960", collection:"#8a7a4f", skill:"#6b4f9e",
+  agent:"#b54a6a", voice:"#2b7a7a",
+  // fragment subtypes (lighter, dashed)
+  fact:"#0284c7", idea:"#7a4fbf", quote:"#a06030", observation:"#4a8f8f",
+  // person
+  person:"#8a6d3a",
+};
+
+const FOCUS_ID = "w_q4_strategy";
+
+// Hop 1 — direct neighbours (highly connected)
+const HOP1 = [
+  {id:"w_revenue_target", label:"Revenue Target · Q4", type:"wiki", subtype:"goal", size:18},
+  {id:"w_apac_margin",    label:"APAC Margin Risk",    type:"wiki", subtype:"belief", size:16},
+  {id:"w_hiring_freeze",  label:"Hiring Freeze",       type:"wiki", subtype:"decision", size:16},
+  {id:"w_ai_strategy",    label:"AI Strategy",         type:"wiki", subtype:"decision", size:18},
+  {id:"w_board_voice",    label:"Voice · Board Comms", type:"wiki", subtype:"voice", size:14},
+  {id:"w_focus_principle",label:"Focus over breadth",  type:"wiki", subtype:"principle", size:13},
+  {id:"w_q4_launch",      label:"Q4 Launch · Robin OS",type:"wiki", subtype:"project", size:17},
+  {id:"f_revbeats",       label:"Q4 revenue beat 8%",  type:"fragment", subtype:"fact", size:8},
+  {id:"f_cfo_apac",       label:"CFO flagged APAC",    type:"fragment", subtype:"observation", size:8},
+  {id:"f_freeze_q2",      label:"Freeze through Q2",   type:"fragment", subtype:"fact", size:8},
+  {id:"f_doubledown",     label:"Double down · AI",    type:"fragment", subtype:"idea", size:8},
+  {id:"f_quote_paige",    label:"\"ship one thing well\"", type:"fragment", subtype:"quote", size:8},
+  {id:"p_paige",          label:"Paige Lin",           type:"person", size:11},
+  {id:"p_marcus",         label:"Marcus Wei",          type:"person", size:11},
+];
+
+// Hop 2 — neighbours of those (less central)
+const HOP2 = [
+  {id:"w_pricing",        label:"Pricing v3",          type:"wiki", subtype:"decision", size:13},
+  {id:"w_sales_skill",    label:"Skill · Discovery",   type:"wiki", subtype:"skill", size:12},
+  {id:"w_apac_log",       label:"Log · APAC weekly",   type:"wiki", subtype:"log", size:12},
+  {id:"w_competitor_lib", label:"Competitor Library",  type:"wiki", subtype:"collection", size:12},
+  {id:"w_writing_voice",  label:"Voice · Long-form",   type:"wiki", subtype:"voice", size:11},
+  {id:"w_agent_pm",       label:"Agent · PM Drafts",   type:"wiki", subtype:"agent", size:13},
+  {id:"w_agent_brief",    label:"Agent · Brief Maker", type:"wiki", subtype:"agent", size:12},
+  {id:"w_principle_async",label:"Async by default",    type:"wiki", subtype:"principle", size:11},
+  {id:"w_runway",         label:"Runway · cash plan",  type:"wiki", subtype:"belief", size:13},
+  {id:"w_eng_hiring",     label:"Eng Hiring Plan",     type:"wiki", subtype:"goal", size:12},
+  {id:"w_design_review",  label:"Design Review · weekly",type:"wiki",subtype:"log", size:11},
+  {id:"f_quote_hashi",    label:"\"taste is the moat\"",type:"fragment",subtype:"quote",size:7},
+  {id:"f_idea_tier",      label:"Tier the pricing",    type:"fragment", subtype:"idea", size:7},
+  {id:"f_obs_churn",      label:"Churn drops in Q3",   type:"fragment", subtype:"observation", size:7},
+  {id:"f_fact_cac",       label:"CAC · 18 mo payback", type:"fragment", subtype:"fact", size:7},
+  {id:"f_quote_lin",      label:"\"ship before perfect\"",type:"fragment", subtype:"quote", size:7},
+  {id:"f_obs_apac",       label:"APAC · 14% margin",   type:"fragment", subtype:"observation", size:7},
+  {id:"f_idea_partners",  label:"Partner go-to-market",type:"fragment", subtype:"idea", size:7},
+  {id:"f_fact_runway",    label:"Runway · 22 months",  type:"fragment", subtype:"fact", size:7},
+  {id:"f_obs_meeting",    label:"Meeting cadence drift",type:"fragment", subtype:"observation",size:7},
+  {id:"p_juno",           label:"Juno Park",           type:"person", size:9},
+  {id:"p_anika",          label:"Anika Roy",           type:"person", size:9},
+  {id:"p_devon",          label:"Devon Holt",          type:"person", size:9},
+];
+
+// Hop 3 — outer ring (small, faint)
+const HOP3 = [
+  {id:"w_writing_log",    label:"Log · Daily writing", type:"wiki", subtype:"log", size:9},
+  {id:"w_okrs_q3",        label:"OKRs · Q3 retro",     type:"wiki", subtype:"goal", size:9},
+  {id:"w_principles_lib", label:"Principles · core",   type:"wiki", subtype:"principle", size:9},
+  {id:"w_agent_summarise",label:"Agent · Summariser",  type:"wiki", subtype:"agent", size:9},
+  {id:"w_brand_voice",    label:"Voice · Brand",       type:"wiki", subtype:"voice", size:9},
+  {id:"w_collection_reads",label:"Collection · Long reads",type:"wiki",subtype:"collection",size:9},
+  {id:"f_quote_devon",    label:"\"users don't want X\"",type:"fragment",subtype:"quote",size:6},
+  {id:"f_obs_session",    label:"Session length up 12%",type:"fragment",subtype:"observation",size:6},
+  {id:"f_idea_marketplace",label:"Marketplace play",   type:"fragment",subtype:"idea",size:6},
+  {id:"f_fact_team",      label:"Team · 14 people",    type:"fragment",subtype:"fact",size:6},
+  {id:"f_obs_signups",    label:"Signups flat in Apr", type:"fragment",subtype:"observation",size:6},
+  {id:"f_quote_ben",      label:"\"price for clarity\"",type:"fragment",subtype:"quote",size:6},
+  {id:"f_idea_landing",   label:"Landing · onboarding",type:"fragment",subtype:"idea",size:6},
+  {id:"f_fact_funnel",    label:"Funnel · 22 → 7 → 3", type:"fragment",subtype:"fact",size:6},
+  {id:"p_riley",          label:"Riley Cho",           type:"person", size:8},
+  {id:"p_omar",           label:"Omar Said",           type:"person", size:8},
+  {id:"p_zara",           label:"Zara Quinn",          type:"person", size:8},
+];
+
+const FOCUS = {id:FOCUS_ID, label:"Q4 2026 Strategy", type:"wiki", subtype:"belief", size:24};
+const NODES = [FOCUS, ...HOP1, ...HOP2, ...HOP3];
+NODES.forEach((n,i)=>{ n.idx=i; });
+const NODE_BY_ID = new Map(NODES.map(n=>[n.id,n]));
+const HOP_OF = new Map();
+HOP_OF.set(FOCUS_ID,0);
+HOP1.forEach(n=>HOP_OF.set(n.id,1));
+HOP2.forEach(n=>HOP_OF.set(n.id,2));
+HOP3.forEach(n=>HOP_OF.set(n.id,3));
+
+// Edges: hand-curated for legibility
+const EDGES = [
+  // focus → hop 1
+  ["w_q4_strategy","w_revenue_target","wikilink"],
+  ["w_q4_strategy","w_apac_margin","wikilink"],
+  ["w_q4_strategy","w_hiring_freeze","wikilink"],
+  ["w_q4_strategy","w_ai_strategy","wikilink"],
+  ["w_q4_strategy","w_board_voice","filing"],
+  ["w_q4_strategy","w_focus_principle","wikilink"],
+  ["w_q4_strategy","w_q4_launch","wikilink"],
+  ["w_q4_strategy","f_revbeats","filing"],
+  ["w_q4_strategy","f_cfo_apac","filing"],
+  ["w_q4_strategy","f_freeze_q2","filing"],
+  ["w_q4_strategy","f_doubledown","filing"],
+  ["w_q4_strategy","f_quote_paige","filing"],
+  ["w_q4_strategy","p_paige","mention"],
+  ["w_q4_strategy","p_marcus","mention"],
+  // hop 1 cross links
+  ["w_revenue_target","w_pricing","wikilink"],
+  ["w_revenue_target","w_runway","wikilink"],
+  ["w_revenue_target","f_fact_cac","filing"],
+  ["w_apac_margin","w_apac_log","filing"],
+  ["w_apac_margin","f_obs_apac","filing"],
+  ["w_apac_margin","p_juno","mention"],
+  ["w_hiring_freeze","w_eng_hiring","wikilink"],
+  ["w_hiring_freeze","w_runway","wikilink"],
+  ["w_ai_strategy","w_agent_pm","wikilink"],
+  ["w_ai_strategy","w_agent_brief","wikilink"],
+  ["w_ai_strategy","w_competitor_lib","wikilink"],
+  ["w_ai_strategy","f_quote_hashi","mention"],
+  ["w_ai_strategy","f_idea_partners","filing"],
+  ["w_board_voice","w_writing_voice","wikilink"],
+  ["w_focus_principle","w_principle_async","wikilink"],
+  ["w_q4_launch","w_design_review","wikilink"],
+  ["w_q4_launch","f_obs_meeting","filing"],
+  ["w_q4_launch","p_anika","mention"],
+  ["w_q4_launch","p_devon","mention"],
+  ["f_revbeats","f_obs_churn","mention"],
+  ["f_cfo_apac","f_idea_tier","mention"],
+  ["f_doubledown","f_quote_lin","mention"],
+  ["p_paige","f_quote_paige","filing"],
+  ["p_marcus","w_pricing","mention"],
+  // hop 2 → hop 3
+  ["w_pricing","w_writing_log","mention"],
+  ["w_pricing","f_quote_ben","filing"],
+  ["w_sales_skill","w_brand_voice","wikilink"],
+  ["w_apac_log","w_okrs_q3","filing"],
+  ["w_competitor_lib","w_collection_reads","wikilink"],
+  ["w_competitor_lib","f_idea_marketplace","filing"],
+  ["w_writing_voice","w_collection_reads","mention"],
+  ["w_agent_pm","w_agent_summarise","wikilink"],
+  ["w_agent_brief","f_idea_landing","filing"],
+  ["w_principle_async","w_principles_lib","wikilink"],
+  ["w_runway","f_fact_funnel","filing"],
+  ["w_runway","f_obs_signups","filing"],
+  ["w_eng_hiring","f_fact_team","filing"],
+  ["w_eng_hiring","p_riley","mention"],
+  ["w_design_review","p_omar","mention"],
+  ["w_design_review","f_obs_session","filing"],
+  ["f_idea_tier","f_quote_devon","mention"],
+  ["f_obs_apac","p_juno","mention"],
+  ["p_juno","w_apac_log","filing"],
+  ["p_anika","f_obs_session","mention"],
+  ["p_devon","f_obs_signups","mention"],
+  ["w_okrs_q3","p_zara","mention"],
+];
+
+/* ─────────────────────────────────────────────
+   Layout — concentric rings with jitter
+───────────────────────────────────────────── */
+const W=1000, H=700, CX=W/2, CY=H/2;
+const RING_R=[0, 150, 285, 410];
+
+function layoutNodes(){
+  // Group by hop
+  const byHop = [[FOCUS], HOP1.slice(), HOP2.slice(), HOP3.slice()];
+
+  // Place focus
+  FOCUS.x = CX; FOCUS.y = CY;
+
+  // Place each ring evenly with deterministic jitter
+  byHop.forEach((arr, hop)=>{
+    if(hop===0) return;
+    const r = RING_R[hop];
+    // Sort: cluster wikis vs fragments around angles, group by subtype
+    arr.sort((a,b)=>{
+      const wa = a.type==="wiki"?0:(a.type==="fragment"?1:2);
+      const wb = b.type==="wiki"?0:(b.type==="fragment"?1:2);
+      if(wa!==wb) return wa-wb;
+      return (a.subtype||"").localeCompare(b.subtype||"");
+    });
+    arr.forEach((n,i)=>{
+      const baseAngle = (i / arr.length) * Math.PI * 2;
+      // Deterministic jitter — based on id hash so it's consistent
+      const h = strHash(n.id);
+      const angle = baseAngle + ((h%41)/41 - .5) * (Math.PI*2/arr.length) * .55;
+      const rJit = r + ((h%23)/23 - .5) * (hop===3?28:hop===2?22:18);
+      n.x = CX + Math.cos(angle) * rJit;
+      n.y = CY + Math.sin(angle) * rJit;
+      n.angle = angle;
+    });
+  });
+}
+function strHash(s){let h=2166136261;for(let i=0;i<s.length;i++){h=(h^s.charCodeAt(i))*16777619;h>>>=0;}return h;}
+
+layoutNodes();
+
+/* ─────────────────────────────────────────────
+   Adjacency
+───────────────────────────────────────────── */
+const ADJ = new Map();
+NODES.forEach(n=>ADJ.set(n.id, new Set()));
+EDGES.forEach(([s,t])=>{
+  if(!ADJ.has(s) || !ADJ.has(t)) return;
+  ADJ.get(s).add(t); ADJ.get(t).add(s);
+});
+
+/* ─────────────────────────────────────────────
+   Render
+───────────────────────────────────────────── */
+const svg = document.getElementById("graph");
+const tooltip = document.getElementById("tooltip");
+const stage = document.getElementById("stage");
+
+let state = {
+  depth: 2,
+  activeTypes: new Set(["wiki","fragment","person"]),
+  hoverId: null,
+  selectedId: FOCUS_ID,
+  zoom: 1,
+  pan:{x:0,y:0},
+};
+
+function nodeColor(n){
+  if(n.subtype && SUBTYPE_COLOR[n.subtype]) return SUBTYPE_COLOR[n.subtype];
+  if(n.type==="person") return SUBTYPE_COLOR.person;
+  return n.type==="fragment" ? "#7a8499" : "#475569";
+}
+
+function shouldShowNode(n){
+  if(!state.activeTypes.has(n.type)) return false;
+  return (HOP_OF.get(n.id) ?? 99) <= state.depth;
+}
+
+function curve(x1,y1,x2,y2){
+  const mx=(x1+x2)/2, my=(y1+y2)/2;
+  // bend slightly toward focus center
+  const dx=mx-CX, dy=my-CY;
+  const len=Math.hypot(dx,dy)||1;
+  const k = 0.25;
+  const cx = mx - dx*k, cy = my - dy*k;
+  return `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`;
+}
+
+function render(){
+  // Build content group with pan/zoom transform
+  const ringsHtml = [1,2,3].map(h=>{
+    if(h>state.depth) return '';
+    return `
+      <circle class="ring-circle" cx="${CX}" cy="${CY}" r="${RING_R[h]}"></circle>
+      <text class="ring-label" x="${CX + RING_R[h]}" y="${CY-4}" transform="translate(8,0)">HOP ${h}</text>
+    `;
+  }).join('');
+
+  // Edges
+  const edgesHtml = EDGES.map(([s,t,kind])=>{
+    const a = NODE_BY_ID.get(s), b = NODE_BY_ID.get(t);
+    if(!a||!b) return '';
+    if(!shouldShowNode(a)||!shouldShowNode(b)) return '';
+    const involvesHover = state.hoverId && (s===state.hoverId||t===state.hoverId);
+    const involvesSel = state.selectedId && (s===state.selectedId||t===state.selectedId);
+    let cls = 'edge '+kind;
+    if(state.hoverId && !involvesHover) cls += ' is-dim';
+    else if(involvesHover) cls += ' is-hot';
+    else if(involvesSel && state.selectedId!==FOCUS_ID) cls += ' is-hot';
+    return `<path class="${cls}" d="${curve(a.x,a.y,b.x,b.y)}" data-edge="${s}|${t}"></path>`;
+  }).join('');
+
+  // Nodes
+  const nodesHtml = NODES.map(n=>{
+    if(!shouldShowNode(n)) return '';
+    const hop = HOP_OF.get(n.id) ?? 0;
+    const isFocus = n.id===FOCUS_ID;
+    const isHot = state.hoverId===n.id || state.selectedId===n.id;
+    const isNeighbourOfHover = state.hoverId && ADJ.get(state.hoverId)?.has(n.id);
+    const isNeighbourOfSel = state.selectedId && ADJ.get(state.selectedId)?.has(n.id);
+    const dim = state.hoverId && !isHot && !isNeighbourOfHover;
+    const baseR = n.size;
+    const color = nodeColor(n);
+    const hopOpacity = [1, 1, 0.78, 0.5][hop];
+
+    let cls = 'node';
+    if(n.type==='fragment') cls+=' frag';
+    if(n.type==='person') cls+=' person';
+    if(isFocus) cls+=' is-focus';
+    else if(isHot) cls+=' is-hot';
+    else if(isNeighbourOfHover || (state.selectedId && state.selectedId!==FOCUS_ID && isNeighbourOfSel)) cls+=' is-hot';
+    if(dim) cls+=' is-dim';
+
+    const labelY = n.y + baseR + 6;
+    const showLabel = isFocus || isHot || isNeighbourOfHover || hop<=1 || (isNeighbourOfSel && state.selectedId!==FOCUS_ID);
+    const label = showLabel ? `<text x="${n.x}" y="${labelY}">${escapeHtml(n.label)}</text>` : '';
+
+    // Different node shapes per type
+    let shape = '';
+    if(n.type==='person'){
+      shape = `<circle class="bg" cx="${n.x}" cy="${n.y}" r="${baseR}"
+                 fill="var(--paper-2)" stroke="${color}" stroke-width="2" opacity="${hopOpacity}"></circle>
+               <circle cx="${n.x}" cy="${n.y}" r="${baseR-4}" fill="${color}" opacity=".15"></circle>`;
+    } else if(n.type==='fragment'){
+      shape = `<circle class="bg" cx="${n.x}" cy="${n.y}" r="${baseR}"
+                 fill="${color}" stroke="${color}" stroke-width="1" opacity="${hopOpacity*.8}"></circle>
+               <circle cx="${n.x}" cy="${n.y}" r="${baseR+3}" fill="none" stroke="${color}"
+                 stroke-width=".8" stroke-dasharray="2 2" opacity="${hopOpacity*.6}"></circle>`;
+    } else if(isFocus){
+      shape = `<circle class="focus-ring" cx="${n.x}" cy="${n.y}" r="${baseR+14}"></circle>
+               <line class="focus-cross" x1="${n.x-baseR-22}" y1="${n.y}" x2="${n.x-baseR-6}" y2="${n.y}"></line>
+               <line class="focus-cross" x1="${n.x+baseR+6}" y1="${n.y}" x2="${n.x+baseR+22}" y2="${n.y}"></line>
+               <line class="focus-cross" x1="${n.x}" y1="${n.y-baseR-22}" x2="${n.x}" y2="${n.y-baseR-6}"></line>
+               <line class="focus-cross" x1="${n.x}" y1="${n.y+baseR+6}" x2="${n.x}" y2="${n.y+baseR+22}"></line>
+               <circle cx="${n.x}" cy="${n.y}" r="${baseR+3}" fill="${color}" opacity=".12"></circle>
+               <circle class="bg" cx="${n.x}" cy="${n.y}" r="${baseR}" fill="${color}"></circle>
+               <circle cx="${n.x}" cy="${n.y}" r="${baseR-4}" fill="${color}" stroke="#fff" stroke-width="1.5"></circle>`;
+    } else {
+      shape = `<circle class="bg" cx="${n.x}" cy="${n.y}" r="${baseR}" fill="${color}" opacity="${hopOpacity}"></circle>
+               <circle cx="${n.x}" cy="${n.y}" r="${baseR-3}" fill="${color}" opacity="${Math.min(1,hopOpacity*1.2)}"
+                 stroke="rgba(255,255,255,.4)" stroke-width=".8"></circle>`;
+    }
+
+    return `<g class="${cls}" data-node="${n.id}" style="color:${color}">
+      ${shape}
+      <circle class="halo" cx="${n.x}" cy="${n.y}" r="${baseR+8}"></circle>
+      ${label}
+    </g>`;
+  }).join('');
+
+  // Compose
+  const t = state.pan, z=state.zoom;
+  svg.innerHTML = `
+    <defs>
+      <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="1.5"/>
+      </filter>
+    </defs>
+    <g transform="translate(${t.x} ${t.y}) scale(${z})">
+      ${ringsHtml}
+      <g class="edges">${edgesHtml}</g>
+      <g class="nodes">${nodesHtml}</g>
+    </g>
+  `;
+
+  // Wire interactions
+  svg.querySelectorAll('.node').forEach(g=>{
+    const id = g.getAttribute('data-node');
+    g.addEventListener('mouseenter', ()=>setHover(id));
+    g.addEventListener('mouseleave', ()=>setHover(null));
+    g.addEventListener('click', (e)=>{ e.stopPropagation(); selectNode(id); });
+  });
+}
+
+function escapeHtml(s){return s.replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+
+/* ─────────────────────────────────────────────
+   Interactions
+───────────────────────────────────────────── */
+function setHover(id){
+  state.hoverId = id;
+  const n = id ? NODE_BY_ID.get(id) : null;
+  if(n){
+    showTooltip(n);
+  } else {
+    tooltip.classList.remove('is-on');
+  }
+  render();
+}
+
+function showTooltip(n){
+  const hop = HOP_OF.get(n.id) ?? 0;
+  document.getElementById("tt-type").textContent = describeType(n);
+  document.getElementById("tt-title").textContent = n.label;
+  document.getElementById("tt-hop").textContent = hop===0?"focus":`hop ${hop}`;
+  const adj = ADJ.get(n.id)?.size ?? 0;
+  document.getElementById("tt-conns").textContent = adj+" conn.";
+  document.getElementById("tt-updated").textContent = relativeTime(n.id);
+  tooltip.querySelector(".dot").style.background = nodeColor(n);
+
+  // Position: convert SVG coords → screen
+  const pt = svgPointToScreen(n.x, n.y);
+  tooltip.style.left = (pt.x + 16) + "px";
+  tooltip.style.top = (pt.y - 16) + "px";
+  tooltip.classList.add("is-on");
+}
+
+function svgPointToScreen(x, y){
+  const r = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  const sx = (x*state.zoom + state.pan.x) / vb.width * r.width + r.left;
+  const sy = (y*state.zoom + state.pan.y) / vb.height * r.height + r.top;
+  const stageR = stage.getBoundingClientRect();
+  return { x: sx - stageR.left, y: sy - stageR.top };
+}
+
+function describeType(n){
+  if(n.type==="person") return "Person";
+  if(n.type==="fragment") return "Fragment · "+(n.subtype||"note");
+  return cap(n.subtype||"wiki")+" · Wiki";
+}
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+function relativeTime(id){
+  const h = strHash(id) % 100;
+  if(h<8) return "today";
+  if(h<25) return Math.max(1, h%6)+"d ago";
+  if(h<60) return (1+(h%4))+"w ago";
+  return (1+(h%6))+"mo ago";
+}
+
+function selectNode(id){
+  state.selectedId = id;
+  updateDetail(id);
+  render();
+}
+
+function clearSelection(){
+  state.selectedId = FOCUS_ID;
+  updateDetail(FOCUS_ID);
+  render();
+}
+
+document.getElementById("d-close").addEventListener("click", clearSelection);
+svg.addEventListener("click", clearSelection);
+
+/* Detail panel */
+function updateDetail(id){
+  const n = NODE_BY_ID.get(id) || FOCUS;
+  const hop = HOP_OF.get(n.id) ?? 0;
+  const color = nodeColor(n);
+  document.querySelector("#d-pretitle .dot").style.background = color;
+  document.getElementById("d-type").textContent = describeType(n);
+  document.getElementById("d-hop").textContent = hop===0?"hop 0 · focus":`hop ${hop} · ${["","direct","related","adjacent"][hop]}`;
+  document.getElementById("d-title").textContent = n.label;
+  document.getElementById("d-subtitle").textContent = subtitleFor(n);
+  // stats
+  const conns = Array.from(ADJ.get(n.id)||[]).map(x=>NODE_BY_ID.get(x)).filter(Boolean);
+  const fragCount = conns.filter(c=>c.type==="fragment").length;
+  const linkCount = conns.filter(c=>c.type==="wiki").length;
+  const peopleCount = conns.filter(c=>c.type==="person").length;
+  document.getElementById("d-frag").textContent = n.id===FOCUS_ID? 17 : fragCount;
+  document.getElementById("d-link").textContent = n.id===FOCUS_ID? 9 : linkCount;
+  document.getElementById("d-people").textContent = n.id===FOCUS_ID? 4 : peopleCount;
+  document.getElementById("d-summary").innerHTML = summaryFor(n);
+  // connection list
+  const list = document.getElementById("d-conn-list");
+  document.getElementById("d-conn-count").textContent = "· "+conns.length;
+  list.innerHTML = conns.slice(0,9).map(c=>{
+    const dotCls = c.type==="fragment"?"frag-dot":c.type==="person"?"person-dot":"";
+    return `<div class="conn" data-go="${c.id}" style="color:${nodeColor(c)}">
+      <span class="dot ${dotCls}" style="background:${c.type==='fragment'?nodeColor(c):c.type==='person'?'transparent':nodeColor(c)}"></span>
+      <span class="conn__t" style="color:var(--ink)">${escapeHtml(c.label)}</span>
+      <span class="conn__sub">${shortType(c)}</span>
+    </div>`;
+  }).join('') || `<div class="conn" style="color:var(--ink-3);cursor:default"><span class="conn__t">No direct connections</span></div>`;
+  list.querySelectorAll('[data-go]').forEach(el=>{
+    el.addEventListener('click', ()=>selectNode(el.getAttribute('data-go')));
+  });
+}
+function shortType(c){
+  if(c.type==="person") return "person";
+  if(c.type==="fragment") return c.subtype||"frag";
+  return c.subtype||"wiki";
+}
+function subtitleFor(n){
+  if(n.id===FOCUS_ID) return "A live wiki distilling beliefs about how Q4 should run, updated by Robin from every meeting and decision.";
+  if(n.type==="person") return "A person Robin has indexed across your vault. Mentioned in fragments, attached to decisions.";
+  if(n.type==="fragment") return "An atomic piece of evidence Robin extracted from an entry and routed to its parent threads.";
+  return "A live wiki — Robin keeps it current as new fragments arrive.";
+}
+function summaryFor(n){
+  if(n.id===FOCUS_ID) return `Robin currently holds <em>high confidence</em> that revenue will land near $32m for Q4, with active risk concentrated in <em>APAC margin</em> and an open question on <em>hiring pace.</em> The strategy is anchored in three decisions made between weeks 38–42, and depends on six skills the team has codified.`;
+  if(n.type==="person") return `Mentioned across <em>${(ADJ.get(n.id)?.size||0)} threads</em> in this vault. Click to see contributed fragments and the wikis they shape.`;
+  if(n.type==="fragment") return `Extracted from an entry on ${relativeTime(n.id)}. Robin classified it under its parent thread with <em>medium-high confidence</em>.`;
+  return `A wiki of type <em>${n.subtype||"general"}</em>. Updated as fragments arrive — every change shows the source entry that caused it.`;
+}
+
+/* Type filters */
+document.querySelectorAll("#type-filters .type-row").forEach(row=>{
+  row.addEventListener("click", ()=>{
+    const t = row.getAttribute("data-type");
+    if(state.activeTypes.has(t)) state.activeTypes.delete(t);
+    else state.activeTypes.add(t);
+    row.classList.toggle("is-off", !state.activeTypes.has(t));
+    render();
+  });
+});
+
+/* Depth */
+document.querySelectorAll("#depth button").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    state.depth = Number(btn.getAttribute("data-depth"));
+    document.querySelectorAll("#depth button").forEach(b=>b.classList.toggle("is-active", b===btn));
+    document.getElementById("depth-label").textContent = state.depth+" hop"+(state.depth>1?"s":"");
+    render();
+  });
+});
+
+/* Zoom & pan */
+let panState=null;
+svg.addEventListener("mousedown",(e)=>{
+  if(e.target.closest('.node')) return;
+  panState = { x:e.clientX, y:e.clientY, p0:{...state.pan} };
+});
+window.addEventListener("mousemove",(e)=>{
+  if(!panState) return;
+  state.pan = { x: panState.p0.x + (e.clientX-panState.x), y: panState.p0.y + (e.clientY-panState.y) };
+  render();
+});
+window.addEventListener("mouseup",()=>{ panState=null; });
+svg.addEventListener("wheel",(e)=>{
+  e.preventDefault();
+  const k = e.deltaY<0 ? 1.08 : 0.92;
+  state.zoom = Math.max(.5, Math.min(2.4, state.zoom*k));
+  render();
+}, {passive:false});
+
+document.getElementById("zoom-in").onclick = ()=>{state.zoom=Math.min(2.4,state.zoom*1.15);render();};
+document.getElementById("zoom-out").onclick = ()=>{state.zoom=Math.max(.5,state.zoom/1.15);render();};
+document.getElementById("zoom-fit").onclick = ()=>{state.zoom=1;state.pan={x:0,y:0};render();};
+document.getElementById("zoom-reset").onclick = ()=>{state.zoom=1;state.pan={x:0,y:0};clearSelection();state.depth=2;document.querySelectorAll("#depth button").forEach(b=>b.classList.toggle("is-active", b.getAttribute("data-depth")==="2"));document.getElementById("depth-label").textContent="2 hops";render();};
+
+/* Keyboard */
+window.addEventListener("keydown",(e)=>{
+  if(e.key==="Escape") clearSelection();
+});
+
+/* Counts */
+function updateCounts(){
+  const counts = {wiki:0, fragment:0, person:0};
+  NODES.forEach(n=>{ if((HOP_OF.get(n.id)??99)<=state.depth) counts[n.type]++; });
+  Object.entries(counts).forEach(([k,v])=>{
+    document.querySelector(`[data-count="${k}"]`).textContent = v;
+  });
+  document.getElementById("total-count").textContent = NODES.filter(n=>(HOP_OF.get(n.id)??99)<=state.depth).length+" · "+EDGES.filter(([s,t])=>{
+    const a=NODE_BY_ID.get(s),b=NODE_BY_ID.get(t);
+    return a&&b&&(HOP_OF.get(s)??99)<=state.depth&&(HOP_OF.get(t)??99)<=state.depth;
+  }).length;
+}
+
+/* Initial */
+const _origRender = render;
+render = function(){ _origRender(); updateCounts(); }
+render();
+updateDetail(FOCUS_ID);
+
+</script>
+
+
+
+</body>
