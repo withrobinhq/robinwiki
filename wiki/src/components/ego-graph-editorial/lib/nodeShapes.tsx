@@ -7,10 +7,11 @@ import styles from "../EgoGraphEditorial.module.css";
  * the inner contents of a `<g>` translated to the node's position;
  * the caller is responsible for keying and wrapping the group.
  *
- * Sizing comes from `n.size` when the upstream payload has it, with a
- * fallback table indexed by (type, hop). Fragments and people on
- * outer rings shrink slightly so the editorial weight rolls outward
- * from the focus.
+ * The reference CSS uses compound selectors `.node circle.bg` and
+ * `.node circle.halo` to drive transitions, hover halos, and focus
+ * rings. To match, the bg circle gets `styles.bg` and the halo gets
+ * `styles.halo` so both classes resolve to the same hashed names the
+ * `.node` rules expect.
  */
 
 // Default radius by (type, hop). Index 0 is the focus radius and is
@@ -35,10 +36,6 @@ export function renderFocus(n: LaidOutNode, color: string): JSX.Element {
       <circle
         className={styles.focusRing}
         r={r + 14}
-        fill="none"
-        stroke="var(--blue)"
-        strokeWidth={1}
-        strokeDasharray="3 5"
       />
       <g className={styles.focusCross}>
         <line x1={0} y1={-(r + 22)} x2={0} y2={-(r + 6)} />
@@ -47,18 +44,10 @@ export function renderFocus(n: LaidOutNode, color: string): JSX.Element {
         <line x1={r + 6} y1={0} x2={r + 22} y2={0} />
       </g>
       <circle r={r + 3} fill={color} opacity={0.12} />
-      <circle r={r} fill={color} />
+      <circle className={styles.bg} r={r} fill={color} />
       <circle r={r - 4} fill={color} stroke="#ffffff" strokeWidth={1.5} />
-      <text
-        y={r + 18}
-        textAnchor="middle"
-        fontFamily="var(--serif)"
-        fontSize={14}
-        fontWeight={600}
-        fill="var(--ink)"
-      >
-        {n.label}
-      </text>
+      <circle className={styles.halo} r={r + 8} />
+      <text y={r + 18}>{n.label}</text>
     </g>
   );
 }
@@ -71,23 +60,15 @@ export function renderWiki(
   const r = baseR(n);
   return (
     <g transform={`translate(${n.x} ${n.y})`} opacity={hopOpacity}>
-      <circle r={r} fill={color} />
+      <circle className={styles.bg} r={r} fill={color} />
       <circle
         r={Math.max(1, r - 3)}
         fill={color}
         stroke="rgba(255,255,255,0.4)"
         strokeWidth={0.8}
       />
-      <text
-        y={r + 14}
-        textAnchor="middle"
-        fontFamily="var(--sans)"
-        fontSize={11}
-        fontWeight={500}
-        fill="var(--ink-2)"
-      >
-        {n.label}
-      </text>
+      <circle className={styles.halo} r={r + 8} />
+      <text y={r + 14}>{n.label}</text>
     </g>
   );
 }
@@ -101,30 +82,22 @@ export function renderFragment(
   return (
     <g transform={`translate(${n.x} ${n.y})`}>
       <circle
-        r={r + 3}
-        fill="none"
-        stroke={color}
-        strokeDasharray="2 2"
-        opacity={0.6 * hopOpacity}
-      />
-      <circle
+        className={styles.bg}
         r={r}
         fill={color}
         stroke={color}
         strokeWidth={1}
         opacity={0.8 * hopOpacity}
       />
-      <text
-        y={r + 12}
-        textAnchor="middle"
-        fontFamily="var(--mono)"
-        fontSize={9}
-        fill="var(--ink-3)"
-        letterSpacing="0.04em"
-        opacity={hopOpacity}
-      >
-        {n.label}
-      </text>
+      <circle
+        r={r + 3}
+        fill="none"
+        stroke={color}
+        strokeDasharray="2 2"
+        opacity={0.6 * hopOpacity}
+      />
+      <circle className={styles.halo} r={r + 8} />
+      <text y={r + 12}>{n.label}</text>
     </g>
   );
 }
@@ -138,22 +111,15 @@ export function renderPerson(
   return (
     <g transform={`translate(${n.x} ${n.y})`} opacity={hopOpacity}>
       <circle
+        className={styles.bg}
         r={r}
         fill="var(--paper-2)"
         stroke={color}
         strokeWidth={2}
       />
       <circle r={Math.max(1, r - 4)} fill={color} opacity={0.15} />
-      <text
-        y={r + 14}
-        textAnchor="middle"
-        fontFamily="var(--sans)"
-        fontSize={11}
-        fontWeight={500}
-        fill="var(--ink-2)"
-      >
-        {n.label}
-      </text>
+      <circle className={styles.halo} r={r + 8} />
+      <text y={r + 14}>{n.label}</text>
     </g>
   );
 }

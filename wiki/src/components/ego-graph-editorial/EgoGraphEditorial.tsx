@@ -59,7 +59,10 @@ export function EgoGraphEditorial({
   );
 
   const filteredEdges = useMemo(
-    () => edges.filter((e) => filteredIds.has(e.source) && filteredIds.has(e.target)),
+    () =>
+      edges.filter(
+        (e) => filteredIds.has(e.source) && filteredIds.has(e.target),
+      ),
     [edges, filteredIds],
   );
 
@@ -131,7 +134,7 @@ export function EgoGraphEditorial({
   if (!focusNode) {
     return (
       <div className={styles.app}>
-        <div className={styles.detailEmpty} style={{ margin: 32 }}>
+        <div style={{ padding: 32, fontFamily: "var(--mono)", fontSize: 12 }}>
           {`Focus node "${focusId}" missing from graph payload.`}
         </div>
       </div>
@@ -144,9 +147,11 @@ export function EgoGraphEditorial({
 
   const hoverNode = state.hover ? (nodeMap.get(state.hover) ?? null) : null;
 
-  const detailNode = selectedNode.id === focusId ? null : selectedNode;
+  const detailNode = selectedNode;
   const detailConnections = adjacency.get(selectedNode.id) ?? [];
-  const tooltipConnectionCount = hoverNode ? (totalDegree.get(hoverNode.id) ?? 0) : 0;
+  const tooltipConnectionCount = hoverNode
+    ? (totalDegree.get(hoverNode.id) ?? 0)
+    : 0;
 
   return (
     <div className={styles.app}>

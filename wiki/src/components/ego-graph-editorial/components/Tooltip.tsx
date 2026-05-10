@@ -22,10 +22,13 @@ export function Tooltip({
 
   const color = nodeColor(node);
   const hopText = node.hop === 0 ? "FOCUS" : `HOP ${node.hop}`;
+  const typeText = node.subtype
+    ? `${node.subtype.toString().toUpperCase()} · ${node.type.toUpperCase()}`
+    : node.type.toUpperCase();
 
   return (
     <div
-      className={`${styles.tooltip} ${styles.tooltipIsOn}`}
+      className={`${styles.tooltip} ${styles.isOn}`}
       style={{
         left: screenX,
         top: screenY,
@@ -33,17 +36,19 @@ export function Tooltip({
       }}
       role="tooltip"
     >
-      <div className={styles.tooltipPretitle}>
+      <div className={styles.tooltipT}>
         <span
-          className={styles.tooltipDot}
+          className={styles.dot}
           style={{ background: color }}
           aria-hidden="true"
         />
-        <span>{`${node.type.toUpperCase()} · ${hopText}`}</span>
+        <span>{typeText}</span>
+        <span style={{ marginLeft: "auto" }}>{hopText}</span>
       </div>
       <div className={styles.tooltipTitle}>{node.label}</div>
       <div className={styles.tooltipMeta}>
-        {`${connectionCount} connection${connectionCount === 1 ? "" : "s"} · live`}
+        <span>{`${connectionCount} conn.`}</span>
+        <span>live</span>
       </div>
     </div>
   );

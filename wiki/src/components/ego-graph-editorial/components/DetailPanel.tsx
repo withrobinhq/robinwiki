@@ -1,6 +1,5 @@
 "use client";
 
-import { X } from "lucide-react";
 import type { LaidOutNode, NodeType } from "../types";
 import { nodeColor } from "../lib/colors";
 import styles from "../EgoGraphEditorial.module.css";
@@ -19,12 +18,17 @@ interface DetailPanelProps {
 const MAX_CONNECTIONS = 9;
 
 function shortId(id: string): string {
-  if (id.length <= 8) return id;
-  return `${id.slice(0, 8)}...`;
+  if (id.length <= 24) return id;
+  return `${id.slice(0, 12)}...${id.slice(-8)}`;
 }
 
 function typeLabel(t: NodeType): string {
-  return t.toUpperCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+function subShort(c: LaidOutNode): string {
+  if (c.subtype) return c.subtype.toString();
+  return c.type;
 }
 
 export function DetailPanel({
@@ -34,130 +38,177 @@ export function DetailPanel({
   onClose,
   onNavigate,
 }: DetailPanelProps) {
-  if (!node) {
+  // Pretitle / title fall back to focus-style copy when no node is
+  // selected; this matches the reference, which always renders the
+  // detail pane with focus content as the resting state.
+  const isFocus = !node || node.id === focusId;
+  const display = node;
+
+  if (!display) {
     return (
       <aside className={styles.detail}>
-        <div className={styles.detailEmpty}>Select a node to inspect</div>
+        <div className={styles.detailHead}>
+          <div className={styles.detailHeadInner}>
+            <div className={styles.detailPretitle}>
+              <span
+                className={styles.dot}
+                style={{ background: "var(--ink-4)" }}
+                aria-hidden="true"
+              />
+              <span>—</span>
+              <span className={styles.hop}>no selection</span>
+            </div>
+            <h1 className={styles.detailTitle}>Select a node</h1>
+            <div className={styles.detailSubtitle}>
+              Click any node in the graph to inspect its connections, fragments,
+              and provenance.
+            </div>
+          </div>
+        </div>
       </aside>
     );
   }
 
-  const color = nodeColor(node);
+  const color = nodeColor(display);
 
   // Per-type counts derived from the immediate neighbors.
   const counts: Record<NodeType, number> = { wiki: 0, fragment: 0, person: 0 };
   for (const c of connections) counts[c.type] += 1;
 
-  const firstNeighbor = connections[0]?.label;
-  const secondNeighbor = connections[1]?.label;
-
-  const isFocus = node.id === focusId;
-  const hopText = isFocus ? "FOCUS" : `HOP ${node.hop}`;
-  const pretitle = `${typeLabel(node.type)} · ${hopText}`;
+  const subtypeUpper = (display.subtype ?? "").toString().toUpperCase();
+  const typeUpper = display.type.toUpperCase();
+  const pretitle = subtypeUpper
+    ? `${subtypeUpper} · ${typeUpper}`
+    : typeUpper;
+  const hopText = isFocus ? "HOP 0 · FOCUS" : `HOP ${display.hop}`;
 
   return (
     <aside className={styles.detail}>
-      <header className={styles.detailHeader}>
-        <div className={styles.detailPretitle}>
-          <span
-            className={styles.detailDot}
-            style={{ background: color }}
-            aria-hidden="true"
-          />
-          <span>{pretitle}</span>
+      <div className={styles.detailHead}>
+        <div className={styles.detailHeadInner}>
+          <div className={styles.detailPretitle}>
+            <span
+              className={styles.dot}
+              style={{ background: color }}
+              aria-hidden="true"
+            />
+            <span>{pretitle}</span>
+            <span className={styles.hop}>{hopText}</span>
+          </div>
+          <h1 className={styles.detailTitle}>{display.label}</h1>
+          <div className={styles.detailSubtitle}>
+            {isFocus
+              ? `A live ${typeLabel(display.type)} that Robin keeps current as new fragments arrive.`
+              : `${typeLabel(display.type)} captured ${display.hop} hop${display.hop === 1 ? "" : "s"} from focus.`}
+          </div>
         </div>
-        <h2 className={styles.detailTitle}>{node.label}</h2>
-        <div className={styles.detailSubtitle}>Captured recently</div>
         <button
           type="button"
           className={styles.detailClose}
           onClick={onClose}
-          aria-label="Clear selection"
+          title="Clear selection"
         >
-          <X size={16} aria-hidden="true" />
+          esc
         </button>
-      </header>
+      </div>
 
-      <section className={styles.sidebarSection}>
-        <h3 className={styles.sectionHeading}>At a glance</h3>
-        <div className={styles.statRow}>
-          <div className={styles.statCard}>
-            <div className={styles.statValue}>{counts.fragment}</div>
-            <div className={styles.statLabel}>Fragments</div>
+      <div className={styles.detailSection}>
+        <h4>At a glance</h4>
+        <div className={styles.stats}>
+          <div className={styles.stat}>
+            <div className={styles.statN}>{counts.fragment}</div>
+            <div className={styles.statL}>fragments</div>
           </div>
-          <div className={styles.statCard}>
-            <div className={styles.statValue}>{counts.wiki}</div>
-            <div className={styles.statLabel}>Wiki links</div>
+          <div className={styles.stat}>
+            <div className={styles.statN}>{counts.wiki}</div>
+            <div className={styles.statL}>wiki links</div>
           </div>
-          <div className={styles.statCard}>
-            <div className={styles.statValue}>{counts.person}</div>
-            <div className={styles.statLabel}>People</div>
+          <div className={styles.stat}>
+            <div className={styles.statN}>{counts.person}</div>
+            <div className={styles.statL}>people</div>
           </div>
         </div>
-      </section>
+      </div>
 
-      <section className={styles.sidebarSection}>
-        <h3 className={styles.sectionHeading}>Summary</h3>
-        <p className={styles.summary}>
-          {`${node.label} sits ${node.hop} hop${node.hop === 1 ? "" : "s"} from the focus. It currently has ${connections.length} direct connection${connections.length === 1 ? "" : "s"}, including `}
-          <em>{firstNeighbor ?? "no neighbors yet"}</em>
-          {firstNeighbor ? " and " : ""}
-          {firstNeighbor ? <em>{secondNeighbor ?? "..."}</em> : null}
-          .
+      <div className={styles.detailSection}>
+        <h4>
+          Summary <span className={styles.summaryAux}>· auto-synthesised</span>
+        </h4>
+        <p>
+          Robin tracks <em>{connections.length} direct connection{connections.length === 1 ? "" : "s"}</em> from {display.label}. The neighborhood spans
+          {" "}<em>{counts.wiki} wiki entr{counts.wiki === 1 ? "y" : "ies"}</em>,
+          {" "}<em>{counts.fragment} fragment{counts.fragment === 1 ? "" : "s"}</em>, and
+          {" "}<em>{counts.person} person link{counts.person === 1 ? "" : "s"}</em>.
         </p>
-      </section>
+      </div>
 
-      <section className={styles.sidebarSection}>
-        <h3 className={styles.sectionHeading}>Direct connections</h3>
+      <div className={styles.detailSection}>
+        <h4>
+          Direct connections{" "}
+          <span className={styles.summaryAux}>· {connections.length}</span>
+        </h4>
         {connections.length === 0 ? (
-          <div className={styles.helpText}>No direct connections.</div>
+          <div className={styles.connList}>
+            <div
+              className={styles.conn}
+              style={{ color: "var(--ink-3)", cursor: "default" }}
+            >
+              <span className={styles.connT} style={{ color: "var(--ink-3)" }}>
+                No direct connections
+              </span>
+            </div>
+          </div>
         ) : (
-          connections.slice(0, MAX_CONNECTIONS).map((c) => {
-            const cColor = nodeColor(c);
-            const sub = c.subtype ? c.subtype.toString() : c.type;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                className={styles.connRow}
-                onClick={() => onNavigate(c.id)}
-              >
-                <span
-                  className={styles.swatch}
-                  style={{ background: cColor }}
-                  aria-hidden="true"
-                />
-                <span className={styles.connRowTitle}>{c.label}</span>
-                <span className={styles.connRowMeta}>{sub.toUpperCase()}</span>
-              </button>
-            );
-          })
+          <div className={styles.connList}>
+            {connections.slice(0, MAX_CONNECTIONS).map((c) => {
+              const cColor = nodeColor(c);
+              const dotClass = [
+                styles.dot,
+                c.type === "fragment" ? styles.fragDot : "",
+                c.type === "person" ? styles.personDot : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
+              return (
+                <button
+                  type="button"
+                  key={c.id}
+                  className={styles.conn}
+                  style={{ color: cColor }}
+                  onClick={() => onNavigate(c.id)}
+                >
+                  <span
+                    className={dotClass}
+                    style={{ background: cColor }}
+                    aria-hidden="true"
+                  />
+                  <span className={styles.connT} style={{ color: "var(--ink)" }}>
+                    {c.label}
+                  </span>
+                  <span className={styles.connSub}>{subShort(c)}</span>
+                </button>
+              );
+            })}
+          </div>
         )}
-      </section>
+      </div>
 
-      <section className={styles.sidebarSection}>
-        <h3 className={styles.sectionHeading}>Provenance</h3>
-        <div className={styles.provRow}>
+      <div className={styles.detailSectionLast}>
+        <h4>Provenance</h4>
+        <p className={styles.provText}>
           <span className={styles.provKey}>id</span>
-          <span className={styles.provVal}>{shortId(node.id)}</span>
-        </div>
-        <div className={styles.provRow}>
-          <span className={styles.provKey}>created</span>
-          <span className={styles.provVal}>n/a</span>
-        </div>
-        <div className={styles.provRow}>
-          <span className={styles.provKey}>last edit</span>
-          <span className={styles.provVal}>n/a</span>
-        </div>
-        <div className={styles.provRow}>
-          <span className={styles.provKey}>last reindex</span>
-          <span className={styles.provVal}>n/a</span>
-        </div>
-        <div className={styles.provRow}>
+          <span className={styles.provVal}>&nbsp;&nbsp;{shortId(display.id)}</span>
+          <br />
+          <span className={styles.provKey}>type</span>
+          <span className={styles.provVal}>&nbsp;&nbsp;{display.type}{display.subtype ? ` · ${display.subtype}` : ""}</span>
+          <br />
+          <span className={styles.provKey}>hop</span>
+          <span className={styles.provVal}>&nbsp;&nbsp;{display.hop}</span>
+          <br />
           <span className={styles.provKey}>vault</span>
-          <span className={styles.provVal}>work</span>
-        </div>
-      </section>
+          <span className={styles.provVal}>&nbsp;&nbsp;work</span>
+        </p>
+      </div>
     </aside>
   );
 }

@@ -621,6 +621,23 @@
   animation: 0.4s ease 0s 1 normal both running fadeIn;
 }
 
+.bg { /* paired with .node compound rules below */ }
+.halo { /* paired with .node compound rules below */ }
+.frag { /* type modifier on .node and .typeRow .swatch */ }
+.person { /* type modifier on .node and .typeRow .swatch */ }
+.filing { /* edge kind modifier */ }
+.wikilink { /* edge kind modifier */ }
+.mention { /* edge kind modifier */ }
+.isHot { /* state modifier */ }
+.isDim { /* state modifier */ }
+.isFocus { /* state modifier */ }
+.tl { /* corner position modifier */ }
+.tr { /* corner position modifier */ }
+.bl { /* corner position modifier */ }
+.br { /* corner position modifier */ }
+.fragDot { /* connection-row dot modifier */ }
+.personDot { /* connection-row dot modifier */ }
+
 .node circle.bg { transition: transform 0.12s, filter 0.12s; }
 
 .node text {
