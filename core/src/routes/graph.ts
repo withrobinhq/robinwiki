@@ -77,7 +77,7 @@ graphRouter.get('/', async (c) => {
     idsByType[n.type].push(n.id)
   }
 
-  const labelMap: Record<string, { label: string; snippet: string }> = {}
+  const labelMap: Record<string, { label: string; snippet: string; subtype?: string }> = {}
 
   if (idsByType.entry?.length) {
     const rows = await db
@@ -111,24 +111,36 @@ graphRouter.get('/', async (c) => {
   }
   if (idsByType.thread?.length) {
     const rows = await db
-      .select({ key: wikis.lookupKey, name: wikis.name, content: wikis.content })
+      .select({
+        key: wikis.lookupKey,
+        name: wikis.name,
+        content: wikis.content,
+        type: wikis.type,
+      })
       .from(wikis)
       .where(and(inArray(wikis.lookupKey, idsByType.thread), isNull(wikis.deletedAt)))
     for (const r of rows)
       labelMap[`thread:${r.key}`] = {
         label: r.name,
         snippet: (r.content ?? '').slice(0, 100),
+        subtype: r.type,
       }
   }
   if (idsByType.wiki?.length) {
     const rows = await db
-      .select({ key: wikis.lookupKey, name: wikis.name, content: wikis.content })
+      .select({
+        key: wikis.lookupKey,
+        name: wikis.name,
+        content: wikis.content,
+        type: wikis.type,
+      })
       .from(wikis)
       .where(and(inArray(wikis.lookupKey, idsByType.wiki), isNull(wikis.deletedAt)))
     for (const r of rows)
       labelMap[`wiki:${r.key}`] = {
         label: r.name,
         snippet: (r.content ?? '').slice(0, 100),
+        subtype: r.type,
       }
   }
   if (idsByType.person?.length) {
@@ -143,7 +155,14 @@ graphRouter.get('/', async (c) => {
       }
   }
 
-  // 5. Build nodes array
+  // 5. Build nodes array.
+  //
+  // `subtype` is the editorial classification for wiki nodes (belief,
+  // decision, goal, project, principle, log, collection, skill, agent,
+  // voice, or a user-defined wiki-type slug). It is optional in the
+  // schema, only emitted on wiki nodes, and ignored by the canvas graph
+  // view and older clients. The `type` field stays as the entity-type
+  // discriminator, unchanged.
   const nodes = [...nodeSet.entries()].map(([key, n]) => {
     const resolved = labelMap[key]
     return {
@@ -152,6 +171,7 @@ graphRouter.get('/', async (c) => {
       type: n.type as 'wiki' | 'fragment' | 'person' | 'entry',
       size: n.edgeCount,
       snippet: resolved?.snippet ?? '',
+      ...(resolved?.subtype ? { subtype: resolved.subtype } : {}),
     }
   })
 

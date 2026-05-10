@@ -670,6 +670,10 @@ export type GraphResponseSchema = {
         type: 'wiki' | 'fragment' | 'person' | 'entry';
         size: number;
         snippet?: string;
+        /**
+         * Editorial subtype for wiki nodes, mirrors `wikis.type` (belief, decision, goal, project, principle, log, collection, skill, agent, voice, or any user-defined wiki-type slug). Optional so the canvas graph view and older clients ignore it without breaking, and absent on fragment / person / entry nodes.
+         */
+        subtype?: string;
     }>;
     edges: Array<{
         source: string;
