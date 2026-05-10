@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Settings, Users, RefreshCw } from "lucide-react";
+import { Settings, Users, RefreshCw, Layers } from "lucide-react";
 import { T } from "@/lib/typography";
 
 // Stream U: Airbnb-style multi-panel side-nav. The three initial panels
@@ -30,6 +30,12 @@ const PANELS: Array<{
     label: "People",
     Icon: Users,
     description: "Pending person triage",
+  },
+  {
+    href: "/settings/wiki-types",
+    label: "Wiki Types",
+    Icon: Layers,
+    description: "Manage wiki type definitions",
   },
   {
     href: "/settings/backfill",
@@ -66,7 +72,7 @@ export function SettingsNav() {
         Settings
       </p>
       {PANELS.map((panel) => {
-        const active = pathname === panel.href;
+        const active = pathname === panel.href || pathname.startsWith(panel.href + "/");
         return (
           <Link
             key={panel.href}
