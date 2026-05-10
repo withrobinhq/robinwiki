@@ -628,10 +628,6 @@
   animation: 0.4s ease 0s 1 normal both running fadeIn;
 }
 
-.bg { /* paired with .node compound rules below */ }
-.halo { /* paired with .node compound rules below */ }
-.frag { /* type modifier on .node and .typeRow .swatch */ }
-.person { /* type modifier on .node and .typeRow .swatch */ }
 .filing { /* edge kind modifier */ }
 .wikilink { /* edge kind modifier */ }
 .mention { /* edge kind modifier */ }
@@ -684,7 +680,6 @@
 /* Hide labels on hop 2 and 3 nodes by default. They reappear on hover
    (.isHot) or when the node is the focus. Keeps the outer rings as a
    visual halo without flooding the stage with overlapping text. */
-.hopFar { /* placeholder so CSS modules export the class */ }
 .node.hopFar:not(.isFocus):not(.isHot) text { display: none; }
 
 .node circle.halo {

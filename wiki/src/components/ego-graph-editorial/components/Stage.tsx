@@ -61,7 +61,15 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
     startY: number;
     panX: number;
     panY: number;
+    moved: number;
   } | null>(null);
+  // Live mirror of state.zoom so the wheel listener can read the
+  // current zoom without resubscribing on every change. Without this,
+  // rapid wheel events fight a stale closure and zoom drifts.
+  const zoomRef = useRef(state.zoom);
+  useEffect(() => {
+    zoomRef.current = state.zoom;
+  }, [state.zoom]);
 
   const nodeIndex = useMemo(() => {
     const m = new Map<string, LaidOutNode>();
@@ -92,18 +100,20 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
 
   // Wheel zoom. We attach a non-passive listener so preventDefault
   // works in modern Chrome, which treats wheel handlers attached via
-  // React props as passive by default.
+  // React props as passive by default. The handler reads zoomRef
+  // instead of capturing state.zoom so compound wheel events don't
+  // race a stale closure.
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
     function onWheel(e: WheelEvent) {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.08 : 0.92;
-      dispatch({ type: "SET_ZOOM", zoom: state.zoom * factor });
+      dispatch({ type: "SET_ZOOM", zoom: zoomRef.current * factor });
     }
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
-  }, [dispatch, state.zoom]);
+  }, [dispatch]);
 
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<SVGSVGElement>) => {
@@ -115,6 +125,7 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
         startY: e.clientY,
         panX: state.pan.x,
         panY: state.pan.y,
+        moved: 0,
       };
       (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
     },
@@ -127,6 +138,7 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
       if (!drag || !drag.active) return;
       const dx = e.clientX - drag.startX;
       const dy = e.clientY - drag.startY;
+      drag.moved = Math.max(drag.moved, Math.hypot(dx, dy));
       dispatch({ type: "SET_PAN", x: drag.panX + dx, y: drag.panY + dy });
     },
     [dispatch],
@@ -151,9 +163,14 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
       const id = nodeIdFrom(e.target);
       if (id) {
         dispatch({ type: "SELECT", id });
-      } else {
-        dispatch({ type: "CLEAR_SELECT" });
+        return;
       }
+      // Suppress click-as-clear when the pointer dragged. Browsers fire
+      // a click after pointerup even on a long pan, which would
+      // otherwise wipe the current selection mid-gesture.
+      const drag = dragRef.current;
+      if (drag && drag.moved > 4) return;
+      dispatch({ type: "CLEAR_SELECT" });
     },
     [dispatch],
   );
@@ -314,6 +331,43 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
     dispatch({ type: "SET_ZOOM", zoom: 1 });
     dispatch({ type: "SET_PAN", x: 0, y: 0 });
   };
+  const onFitZoom = () => {
+    // With only one node (focus alone, no neighbors) the bbox collapses
+    // to a point; fall back to the identity view rather than dividing
+    // by zero. Otherwise, frame the rendered nodes with an 80px margin
+    // and recenter the pan so the bbox midpoint sits at (CX, CY).
+    if (nodes.length <= 1) {
+      dispatch({ type: "SET_ZOOM", zoom: 1 });
+      dispatch({ type: "SET_PAN", x: 0, y: 0 });
+      return;
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const n of nodes) {
+      if (n.x < minX) minX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y > maxY) maxY = n.y;
+    }
+    const bboxW = maxX - minX;
+    const bboxH = maxY - minY;
+    if (bboxW === 0 || bboxH === 0) {
+      dispatch({ type: "SET_ZOOM", zoom: 1 });
+      dispatch({ type: "SET_PAN", x: 0, y: 0 });
+      return;
+    }
+    const fitZoom = clamp(
+      Math.min((W - 80) / bboxW, (H - 80) / bboxH),
+      ZOOM_MIN,
+      ZOOM_MAX,
+    );
+    const panX = (CX - (minX + bboxW / 2)) * fitZoom;
+    const panY = (CY - (minY + bboxH / 2)) * fitZoom;
+    dispatch({ type: "SET_ZOOM", zoom: fitZoom });
+    dispatch({ type: "SET_PAN", x: panX, y: panY });
+  };
 
   return (
     <main className={styles.stage}>
@@ -357,6 +411,7 @@ export function Stage({ nodes, edges, state, dispatch, focusId }: StageProps) {
         <button type="button" title="Zoom in" onClick={onZoomIn}>＋</button>
         <button type="button" title="Zoom out" onClick={onZoomOut}>−</button>
         <button type="button" title="Reset" onClick={onZoomReset}>⊕</button>
+        <button type="button" title="Fit to view" onClick={onFitZoom}>⤢</button>
       </div>
     </main>
   );

@@ -26,12 +26,18 @@ export function Tooltip({
     ? `${node.subtype.toString().toUpperCase()} · ${node.type.toUpperCase()}`
     : node.type.toUpperCase();
 
+  // Keep the tooltip inside the viewport so a hover near the right or
+  // bottom edge doesn't push the title off-screen. Tooltip lives inside
+  // a 'use client' tree so window is safe to read.
+  const clampedX = Math.max(80, Math.min(window.innerWidth - 80, screenX));
+  const clampedY = Math.max(60, Math.min(window.innerHeight - 40, screenY));
+
   return (
     <div
       className={`${styles.tooltip} ${styles.isOn}`}
       style={{
-        left: screenX,
-        top: screenY,
+        left: clampedX,
+        top: clampedY,
         transform: "translate(-50%, -110%)",
       }}
       role="tooltip"

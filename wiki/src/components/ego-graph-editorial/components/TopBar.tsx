@@ -31,7 +31,7 @@ function capitalisedPlural(subtype: string | undefined): string {
 }
 
 export function TopBar({ focusTitle, focusSubtype }: TopBarProps) {
-  const middle = capitalisedPlural(focusSubtype);
+  const middle = focusSubtype ? capitalisedPlural(focusSubtype) : null;
 
   return (
     <header className={styles.topbar}>
@@ -43,8 +43,12 @@ export function TopBar({ focusTitle, focusSubtype }: TopBarProps) {
         <div className={styles.topbarCrumb} aria-label="Breadcrumb">
           <span>Wiki</span>
           <span className={styles.sep} aria-hidden="true">/</span>
-          <span>{middle}</span>
-          <span className={styles.sep} aria-hidden="true">/</span>
+          {middle ? (
+            <>
+              <span>{middle}</span>
+              <span className={styles.sep} aria-hidden="true">/</span>
+            </>
+          ) : null}
           <span className={styles.here}>{focusTitle}</span>
         </div>
       </div>

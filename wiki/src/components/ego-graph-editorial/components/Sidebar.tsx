@@ -100,10 +100,10 @@ export function Sidebar({
     focusNeighborTypes[other.type] += 1;
   }
 
-  const focusSubtypeRaw = focusNode.subtype ?? focusNode.type ?? "wiki";
   const focusTypeUpper = focusNode.type.toUpperCase();
-  const focusSubtypeUpper = focusSubtypeRaw.toString().toUpperCase();
-  const focusTag = `${focusSubtypeUpper} · ${focusTypeUpper}`;
+  const focusTag = focusNode.subtype
+    ? `${focusNode.subtype.toString().toUpperCase()} · ${focusTypeUpper}`
+    : focusTypeUpper;
 
   return (
     <aside className={styles.sidebar}>
