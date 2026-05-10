@@ -126,7 +126,7 @@
 
   display: grid;
   grid-template-rows: 48px 1fr;
-  grid-template-columns: 280px 1fr 360px;
+  grid-template-columns: 240px 1fr 340px;
   height: 100vh;
   background: var(--paper);
   color: var(--ink);
@@ -138,6 +138,15 @@
 }
 
 .app * { box-sizing: border-box; }
+
+@media (max-width: 1280px) {
+  .app { grid-template-columns: 220px 1fr 320px; }
+}
+
+@media (max-width: 1024px) {
+  .app { grid-template-columns: 200px 1fr 0; }
+  .detail { display: none; }
+}
 
 .app button {
   font-family: inherit;
@@ -588,24 +597,22 @@
   stroke: var(--ink-4);
   stroke-width: 0.8;
   opacity: 0.45;
-  transition: opacity 0.15s, stroke-width 0.15s, stroke 0.15s;
+  transition: opacity 0.15s, stroke-width 0.15s;
 }
 
 .edge.filing {
-  stroke: var(--ink-4);
-  stroke-dasharray: none;
   opacity: 0.35;
 }
 
 .edge.wikilink {
   stroke: var(--blue);
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
 .edge.mention {
   stroke: #8a7a4f;
-  stroke-dasharray: 3, 3;
-  opacity: 0.45;
+  stroke-dasharray: 3 3;
+  opacity: 0.5;
 }
 
 .edge.isDim { opacity: 0.08; }
@@ -701,16 +708,27 @@
 .focusRing {
   fill: none;
   stroke: var(--blue);
-  stroke-width: 1.4;
-  stroke-dasharray: 3, 5;
-  opacity: 0.6;
-  animation: 4s ease-in-out 0s infinite normal none running pulse;
+  stroke-width: 1.5;
+  stroke-dasharray: 3 5;
+  opacity: 0.65;
 }
 
-.focusCross {
+@media (prefers-reduced-motion: no-preference) {
+  .focusRing {
+    animation: pulse 4s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focusRing {
+    opacity: 0.8;
+  }
+}
+
+.focusCross line {
   stroke: var(--blue);
-  stroke-width: 1;
-  opacity: 0.4;
+  stroke-width: 1.2;
+  opacity: 0.5;
 }
 
 /* ---------- Tooltip ---------- */

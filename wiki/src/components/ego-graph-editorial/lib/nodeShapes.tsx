@@ -50,7 +50,6 @@ export function renderFocus(n: LaidOutNode, color: string): JSX.Element {
       <circle r={r + 3} fill={color} opacity={0.12} />
       <circle className={styles.bg} r={r} fill={color} />
       <circle r={r - 4} fill={color} stroke="#ffffff" strokeWidth={1.5} />
-      <circle className={styles.halo} r={r + 8} />
       <text y={r + 18}>{n.label}</text>
     </g>
   );
