@@ -7,11 +7,26 @@ import { z } from 'zod'
  * persist path validate this invariant before storing the spans on the
  * FRAGMENT_IN_WIKI edge `attrs`. Bad spans are dropped, not coerced.
  */
-export const citationSpanSchema = z.object({
+/**
+ * Base shape for a citation span (no cross-field refinements). Used inside
+ * wikiClassificationSchema so the LLM-facing structured-output schema stays
+ * serializable and a single malformed span cannot reject the full parse.
+ */
+const citationSpanBaseSchema = z.object({
   start: z.number().int().nonnegative(),
   end: z.number().int().positive(),
   text: z.string().min(1),
 })
+
+/**
+ * Full citation span schema with cross-field validation. Use this for
+ * standalone validation (e.g. safeParse on individual spans) outside the
+ * LLM structured-output path. The refine rejects spans where end < start.
+ */
+export const citationSpanSchema = citationSpanBaseSchema.refine(
+  (span) => span.end >= span.start,
+  { message: 'citationSpan.end must be >= start' }
+)
 export type CitationSpan = z.infer<typeof citationSpanSchema>
 
 export const wikiClassificationSchema = z.object({
@@ -25,7 +40,11 @@ export const wikiClassificationSchema = z.object({
       // the schema permissive when the LLM omits the field on a
       // borderline assignment. Consumers should treat empty/missing as
       // "fall back to post-hoc reconstruction" (see Step 3).
-      citationSpans: z.array(citationSpanSchema).optional(),
+      //
+      // Uses the base shape (without cross-field refine) so a single bad
+      // span cannot reject the entire classification parse. The classify
+      // stage's validateSpans() filters end < start post-parse.
+      citationSpans: z.array(citationSpanBaseSchema).optional(),
     })
   ),
   noMatchReason: z.string().optional(),

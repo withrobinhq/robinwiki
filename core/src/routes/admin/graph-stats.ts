@@ -256,7 +256,6 @@ adminGraphStatsRoutes.get('/stats', async (c) => {
       raw_mentions_seen: string | null
       matched: string | null
       dropped: string | null
-      telemetry_started: Date | string | null
     }>(sql`
       SELECT
         COALESCE(SUM((metadata->>'rawMentionsSeen')::bigint), 0) AS raw_mentions_seen,

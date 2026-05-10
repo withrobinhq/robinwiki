@@ -12,7 +12,7 @@
 // per-kind helpers below are kept module-private so the contract test
 // can assert that no INSERT into wiki_agent_schema escapes this file.
 
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { embedText, type OpenRouterConfig } from '@robin/agent'
 import type { DB } from '../db/client.js'
 import { wikis, wikiTypes, wikiAgentSchema } from '../db/schema.js'
@@ -357,7 +357,7 @@ async function loadWikiRow(database: DB, wikiKey: string): Promise<WikiRow | nul
       content: wikis.content,
     })
     .from(wikis)
-    .where(eq(wikis.lookupKey, wikiKey))
+    .where(and(eq(wikis.lookupKey, wikiKey), isNull(wikis.deletedAt)))
   return row ?? null
 }
 
