@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "generatedAt": "2026-05-09T15:28:32.817Z",
+    "generatedAt": "2026-05-10T03:13:13.243Z",
     "description": "Route + JSON Schema manifest for OpenAPI generation. Feed to /apidoc.",
     "schemaCount": 65,
     "routeCount": 62
@@ -4997,6 +4997,9 @@
                   "snippet": {
                     "type": "string",
                     "default": ""
+                  },
+                  "subtype": {
+                    "type": "string"
                   }
                 },
                 "required": [
