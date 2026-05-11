@@ -254,6 +254,20 @@
               exit 1
             fi
 
+            # ── Workspace packages ─────────────────────────────────
+            # core imports compiled @robin/queue, @robin/agent, etc. from each
+            # package's dist/. Without this, first-run start fails with a cryptic
+            # ERR_MODULE_NOT_FOUND on @robin/queue/dist/index.mjs. Turbo caches,
+            # so subsequent runs are near-instant.
+            PACKAGES_LOG="$ROBIN_DEV_DIR/packages.log"
+            echo "packages: building..."
+            if ! (cd "$PROJECT_ROOT" && pnpm exec turbo run build --filter='./packages/*') > "$PACKAGES_LOG" 2>&1; then
+              echo "ERROR: workspace package build failed"
+              tail -20 "$PACKAGES_LOG" | sed 's#^#  packages log: #'
+              exit 1
+            fi
+            echo "packages: ready"
+
             # ── Core (Robin API server) ────────────────────────────
             if [ -f "$CORE_PID" ] && kill -0 "$(cat "$CORE_PID")" 2>/dev/null; then
               echo "core:     already running (pid $(cat "$CORE_PID"))"
