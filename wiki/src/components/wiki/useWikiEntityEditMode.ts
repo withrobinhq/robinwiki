@@ -92,6 +92,36 @@ export function useWikiEntityEditMode({
   // `readContentRef.current.innerHTML` is empty. We fall back to this snapshot.
   const lastReadHtmlRef = useRef<string>("");
 
+  // When revisions are seeded from the server they hold contentSnippet values
+  // which are BEFORE states. The actual current content (AFTER the latest edit)
+  // is only available at interaction time (openHistory / enterEditMode). If the
+  // head revision doesn't already reflect the current content, prepend it so
+  // the timeline and handleSave diff against the real state instead of an
+  // empty/stale BEFORE snapshot.
+  const prependCurrentIfNeeded = useCallback(
+    (startContent: string, startTitle: string, startChipLabel: string) => {
+      if (!seededRef.current) return; // local seedInitialRevision handles this
+      if (savedContent !== null) return; // handleSave already manages the head
+      if (!startContent) return;
+      setRevisions((prev) => {
+        if (prev.length === 0 || prev[0].content === startContent) return prev;
+        return [
+          {
+            id: `rev-${Date.now()}-head`,
+            timestamp: Date.now(),
+            title: startTitle,
+            chipLabel: startChipLabel,
+            content: startContent,
+            summary: prev[0].summary,
+            author: prev[0].author,
+          },
+          ...prev,
+        ];
+      });
+    },
+    [savedContent],
+  );
+
   const seedInitialRevision = useCallback(
     (content: string, title: string, chipLabel: string) => {
       if (content) lastReadHtmlRef.current = content;
@@ -153,6 +183,7 @@ export function useWikiEntityEditMode({
       const startTitle = savedTitle ?? currentTitle;
       const startChipLabel = savedChipLabel ?? currentChipLabel;
       seedInitialRevision(startContent, startTitle, startChipLabel);
+      prependCurrentIfNeeded(startContent, startTitle, startChipLabel);
       infoVisibleBeforeEditingRef.current = infoVisible;
       setBaselineContent(startContent);
       setBaselineTitle(startTitle);
@@ -164,7 +195,7 @@ export function useWikiEntityEditMode({
       setIsViewingHistory(false);
       setIsEditing(true);
     },
-    [infoVisible, savedChipLabel, savedContent, savedTitle, seedInitialRevision, setInfoVisible],
+    [infoVisible, prependCurrentIfNeeded, savedChipLabel, savedContent, savedTitle, seedInitialRevision, setInfoVisible],
   );
 
   const openHistory = useCallback(
@@ -181,12 +212,13 @@ export function useWikiEntityEditMode({
       const startTitle = savedTitle ?? currentTitle;
       const startChipLabel = savedChipLabel ?? currentChipLabel;
       seedInitialRevision(startContent, startTitle, startChipLabel);
+      prependCurrentIfNeeded(startContent, startTitle, startChipLabel);
       infoVisibleBeforeHistoryRef.current = infoVisible;
       setInfoVisible(false);
       setIsEditing(false);
       setIsViewingHistory(true);
     },
-    [infoVisible, savedChipLabel, savedContent, savedTitle, seedInitialRevision, setInfoVisible],
+    [infoVisible, prependCurrentIfNeeded, savedChipLabel, savedContent, savedTitle, seedInitialRevision, setInfoVisible],
   );
 
   const closeHistory = useCallback(() => {
