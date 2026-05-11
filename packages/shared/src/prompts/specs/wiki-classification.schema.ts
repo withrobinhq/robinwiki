@@ -13,9 +13,9 @@ import { z } from 'zod'
  * serializable and a single malformed span cannot reject the full parse.
  */
 const citationSpanBaseSchema = z.object({
-  start: z.number().int().nonnegative(),
-  end: z.number().int().positive(),
-  text: z.string().min(1),
+  start: z.number().int(),
+  end: z.number().int(),
+  text: z.string(),
 })
 
 /**
