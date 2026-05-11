@@ -130,47 +130,89 @@ git push
 
 If you want to run Robin on your own machine — for hacking on the code, or because you'd rather host on something other than Railway.
 
-### Prerequisites
+Two paths: **Nix** (recommended — one command provisions Postgres+pgvector, Redis, Node, pnpm) or **manual** (bring your own services).
 
-- **Node.js** ≥ 20 (run `corepack enable` to pin pnpm via the `packageManager` field)
-- **PostgreSQL** with the [pgvector](https://github.com/pgvector/pgvector) extension
-- **Redis** — used by BullMQ for the job queue
-- **An OpenRouter API key** — Robin uses Claude via OpenRouter for the AI pipeline. Get one at [openrouter.ai/keys](https://openrouter.ai/keys).
-
-### From clone to running
+### Env file setup (both paths)
 
 ```bash
-# Clone and install
-git clone https://github.com/withrobinhq/robinwiki.git
-cd robinwiki
-corepack enable
-pnpm install
-
-# Copy the env template
 cp core/.env.example core/.env
+cp wiki/.env.example wiki/.env
 ```
 
-Generate three random secrets and paste them into `core/.env`:
+Generate the five required secrets and paste each into the matching variable in `core/.env`:
 
 ```bash
-openssl rand -hex 32   # paste into MASTER_KEY (must be 64 hex chars)
-openssl rand -hex 32   # paste into BETTER_AUTH_SECRET
-openssl rand -hex 32   # paste into KEY_ENCRYPTION_SECRET
+for K in BETTER_AUTH_SECRET MASTER_KEY KEY_ENCRYPTION_SECRET RECOVERY_SECRET JOB_SIGNING_SECRET; do
+  echo "$K=$(openssl rand -hex 32)"
+done
 ```
 
-Then fill in the rest of `core/.env`:
+Then fill in the user-supplied values in `core/.env`:
 
 ```env
-DATABASE_URL=postgresql://postgres@127.0.0.1:5432/robinwiki
-REDIS_URL=redis://localhost:6379
 OPENROUTER_API_KEY=sk-or-v1-...
 INITIAL_USERNAME=you@example.com
 INITIAL_PASSWORD=something-you-can-remember
 ```
 
-Bootstrap the database and start the dev servers:
+`DATABASE_URL`, `REDIS_URL`, `SERVER_PUBLIC_URL`, `WIKI_ORIGIN`, and `PORT` already have correct local defaults.
+
+### Path A — Nix (recommended)
+
+The repo ships a `flake.nix` that provisions Postgres 16 (with pgvector), Redis, Node 22, and pnpm — fully isolated from anything on your system.
+
+1. **Install Nix.** The [Determinate Systems installer](https://install.determinate.systems/) enables flakes by default and includes an uninstaller:
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
+   ```
+   Restart your shell after.
+
+2. **Enter the dev shell.** From the repo root:
+   ```bash
+   nix develop
+   pnpm install
+   ```
+   First run takes 5–15 min to fetch and build the toolchain; subsequent shells are instant.
+
+3. **Boot infra and apps.** Inside the shell:
+   ```bash
+   init        # postgres + redis (data lives in ./.dev/)
+   start       # builds workspace packages, then launches core (:3000) + wiki (:8080)
+   status      # health check
+   logs [postgres|redis|core|wiki]
+   stop        # stop core + wiki, keep infra running
+   teardown    # stop everything
+   ```
+
+**Port conflicts:** if you already run Postgres locally (Postgres.app, Homebrew, Docker, etc.), `init` will refuse to start. Pick a free port and tell the flake about it before re-running:
 
 ```bash
+export ROBIN_PG_PORT=5433
+# update DATABASE_URL in core/.env to match: postgresql://postgres@127.0.0.1:5433/robinwiki
+init
+```
+
+### Path B — Manual
+
+Bring your own services.
+
+**Prerequisites:**
+
+- **Node.js** ≥ 20 (run `corepack enable` to pin pnpm via the `packageManager` field)
+- **PostgreSQL** with the [pgvector](https://github.com/pgvector/pgvector) extension
+- **Redis** — used by BullMQ for the job queue
+- **An OpenRouter API key** — get one at [openrouter.ai/keys](https://openrouter.ai/keys)
+
+**From clone to running:**
+
+```bash
+git clone https://github.com/withrobinhq/robinwiki.git
+cd robinwiki
+corepack enable
+pnpm install
+
+# After completing env file setup above:
+
 # Make sure pgvector is enabled on your database
 psql $DATABASE_URL -c 'CREATE EXTENSION IF NOT EXISTS vector;'
 
