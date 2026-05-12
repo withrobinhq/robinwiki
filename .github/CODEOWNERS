@@ -1,0 +1,26 @@
+# CODEOWNERS for Robin
+#
+# Reference: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-security/customizing-your-repository/about-code-owners
+#
+# Pattern matching follows .gitignore-style globs, BUT the LAST matching rule
+# wins (opposite of .gitignore). Add more specific rules below the default.
+#
+# To enforce: Settings, Branches, branch protection rule on `main`, tick
+# "Require review from Code Owners".
+
+# Default owner for everything in the repo.
+*                       @koolamusic
+
+# Apps
+/core/                  @koolamusic
+/wiki/                  @koolamusic
+
+# Workspace packages. Catch-all for now; split per-package when reviewers
+# come on board for specific areas.
+/packages/              @koolamusic
+
+# Governance and CI surface stays with the maintainer regardless of any
+# future per-package delegation.
+/.github/               @koolamusic
+/LICENSE                @koolamusic
+/CODE_OF_CONDUCT.md     @koolamusic
