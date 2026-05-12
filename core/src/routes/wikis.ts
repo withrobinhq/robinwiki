@@ -683,21 +683,19 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
 wikisRouter.post('/:id/publish', async (c) => {
   const id = c.req.param('id')
   const origin = (() => {
-    // Prefer the browser-supplied Origin header (reflects the wiki's
-    // host, e.g. localhost:8080) over the API server's own URL.
-    const headerOrigin = c.req.header('origin')
-    if (headerOrigin) {
+    // Do not trust request headers or request context for origin detection.
+    // `c.req` may be spoofed or may represent a non-web caller. Use the
+    // configured WIKI_ORIGIN value as the canonical wiki host.
+    const wikiOrigin = process.env.WIKI_ORIGIN?.split(',').map((value) => value.trim()).find(Boolean)
+    if (wikiOrigin) {
       try {
-        return new URL(headerOrigin).origin
+        return new URL(wikiOrigin).origin
       } catch {
-        // malformed header — fall through
+        // malformed env value — fall through
       }
     }
-    try {
-      return new URL(c.req.url).origin
-    } catch {
-      return process.env.SERVER_PUBLIC_URL ?? null
-    }
+
+    return null
   })()
 
   const result = await publishWikiService(db, id, { origin, source: 'api' })
