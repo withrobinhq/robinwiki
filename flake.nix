@@ -28,6 +28,14 @@
             ROBIN_DEV_DIR="''${ROBIN_DEV_DIR:-.dev}"
             PROJECT_ROOT="''${PROJECT_ROOT:-$PWD}"
 
+            # Postgres port, defaults to 5432. Override with PG_PORT when the
+            # system already has something on 5432 (Postgres.app, Homebrew, Docker, etc.).
+            # PGPORT is libpq's standard env var; we mirror PG_PORT into it so
+            # psql, createdb, and pg_isready inherit the same value without
+            # any further wiring.
+            PG_PORT="''${PG_PORT:-5432}"
+            export PGPORT="$PG_PORT"
+
             PG_DATA="$ROBIN_DEV_DIR/postgres/data"
             PG_SOCKET="$ROBIN_DEV_DIR/postgres/socket"
             PG_LOG="$ROBIN_DEV_DIR/postgres/postgres.log"
@@ -152,7 +160,7 @@
               echo "postgres: already running (pid $(cat "$PG_PID"))"
             else
               rm -f "$PG_PID"
-              preflight_port "postgres" 5432
+              preflight_port "postgres" "$PG_PORT"
 
               if [ ! -f "$PG_DATA/PG_VERSION" ]; then
                 echo "postgres: initializing data directory..."
@@ -166,7 +174,7 @@
 
                 cat >> "$PG_DATA/postgresql.conf" <<-PGCONF
 				listen_addresses = '127.0.0.1'
-				port = 5432
+				port = $PG_PORT
 				unix_socket_directories = '$PG_SOCKET'
 				log_destination = 'stderr'
 				logging_collector = off
@@ -178,10 +186,10 @@
                 -D "$PG_DATA" \
                 -l "$PG_LOG" \
                 -w \
-                -o "-k $PG_SOCKET"
+                -o "-k $PG_SOCKET -p $PG_PORT"
 
               head -1 "$PG_DATA/postmaster.pid" > "$PG_PID"
-              verify_spawn "postgres" "$PG_PID" 5432 "$PG_LOG" 5
+              verify_spawn "postgres" "$PG_PID" "$PG_PORT" "$PG_LOG" 5
 
               if ! ${postgres}/bin/psql -h 127.0.0.1 -U postgres -lqt 2>/dev/null | grep -qw robinwiki; then
                 echo "postgres: creating database robinwiki..."
@@ -237,8 +245,8 @@
             mkdir -p "$ROBIN_DEV_DIR/core" "$ROBIN_DEV_DIR/wiki"
 
             # ── Preflight: infra must be up ────────────────────────
-            if ! ${postgres}/bin/pg_isready -h 127.0.0.1 -p 5432 -U postgres -q 2>/dev/null; then
-              echo "ERROR: postgres is not accepting connections on :5432"
+            if ! ${postgres}/bin/pg_isready -h 127.0.0.1 -p "$PG_PORT" -U postgres -q 2>/dev/null; then
+              echo "ERROR: postgres is not accepting connections on :$PG_PORT"
               echo "  run 'init' first to bring up postgres + redis"
               exit 1
             fi
@@ -247,6 +255,20 @@
               echo "  run 'init' first to bring up postgres + redis"
               exit 1
             fi
+
+            # ── Workspace packages ─────────────────────────────────
+            # core imports compiled @robin/queue, @robin/agent, etc. from each
+            # package's dist/. Without this, first-run start fails with a cryptic
+            # ERR_MODULE_NOT_FOUND on @robin/queue/dist/index.mjs. Turbo caches,
+            # so subsequent runs are near-instant.
+            PACKAGES_LOG="$ROBIN_DEV_DIR/packages.log"
+            echo "packages: building..."
+            if ! (cd "$PROJECT_ROOT" && pnpm exec turbo run build --filter='./packages/*') > "$PACKAGES_LOG" 2>&1; then
+              echo "ERROR: workspace package build failed"
+              tail -20 "$PACKAGES_LOG" | sed 's#^#  packages log: #'
+              exit 1
+            fi
+            echo "packages: ready"
 
             # ── Core (Robin API server) ────────────────────────────
             if [ -f "$CORE_PID" ] && kill -0 "$(cat "$CORE_PID")" 2>/dev/null; then
@@ -338,7 +360,7 @@
             WIKI_PID="$ROBIN_DEV_DIR/wiki/wiki.pid"
 
             if [ -f "$PG_PID" ] && kill -0 "$(cat "$PG_PID")" 2>/dev/null; then
-              if ${postgres}/bin/pg_isready -h 127.0.0.1 -p 5432 -U postgres -q 2>/dev/null; then
+              if ${postgres}/bin/pg_isready -h 127.0.0.1 -p "$PG_PORT" -U postgres -q 2>/dev/null; then
                 echo "postgres: UP (pid $(cat "$PG_PID"), accepting connections)"
               else
                 echo "postgres: UP (pid $(cat "$PG_PID"), NOT accepting connections)"
