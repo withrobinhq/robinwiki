@@ -312,4 +312,4 @@ The workspace packages (`@robin/agent`, `@robin/queue`, `@robin/shared`, `@robin
 
 ## License
 
-[MIT](LICENSE) © 2026 withrobinhq
+Robin is distributed under the [Sustainable Use License](LICENSE), a source-available license that permits internal business, non-commercial, and personal use, and non-commercial redistribution. Copyright (c) 2026 withrobinhq.
