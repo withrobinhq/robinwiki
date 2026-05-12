@@ -130,7 +130,7 @@ git push
 
 If you want to run Robin on your own machine — for hacking on the code, or because you'd rather host on something other than Railway.
 
-Two paths: **Nix** (recommended — one command provisions Postgres+pgvector, Redis, Node, pnpm) or **manual** (bring your own services).
+Two paths: **Nix** (recommended, one command provisions Postgres+pgvector, Redis, Node, pnpm) or **manual** (bring your own services).
 
 ### Env file setup (both paths)
 
@@ -139,12 +139,14 @@ cp core/.env.example core/.env
 cp wiki/.env.example wiki/.env
 ```
 
-Generate the five required secrets and paste each into the matching variable in `core/.env`:
+Generate each of the five required secrets and paste it into the matching variable in `core/.env`:
 
 ```bash
-for K in BETTER_AUTH_SECRET MASTER_KEY KEY_ENCRYPTION_SECRET RECOVERY_SECRET JOB_SIGNING_SECRET; do
-  echo "$K=$(openssl rand -hex 32)"
-done
+openssl rand -hex 32   # paste into BETTER_AUTH_SECRET
+openssl rand -hex 32   # paste into MASTER_KEY (must be 64 hex chars)
+openssl rand -hex 32   # paste into KEY_ENCRYPTION_SECRET
+openssl rand -hex 32   # paste into RECOVERY_SECRET
+openssl rand -hex 32   # paste into JOB_SIGNING_SECRET
 ```
 
 Then fill in the user-supplied values in `core/.env`:
@@ -157,9 +159,9 @@ INITIAL_PASSWORD=something-you-can-remember
 
 `DATABASE_URL`, `REDIS_URL`, `SERVER_PUBLIC_URL`, `WIKI_ORIGIN`, and `PORT` already have correct local defaults.
 
-### Path A — Nix (recommended)
+### Path A: Nix (recommended)
 
-The repo ships a `flake.nix` that provisions Postgres 16 (with pgvector), Redis, Node 22, and pnpm — fully isolated from anything on your system.
+The repo ships a `flake.nix` that provisions Postgres 16 (with pgvector), Redis, Node 22, and pnpm, fully isolated from anything on your system.
 
 1. **Install Nix.** The [Determinate Systems installer](https://install.determinate.systems/) enables flakes by default and includes an uninstaller:
    ```bash
@@ -187,12 +189,12 @@ The repo ships a `flake.nix` that provisions Postgres 16 (with pgvector), Redis,
 **Port conflicts:** if you already run Postgres locally (Postgres.app, Homebrew, Docker, etc.), `init` will refuse to start. Pick a free port and tell the flake about it before re-running:
 
 ```bash
-export ROBIN_PG_PORT=5433
+export PG_PORT=5433
 # update DATABASE_URL in core/.env to match: postgresql://postgres@127.0.0.1:5433/robinwiki
 init
 ```
 
-### Path B — Manual
+### Path B: Manual
 
 Bring your own services.
 
@@ -200,8 +202,8 @@ Bring your own services.
 
 - **Node.js** ≥ 20 (run `corepack enable` to pin pnpm via the `packageManager` field)
 - **PostgreSQL** with the [pgvector](https://github.com/pgvector/pgvector) extension
-- **Redis** — used by BullMQ for the job queue
-- **An OpenRouter API key** — get one at [openrouter.ai/keys](https://openrouter.ai/keys)
+- **Redis** for the BullMQ job queue
+- **An OpenRouter API key**, get one at [openrouter.ai/keys](https://openrouter.ai/keys)
 
 **From clone to running:**
 
