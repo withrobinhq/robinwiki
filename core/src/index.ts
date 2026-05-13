@@ -32,6 +32,7 @@ import {
   setupEmbeddingRetryScheduler,
   setupPrunePipelineEventsScheduler,
   setupFragmentRelationshipBackfillScheduler,
+  setupLinkingRecoveryScheduler,
 } from './queue/scheduler.js'
 import { producer } from './queue/producer.js'
 import { QUEUE_NAMES } from '@robin/queue'
@@ -379,6 +380,13 @@ await setupPrunePipelineEventsScheduler(schedulerQueue).catch((err) => {
 // over fragments that lack RELATED_TO edges; idempotent.
 await setupFragmentRelationshipBackfillScheduler(schedulerQueue).catch((err) => {
   logger.warn({ err }, 'fragment-relationship backfill scheduler setup failed — backfill disabled')
+})
+
+// LINKING recovery — every 20 minutes, unstick wikis left in LINKING
+// state after a worker crash (SIGTERM during deploy). Resets to PENDING
+// with dirty_since=NOW() so the regen pipeline picks them up.
+await setupLinkingRecoveryScheduler(schedulerQueue).catch((err) => {
+  logger.warn({ err }, 'linking-recovery scheduler setup failed — recovery disabled')
 })
 
 const port = Number.parseInt(process.env.PORT ?? '3000', 10)

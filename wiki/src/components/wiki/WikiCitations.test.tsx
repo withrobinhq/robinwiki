@@ -49,6 +49,34 @@ describe('<WikiCitations>', () => {
     expect(sups).toHaveLength(2)
   })
 
+  it('uses citationMap numbers when provided, ignoring startIndex', () => {
+    const citationMap = new Map<string, number>([
+      ['f-self-attention-replaces-recurrence', 3],
+      ['f-multi-head-attention-parallelism', 7],
+    ])
+    const { container } = render(
+      <WikiCitations citations={citations} citationMap={citationMap} startIndex={99} />,
+    )
+    expect(screen.getByText('[3]')).toBeInTheDocument()
+    expect(screen.getByText('[7]')).toBeInTheDocument()
+    const sups = container.querySelectorAll('sup[data-slot="wiki-citation"]')
+    expect(sups).toHaveLength(2)
+  })
+
+  it('falls back to startIndex for fragments missing from citationMap', () => {
+    const citationMap = new Map<string, number>([
+      ['f-self-attention-replaces-recurrence', 4],
+      // second fragment deliberately absent
+    ])
+    render(
+      <WikiCitations citations={citations} citationMap={citationMap} startIndex={10} />,
+    )
+    // first citation found in map
+    expect(screen.getByText('[4]')).toBeInTheDocument()
+    // second citation not in map, falls back to startIndex + i = 10 + 1
+    expect(screen.getByText('[11]')).toBeInTheDocument()
+  })
+
   it('renders nothing when citations array is empty', () => {
     const { container } = render(<WikiCitations citations={[]} />)
     // Component returns null on empty input; the render root holds no children.

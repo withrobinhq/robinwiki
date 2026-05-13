@@ -21,6 +21,7 @@
  */
 
 import { Tooltip } from "@/components/ui/tooltip";
+import type { FragmentCitationMap } from "@/components/wiki/MarkdownContent";
 import type { WikiCitation } from "@/lib/sidecarTypes";
 
 /**
@@ -84,9 +85,18 @@ function CitationSuperscript({ citation, index }: CitationSuperscriptProps) {
 interface WikiCitationsProps {
   citations: WikiCitation[];
   /**
-   * Starting index for the superscripts. Defaults to `1`. Document-wide
-   * numbering threads a running offset by passing the count of citations
-   * already emitted earlier in the document (#245).
+   * Document-wide citation numbering map. Keys are fragment ids, values
+   * are 1-based citation numbers. When provided, each superscript looks
+   * up its number in the map so inline `[N]` and bottom-of-section `[N]`
+   * always agree. Preferred over `startIndex`.
+   */
+  citationMap?: FragmentCitationMap;
+  /**
+   * Starting index for the superscripts. Defaults to `1`. Only used as
+   * a fallback when `citationMap` is not provided — if both are given,
+   * `citationMap` wins.
+   *
+   * @deprecated Prefer `citationMap` for document-wide numbering.
    */
   startIndex?: number;
   className?: string;
@@ -94,6 +104,7 @@ interface WikiCitationsProps {
 
 export function WikiCitations({
   citations,
+  citationMap,
   startIndex = 1,
   className,
 }: WikiCitationsProps) {
@@ -105,7 +116,7 @@ export function WikiCitations({
         <CitationSuperscript
           key={citation.fragmentId}
           citation={citation}
-          index={startIndex + i}
+          index={citationMap?.get(citation.fragmentId) ?? startIndex + i}
         />
       ))}
     </span>

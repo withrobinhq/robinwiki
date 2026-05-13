@@ -133,3 +133,35 @@ export async function setupFragmentRelationshipBackfillScheduler(
 
   log.info('fragment-relationship-backfill scheduler registered')
 }
+
+/**
+ * LINKING recovery scan. Every 20 minutes, finds wikis stuck in LINKING
+ * state with a stale locked_at (>15 min) and resets them to PENDING. This
+ * handles the case where a regen worker is killed mid-Quill-call (SIGTERM
+ * during deploy) and the wiki's state column stays LINKING indefinitely,
+ * blocking all auto-regen paths.
+ *
+ * Set ENABLE_LINKING_RECOVERY=false to disable.
+ */
+export async function setupLinkingRecoveryScheduler(queue: Queue): Promise<void> {
+  if (process.env.ENABLE_LINKING_RECOVERY === 'false') {
+    log.info('ENABLE_LINKING_RECOVERY=false, skipping scheduler setup')
+    return
+  }
+
+  await queue.upsertJobScheduler(
+    'linking-recovery',
+    { pattern: '*/20 * * * *' },
+    {
+      name: 'linking-recovery',
+      data: signJob({
+        type: 'linking-recovery',
+        jobId: 'linking-recovery-scheduled',
+        triggeredBy: 'scheduler',
+        enqueuedAt: new Date().toISOString(),
+      }),
+    }
+  )
+
+  log.info('linking-recovery scheduler registered')
+}
