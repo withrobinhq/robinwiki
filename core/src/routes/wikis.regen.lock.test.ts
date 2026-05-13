@@ -6,7 +6,7 @@ import { Hono } from 'hono'
 // Covers wikiRegenLock wrapping on POST /wikis/:id/regenerate (#audit-M5).
 // Asserts:
 //   - Concurrent calls produce one 200 + one 409
-//   - successState='PENDING' (and failureState='PENDING') is observed in the
+//   - successState='RESOLVED' (and failureState='PENDING') is observed in the
 //     params passed to wikiRegenLock.using
 //   - CasLock contended error translates to 409 with the documented body
 //
@@ -119,7 +119,7 @@ describe('POST /wikis/:id/regenerate — wikiRegenLock wrapping (#audit-M5)', ()
     vi.clearAllMocks()
   })
 
-  it('passes successState and failureState as PENDING and runs regenerateWiki inside the lock', async () => {
+  it('passes successState=RESOLVED and failureState=PENDING and runs regenerateWiki inside the lock', async () => {
     mockDbSelect.mockReturnValueOnce(selectChainMock([makeWiki()]))
     mockUsing.mockImplementationOnce(async (_params, routine) => {
       await routine()
@@ -143,10 +143,30 @@ describe('POST /wikis/:id/regenerate — wikiRegenLock wrapping (#audit-M5)', ()
     expect(params.key).toBe('wiki01TEST')
     expect(params.fromState).toBe('PENDING')
     expect(params.toState).toBe('LINKING')
-    expect(params.successState).toBe('PENDING')
+    expect(params.successState).toBe('RESOLVED')
     expect(params.failureState).toBe('PENDING')
     expect(params.autoRenew).toBe(true)
     expect(params.lockedBy).toMatch(/^regen-wiki01TEST-/)
+  })
+
+  it('returns a non-zero fragmentCount proving the inner CAS no longer short-circuits', async () => {
+    mockDbSelect.mockReturnValueOnce(selectChainMock([makeWiki()]))
+    mockUsing.mockImplementationOnce(async (_params, routine) => {
+      await routine()
+    })
+    mockRegenerateWiki.mockResolvedValueOnce({
+      content: 'generated wiki body',
+      fragmentCount: 5,
+      hasEmbedding: true,
+      timing: { classify: 2, gatherFragments: 3, llmCall: 10, embed: 1, total: 16 },
+    })
+
+    const app = createApp()
+    const res = await app.request('/wikis/wiki01TEST/regenerate', { method: 'POST' })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.fragmentCount).toBe(5)
+    expect(body.fragmentCount).toBeGreaterThan(0)
   })
 
   it('returns 409 with documented body when CasLock contended', async () => {
