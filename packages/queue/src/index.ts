@@ -120,12 +120,26 @@ export interface FragmentRelationshipBackfillJob {
   enqueuedAt: string
 }
 
+/**
+ * LINKING recovery scan. Finds wikis stuck in LINKING state with a stale
+ * locked_at (>15 min) and resets them to PENDING so the normal regen
+ * pipeline picks them up. Handles the case where a regen worker is killed
+ * mid-Quill-call (e.g. SIGTERM during deploy) and leaves the wiki locked.
+ */
+export interface LinkingRecoveryJob {
+  type: 'linking-recovery'
+  jobId: string
+  triggeredBy: 'scheduler'
+  enqueuedAt: string
+}
+
 /** Job payloads dispatched by the scheduler worker (cron-driven). */
 export type SchedulerJob =
   | RegenBatchJob
   | EmbeddingRetryJob
   | PrunePipelineEventsJob
   | FragmentRelationshipBackfillJob
+  | LinkingRecoveryJob
 
 export type RobinJob =
   | ProvisionJob
@@ -137,6 +151,7 @@ export type RobinJob =
   | EmbeddingRetryJob
   | PrunePipelineEventsJob
   | FragmentRelationshipBackfillJob
+  | LinkingRecoveryJob
 
 /** Producer wraps a job in this shape via signJob; worker strips it via verifyJob. */
 export type Signed<T> = T & { __sig: string }
@@ -222,11 +237,24 @@ export class BullMQProducer implements QueueProducer {
 
   async enqueueRegen(job: RegenJob): Promise<string> {
     const queue = this.getQueue(QUEUE_NAMES.regen)
-    // Use wiki key as jobId for deduplication — BullMQ skips if a job
-    // with the same id is already waiting, so rapid fragment links to the
-    // same wiki only produce one regen job.
+    // Use wiki key as jobId for deduplication — BullMQ's add() returns the
+    // existing job for ANY retained state (waiting, active, completed, failed),
+    // so rapid fragment links to the same wiki only produce one regen job.
     const dedupeId = `regen-${job.objectKey}`
     const bullJob = await queue.add('regen', signJob(job), { jobId: dedupeId })
+
+    // Manual triggers promote existing waiting jobs to higher priority so
+    // BullMQ processes them sooner instead of silently no-op'ing.
+    if (job.triggeredBy === 'manual') {
+      const state = await bullJob.getState()
+      if (state === 'waiting') {
+        await bullJob.changePriority({ priority: 1 })
+        console.info(`[regen] promoted waiting job ${dedupeId} to priority 1 (manual trigger)`)
+      } else if (state === 'active') {
+        console.info(`[regen] ${dedupeId} is already being processed, skipping priority bump`)
+      }
+    }
+
     return bullJob.id ?? job.jobId
   }
 

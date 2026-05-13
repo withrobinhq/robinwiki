@@ -507,7 +507,7 @@ export default function WikiDetailPage() {
                       <span style={{ opacity: 0.7 }}>
                         {section.heading}
                       </span>
-                      <WikiCitations citations={section.citations ?? []} />
+                      <WikiCitations citations={section.citations ?? []} citationMap={htmlFragmentCitationMap} />
                     </div>
                   ))}
               </div>

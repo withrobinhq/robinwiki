@@ -2,6 +2,7 @@ import type { JobResult, RegenJob, RegenBatchJob } from '@robin/queue'
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import { wikis, edges, fragments } from '../db/schema.js'
+import { wikiRegenLock } from '../db/locks.js'
 import { regenerateWiki } from '../lib/regen.js'
 import { logger } from '../lib/logger.js'
 import { emitAuditEvent } from '../db/audit.js'
@@ -36,10 +37,50 @@ export async function processRegenJob(job: RegenJob): Promise<JobResult> {
   })
 
   try {
-    const result = await regenerateWiki(db, job.objectKey, { jobId: job.jobId })
+    const lockedBy = `regen-worker-${job.jobId}`
+    let result: Awaited<ReturnType<typeof regenerateWiki>> | null = null
+
+    try {
+      await wikiRegenLock.using(
+        {
+          key: job.objectKey,
+          fromState: 'PENDING',
+          toState: 'LINKING',
+          successState: 'RESOLVED',
+          failureState: 'PENDING',
+          lockedBy,
+          autoRenew: true,
+        },
+        async () => {
+          result = await regenerateWiki(db, job.objectKey, { jobId: job.jobId })
+        }
+      )
+    } catch (lockErr) {
+      const lockMessage = lockErr instanceof Error ? lockErr.message : String(lockErr)
+      if (lockMessage.startsWith('CasLock contended')) {
+        const elapsed = Math.round(performance.now() - t0)
+        log.warn(
+          { jobId: job.jobId, wikiKey: job.objectKey, ms: elapsed },
+          'regen job skipped: wiki already being regenerated'
+        )
+        return {
+          jobId: job.jobId,
+          success: true,
+          processedAt: new Date().toISOString(),
+        }
+      }
+      throw lockErr
+    }
+
     const elapsed = Math.round(performance.now() - t0)
     log.info(
-      { jobId: job.jobId, wikiKey: job.objectKey, fragmentCount: result.fragmentCount, ms: elapsed, timing: result.timing },
+      {
+        jobId: job.jobId,
+        wikiKey: job.objectKey,
+        fragmentCount: result?.fragmentCount,
+        ms: elapsed,
+        timing: result?.timing,
+      },
       'regen job completed'
     )
     await emitPipelineEvent(db as never, {
@@ -49,7 +90,7 @@ export async function processRegenJob(job: RegenJob): Promise<JobResult> {
       status: 'completed',
       metadata: {
         wikiKey: job.objectKey,
-        fragmentCount: result.fragmentCount,
+        fragmentCount: result?.fragmentCount,
         durationMs: elapsed,
       },
     })
@@ -61,7 +102,10 @@ export async function processRegenJob(job: RegenJob): Promise<JobResult> {
   } catch (err) {
     const elapsed = Math.round(performance.now() - t0)
     const message = err instanceof Error ? err.message : String(err)
-    log.error({ jobId: job.jobId, wikiKey: job.objectKey, error: message, ms: elapsed }, 'regen job failed')
+    log.error(
+      { jobId: job.jobId, wikiKey: job.objectKey, error: message, ms: elapsed },
+      'regen job failed'
+    )
     await emitPipelineEvent(db as never, {
       entryKey: null,
       jobId: job.jobId,
