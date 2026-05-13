@@ -486,28 +486,6 @@ export async function regenerateWiki(
     return { content: '', fragmentCount: 0, hasEmbedding: false, timing: { classify: 0, gatherFragments: 0, llmCall: 0, embed: 0, total: 0 } }
   }
 
-  // Optimistic lock: transition to LINKING to prevent concurrent regen runs.
-  // If the wiki is already LINKING, another worker owns it — bail out.
-  //
-  // First-line defence is the wikiRegenLock CAS in db/locks.ts (used by
-  // POST /wikis/:id/regenerate). This in-function CAS is a belt-and-braces
-  // backstop for the regen-worker queue path which does not yet sit behind
-  // the same CasLock.
-  //
-  // T4-bundle (v0.2.2): the editorial state is now derived. state='LINKING'
-  // alone is the dreaming signal (see editorialStateOf in wiki-editorial-state).
-  // The CAS on `state != 'LINKING'` doubles as the lifecycle gate, only one
-  // regen can hold the lock so only one transition happens.
-  const [lockedWiki] = await database
-    .update(wikis)
-    .set({ state: 'LINKING' })
-    .where(and(eq(wikis.lookupKey, wikiKey), ne(wikis.state, 'LINKING')))
-    .returning()
-  if (!lockedWiki) {
-    log.warn({ wikiKey }, 'wiki is already being regenerated, skipping')
-    return { content: '', fragmentCount: 0, hasEmbedding: false, timing: { classify: 0, gatherFragments: 0, llmCall: 0, embed: 0, total: 0 } }
-  }
-
   // Classify unfiled fragments into this wiki before gathering (mechanism 1).
   // Errors here are surfaced — the previous catch+log.warn at this site (issue
   // #222) silently masked a structural test-mock bug for months. If classify
@@ -703,14 +681,13 @@ export async function regenerateWiki(
       skipped = true
       log.info({ wikiKey, integratedCount: integratedFrags.length }, 'regen skipped: empty partition')
 
-      // Still flip back to RESOLVED, clear dirty_since (the empty partition
-      // means there is nothing left to integrate), and bump last_rebuilt_at
-      // so the partition window is honoured on the next pass. With dirty_since
-      // null and state RESOLVED, editorialStateOf returns 'filed'.
+      // Clear dirty_since (the empty partition means there is nothing left
+      // to integrate) and bump last_rebuilt_at so the partition window is
+      // honoured on the next pass. The outer CasLock sets successState on
+      // return, so we do not manage state here.
       await database
         .update(wikis)
         .set({
-          state: 'RESOLVED',
           dirtySince: null,
           lastRebuiltAt: partitionNow,
           updatedAt: partitionNow,
@@ -988,7 +965,6 @@ export async function regenerateWiki(
       content: markdown,
       metadata: mergedMetadata,
       citationDeclarations: llmCitations,
-      state: 'RESOLVED',
       dirtySince: null,
       lastRebuiltAt: partitionNow,
       lastRegenAt: completedAt,
