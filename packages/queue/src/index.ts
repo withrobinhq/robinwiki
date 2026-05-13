@@ -120,12 +120,26 @@ export interface FragmentRelationshipBackfillJob {
   enqueuedAt: string
 }
 
+/**
+ * LINKING recovery scan. Finds wikis stuck in LINKING state with a stale
+ * locked_at (>15 min) and resets them to PENDING so the normal regen
+ * pipeline picks them up. Handles the case where a regen worker is killed
+ * mid-Quill-call (e.g. SIGTERM during deploy) and leaves the wiki locked.
+ */
+export interface LinkingRecoveryJob {
+  type: 'linking-recovery'
+  jobId: string
+  triggeredBy: 'scheduler'
+  enqueuedAt: string
+}
+
 /** Job payloads dispatched by the scheduler worker (cron-driven). */
 export type SchedulerJob =
   | RegenBatchJob
   | EmbeddingRetryJob
   | PrunePipelineEventsJob
   | FragmentRelationshipBackfillJob
+  | LinkingRecoveryJob
 
 export type RobinJob =
   | ProvisionJob
@@ -137,6 +151,7 @@ export type RobinJob =
   | EmbeddingRetryJob
   | PrunePipelineEventsJob
   | FragmentRelationshipBackfillJob
+  | LinkingRecoveryJob
 
 /** Producer wraps a job in this shape via signJob; worker strips it via verifyJob. */
 export type Signed<T> = T & { __sig: string }
