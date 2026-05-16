@@ -44,7 +44,7 @@ export async function processRegenJob(job: RegenJob): Promise<JobResult> {
       await wikiRegenLock.using(
         {
           key: job.objectKey,
-          fromState: 'PENDING',
+          fromState: ['PENDING', 'RESOLVED'],
           toState: 'LINKING',
           successState: 'RESOLVED',
           failureState: 'PENDING',

@@ -13,7 +13,7 @@ export type CasLockEventName = (typeof CasLockEvents)[keyof typeof CasLockEvents
 export interface AcquiredEvent {
   key: string
   lockedBy: string
-  fromState: string
+  fromState: string | string[]
   toState: string
 }
 
@@ -25,7 +25,7 @@ export interface StolenEvent {
 
 export interface ContendedEvent {
   key: string
-  fromState: string
+  fromState: string | string[]
 }
 
 export interface ReleasedEvent {
