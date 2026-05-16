@@ -730,7 +730,7 @@ wikisRouter.post('/:id/regenerate', async (c) => {
     await wikiRegenLock.using(
       {
         key: id,
-        fromState: 'PENDING',
+        fromState: ['PENDING', 'RESOLVED'],
         toState: 'LINKING',
         successState: 'RESOLVED',
         failureState: 'PENDING',
