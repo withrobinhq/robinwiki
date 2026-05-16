@@ -14,7 +14,6 @@ import {
   renderFragmentsBlock,
   wikiClassificationSchema,
   type WikiGenerationOverride,
-  type WikiType,
 } from '@robin/shared'
 import {
   wikiCitationDeclarationSchema,
@@ -900,7 +899,7 @@ export async function regenerateWiki(
   // a stripped system_message / system_only override.
   let spec: ReturnType<typeof loadWikiGenerationSpec> | undefined
   try {
-    spec = loadWikiGenerationSpec(wiki.type as WikiType, vars, override)
+    spec = loadWikiGenerationSpec(wiki.type, vars, override)
     if (spec.strippedFields && spec.strippedFields.length > 0) {
       await emitAuditEvent(database, {
         entityType: 'wiki_type',
@@ -931,7 +930,7 @@ export async function regenerateWiki(
         error: err instanceof Error ? err.message : String(err),
       },
     })
-    spec = loadWikiGenerationSpec(wiki.type as WikiType, vars)
+    spec = loadWikiGenerationSpec(wiki.type, vars)
   }
 
   const tLlm0 = performance.now()
