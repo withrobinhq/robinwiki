@@ -48,6 +48,7 @@ import {
   resolveRetrievalIndexModel,
 } from './wiki-agent-schema.js'
 import { emitUsageEvent } from '../db/usage-events.js'
+import { deriveCitationDeclarations, type FragmentSlugMap } from './citations-from-markdown.js'
 
 const log = logger.child({ component: 'regen' })
 
@@ -621,6 +622,12 @@ export async function regenerateWiki(
   let fragmentCount = 0
   let triggeringFragments: TriggeringFragments | undefined
   let skipped = false
+  // Slug-to-lookupKey map for server-side citation derivation. Populated
+  // inside the fragment-gather block, consumed after the LLM call.
+  const fragmentSlugMap: FragmentSlugMap = {
+    slugToKey: new Map(),
+    keySet: new Set(),
+  }
 
   if (fragmentKeys.length > 0 || removedRows.length > 0) {
     // Hydrate the live fragments. The fragments table carries updated_at,
@@ -638,6 +645,12 @@ export async function regenerateWiki(
           .from(fragments)
           .where(and(inArray(fragments.lookupKey, fragmentKeys), isNull(fragments.deletedAt)))
       : []
+
+    // Build slug-to-lookupKey map for citation derivation after the LLM call.
+    for (const f of fragRows) {
+      fragmentSlugMap.slugToKey.set(f.slug, f.lookupKey)
+      fragmentSlugMap.keySet.add(f.lookupKey)
+    }
 
     // Partition into NEW / UPDATED / INTEGRATED. INTEGRATED is physically
     // absent from the prompt — it's the architectural enforcement of the
@@ -939,7 +952,13 @@ export async function regenerateWiki(
   const llmMs = performance.now() - tLlm0
   const markdown = llmOutput.markdown
   const llmInfobox: WikiInfobox | null = llmOutput.infobox ?? null
-  const llmCitations: WikiCitationDeclaration[] = llmOutput.citations ?? []
+
+  // Derive citation declarations from inline [[fragment:slug]] tokens rather
+  // than relying on the LLM's structured citations field (emitted ~85% of
+  // the time). The walker parses the markdown, groups tokens by heading
+  // anchor, and resolves slugs to lookupKeys. This guarantees every wiki
+  // gets a populated bibliography and sequential inline numbering.
+  const derivedCitations = deriveCitationDeclarations(markdown, fragmentSlugMap)
 
   // Merge LLM-emitted infobox into wikis.metadata (preserving any other
   // structured sidecar fields we may bundle into metadata in the future).
@@ -964,7 +983,7 @@ export async function regenerateWiki(
     .set({
       content: markdown,
       metadata: mergedMetadata,
-      citationDeclarations: llmCitations,
+      citationDeclarations: derivedCitations,
       dirtySince: null,
       lastRebuiltAt: partitionNow,
       lastRegenAt: completedAt,

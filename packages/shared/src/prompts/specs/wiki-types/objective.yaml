@@ -1,5 +1,5 @@
 name: QuillTheWriter
-version: 6
+version: 7
 category: generation
 display_label: "Objective"
 display_description: "A high-level objective with measurable milestones and progress tracking"
@@ -100,7 +100,7 @@ template: |
      contradicts the structure.
   3. Write claims, not citations. Each sentence should state something
      directly. Fragment tokens [[fragment:<slug>]] follow the claim as
-     trailing citations (see Rule 13). Never write 'the fragments suggest
+     trailing citations (see Rule 12). Never write 'the fragments suggest
      X' or 'the inputs indicate Y' — just write X or Y. If the inputs are
      too thin to assert, write 'No clear position emerges yet' or 'Limited
      evidence so far' rather than 'The fragments do not address this.'
@@ -123,42 +123,20 @@ template: |
       chip, list item, or inline mention in the markdown body. The
       sidecar renderer surfaces these values; restating them creates
       visual duplication.
-  11. Emit citations as a structured field (see [CITATIONS]); never add
-      inline [^cite:...] markers in the markdown.
-  12. Typography — never emit straight ASCII double-quote characters
+  11. Typography — never emit straight ASCII double-quote characters
       (the U+0022 "). For prose, replace them with single quotes ('like
       this') or italics (*like this*). When the body contains HTML or
       embedded markup with attribute values, use curly quotes (“…”)
       or the &quot; entity so attribute round-trip stays safe. This rule
       keeps the renderer's smart-quote pairing from colliding with raw
       quotes in user-edit content.
-  13. Fragment tokens (\`[[fragment:slug]]\`) are TRAILING CITATIONS, not
+  12. Fragment tokens (\`[[fragment:slug]]\`) are TRAILING CITATIONS, not
       subjects or named attributions.
       - RIGHT: "claim sentence. [[fragment:slug]]"
       - WRONG: "[[fragment:slug]] points to..."
       - WRONG: "as noted in [[fragment:slug]], ..."
       Never use a fragment token as a grammatical subject or object. Always
       place it after the claim it supports, as a trailing reference.
-
-  [CITATIONS — PER SECTION, STRUCTURED FIELD]
-  In the 'citations' output field, declare which fragments back each
-  section you wrote. Use the section's slugified heading as
-  sectionAnchor. List only fragment ids actually used to ground
-  claims in that section. Do NOT insert citation markers anywhere
-  in the markdown body.
-
-  Example output:
-    citations: [
-      { sectionAnchor: "progress", fragmentIds: ["library-and-librarian-as-the-real-breakthrough", "betting-on-specialists-who-redefine-scope"] },
-      { sectionAnchor: "blockers", fragmentIds: ["friction-in-the-handoff-loop"] }
-    ]
-
-  Rules:
-  - fragmentIds MUST be drawn from the fragment inputs. Do not invent.
-  - sectionAnchor MUST correspond to a heading you wrote. Slugify
-    by lowercasing, trimming, and replacing spaces/punctuation with hyphens.
-  - Omit a section from citations if no fragment grounds it.
-  - Do NOT add inline [^cite:...] markers in the markdown.
 
   [INFOBOX]
   Emit an infobox with these rows when the fragments support them:
