@@ -664,7 +664,21 @@ export default function AddWikiModal({
               {wikiStructureEdited
                 ? "Custom format overrides the type's default structure at regen time."
                 : activeTypeDefaultStructure
-                  ? "Showing the type default. Type to override."
+                  ? <>
+                      Showing the type default.{" "}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWikiStructure(activeTypeDefaultStructure);
+                          setWikiStructureEdited(true);
+                        }}
+                        disabled={locked}
+                        className="text-[11px] leading-4 underline disabled:opacity-50"
+                        style={{ color: "var(--wiki-link)", background: "none", border: "none", padding: 0, cursor: locked ? "default" : "pointer" }}
+                      >
+                        Start from default
+                      </button>
+                    </>
                   : "Empty, uses the wiki type's default structure."}
             </span>
           </div>
@@ -806,7 +820,21 @@ export default function AddWikiModal({
               {wikiPromptEdited
                 ? "Custom style overrides the type's tone and voice at regen time."
                 : activeTypeDefaultSystemMessage
-                  ? "Showing the type's tone and voice. Type to override."
+                  ? <>
+                      Showing the type&apos;s tone and voice.{" "}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWikiPrompt(activeTypeDefaultSystemMessage);
+                          setWikiPromptEdited(true);
+                        }}
+                        disabled={locked}
+                        className="text-[11px] leading-4 underline disabled:opacity-50"
+                        style={{ color: "var(--wiki-link)", background: "none", border: "none", padding: 0, cursor: locked ? "default" : "pointer" }}
+                      >
+                        Start from default
+                      </button>
+                    </>
                   : "Empty, uses the wiki type's tone and voice."}
             </span>
           </div>
