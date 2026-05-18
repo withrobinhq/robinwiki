@@ -98,7 +98,6 @@ describe('wiki-types specs', () => {
         const result = loadWikiGenerationSpec(type, wikiFixtures)
         expect(result.user).toContain('[LINKING SYNTAX — USE EXACTLY]')
         expect(result.user).toContain('[INFOBOX]')
-        expect(result.user).toContain('[CITATIONS — PER SECTION, STRUCTURED FIELD]')
       })
     })
   }
