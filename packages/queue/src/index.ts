@@ -240,7 +240,19 @@ export class BullMQProducer implements QueueProducer {
     // Use wiki key as jobId for deduplication — BullMQ's add() returns the
     // existing job for ANY retained state (waiting, active, completed, failed),
     // so rapid fragment links to the same wiki only produce one regen job.
+    // This correctly collapses rapid-fire enqueues from fragment-attach storms
+    // (waiting/active), but completed/failed jobs must be evicted first or
+    // every wiki becomes permanently un-re-gennable after its first regen.
     const dedupeId = `regen-${job.objectKey}`
+
+    const existing = await queue.getJob(dedupeId)
+    if (existing) {
+      const state = await existing.getState()
+      if (state === 'completed' || state === 'failed') {
+        await existing.remove()
+      }
+    }
+
     const bullJob = await queue.add('regen', signJob(job), { jobId: dedupeId })
 
     // Manual triggers promote existing waiting jobs to higher priority so
