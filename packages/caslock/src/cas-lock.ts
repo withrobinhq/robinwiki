@@ -16,7 +16,7 @@ export interface CasLockConfig<TTable extends PgTable> {
 
 export interface AcquireParams {
   key: string
-  fromState: string
+  fromState: string | string[]
   toState: string
   lockedBy: string
 }
@@ -74,6 +74,13 @@ export class CasLock<
   async acquire(params: AcquireParams): Promise<LockedRow<TRow> | null> {
     const { key, fromState, toState, lockedBy } = params
 
+    // Build the fromState predicate: single value uses =, array uses IN (...)
+    const states = Array.isArray(fromState) ? fromState : [fromState]
+    const fromStatePredicate =
+      states.length === 1
+        ? sql`${this.table}.${this.stateId} = ${states[0]}`
+        : sql`${this.table}.${this.stateId} IN (${sql.join(states.map(s => sql`${s}`), sql`, `)})`
+
     let result: unknown
     try {
       result = await this.db.execute(
@@ -86,7 +93,7 @@ export class CasLock<
                   FROM ${this.table}
                   WHERE ${this.keyId} = ${key}) AS old
             WHERE ${this.table}.${this.keyId} = ${key}
-              AND (${this.table}.${this.stateId} = ${fromState}
+              AND (${fromStatePredicate}
                    OR (${this.table}.${this.stateId} = ${toState}
                        AND ${this.table}.${this.lockedAtId} < NOW() - INTERVAL ${this.ttlInterval}))
             RETURNING ${this.table}.*, old.${PREV_ID}`
