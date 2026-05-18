@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { createConfigVar } from '@robin/shared'
 import { z } from 'zod'
 
@@ -28,6 +29,22 @@ export class ProdSafetyError extends Error {
 export function assertProdEnv(): void {
   if (process.env.NODE_ENV !== 'production') return
 
+  // Signing secrets can be any random value, so auto-generate ephemeral
+  // ones on fresh deploys to avoid a crash loop. Infrastructure vars like
+  // DATABASE_URL must still be operator-provided and fail fast below.
+  const generatable = ['JOB_SIGNING_SECRET', 'RECOVERY_SECRET'] as const
+  for (const key of generatable) {
+    if (!process.env[key]) {
+      const ephemeral = randomBytes(32).toString('hex')
+      process.env[key] = ephemeral
+      console.warn(
+        `[WARN] ${key} not set — generated ephemeral value for this boot.\n` +
+          `       Set a persistent value in your environment to avoid regeneration on restart:\n` +
+          `       ${key}=$(openssl rand -hex 32)`,
+      )
+    }
+  }
+
   const required = [
     'DATABASE_URL',
     'REDIS_URL',
@@ -46,7 +63,7 @@ export function assertProdEnv(): void {
   if (missing.length) {
     throw new ProdSafetyError(
       `missing required env vars in production: ${missing.join(', ')}. ` +
-        'See .env.example at repo root for descriptions.',
+        'Set these in your deployment environment before starting the server.',
     )
   }
 
@@ -57,7 +74,7 @@ export function assertProdEnv(): void {
   if (!wikiOrigin || wikiOrigin.trim() === '') {
     throw new ProdSafetyError(
       'WIKI_ORIGIN must be a non-empty comma-separated origin list in production. ' +
-        'See .env.example at repo root for descriptions.',
+        'Set WIKI_ORIGIN to one or more comma-separated https:// origins.',
     )
   }
 
