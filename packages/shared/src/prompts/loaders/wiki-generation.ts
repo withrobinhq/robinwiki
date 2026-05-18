@@ -14,6 +14,10 @@ import { agentWikiSchema } from '../specs/wiki-types/agent.schema.js'
 import { voiceWikiSchema } from '../specs/wiki-types/voice.schema.js'
 import { principleWikiSchema } from '../specs/wiki-types/principle.schema.js'
 
+/** Base YAML used as scaffold for user-created types that have no shipped YAML. */
+const BASE_SPEC_FILENAME = 'belief.yaml'
+const BASE_SPEC_SUBDIR = 'wiki-types'
+
 /**
  * Shape a fragment row into the [FRAGMENTS] inline-slug format consumed by
  * the LLM. The header line carries the grounded identifiers the model needs
@@ -115,6 +119,30 @@ const schemaMap: Record<WikiType, z.ZodType> = {
   principle: principleWikiSchema,
 }
 
+/** Resolve output schema for a wiki type. Falls back to belief schema for user-created types. */
+function resolveOutputSchema(type: string): z.ZodType {
+  return schemaMap[type as WikiType] ?? beliefWikiSchema
+}
+
+/**
+ * Load the disk spec for a wiki type. For shipped types this reads the YAML file
+ * directly. For user-created types (no YAML on disk) it falls back to the base
+ * template so the full prompt scaffolding (rules, citations, infobox, guardrails)
+ * is always present.
+ */
+function loadDiskSpecWithFallback(type: string): { spec: PromptSpec; isBase: boolean } {
+  try {
+    return { spec: loadSpec(`${type}.yaml`, 'wiki-types'), isBase: false }
+  } catch (err: unknown) {
+    const isNotFound =
+      err instanceof Error &&
+      'code' in err &&
+      (err as NodeJS.ErrnoException).code === 'ENOENT'
+    if (!isNotFound) throw err
+    return { spec: loadSpec(BASE_SPEC_FILENAME, BASE_SPEC_SUBDIR), isBase: true }
+  }
+}
+
 /**
  * Override shape for loadWikiGenerationSpec.
  *
@@ -134,7 +162,7 @@ export type WikiGenerationOverride =
   | { kind: 'systemMessage'; text: string }
 
 export function loadWikiGenerationSpec(
-  type: WikiType,
+  type: string,
   vars: {
     fragments: string
     title: string
@@ -154,7 +182,7 @@ export function loadWikiGenerationSpec(
   override?: WikiGenerationOverride,
 ): PromptResult {
   const validated = inputSchema.parse(vars)
-  const diskSpec = loadSpec(`${type}.yaml`, 'wiki-types')
+  const { spec: diskSpec } = loadDiskSpecWithFallback(type)
 
   // Resolve effective spec based on override shape. parseUserSpecFromBlobLenient
   // strips the locked forbidden fields (system_message, system_only) from
@@ -167,15 +195,24 @@ export function loadWikiGenerationSpec(
     if (override.kind === 'yaml') {
       const { spec: userSpec, stripped } = parseUserSpecFromBlobLenient(override.blob)
       strippedFields = stripped
-      // User blob fields win for everything EXCEPT system_message and
-      // system_only — those always come from disk so a forbidden field that
-      // slipped past the strict HTTP gate (e.g. legacy stored row) cannot
-      // reach the LLM.
+      // User blob fields win for display/structure/framing/temperature only.
+      // system_message, system_only, and template are LOCKED to the disk spec
+      // so user overrides cannot strip prompt scaffolding (rules, citations,
+      // infobox, guardrails). The UI form exposes default_structure and
+      // internal_framing as separate textareas; template is not user-editable.
       effective = {
         ...diskSpec,
-        ...userSpec,
+        // Safe override fields — user can customize these
+        ...(userSpec.default_structure != null && { default_structure: userSpec.default_structure }),
+        ...(userSpec.internal_framing != null && { internal_framing: userSpec.internal_framing }),
+        ...(userSpec.display_label != null && { display_label: userSpec.display_label }),
+        ...(userSpec.display_description != null && { display_description: userSpec.display_description }),
+        ...(userSpec.display_short_descriptor != null && { display_short_descriptor: userSpec.display_short_descriptor }),
+        ...(userSpec.temperature != null && { temperature: userSpec.temperature }),
+        // Locked fields — always from disk
         system_message: diskSpec.system_message,
         system_only: diskSpec.system_only,
+        template: diskSpec.template,
       }
     } else {
       // Append (not replace): user text extends the canonical type system_message.
@@ -231,7 +268,7 @@ export function loadWikiGenerationSpec(
     user,
     meta: {
       temperature: effective.temperature,
-      outputSchema: schemaMap[type],
+      outputSchema: resolveOutputSchema(type),
     },
     // Names of forbidden user-override fields that the lenient parser dropped.
     // Empty for disk-default + systemMessage-append paths. Callers with a DB
