@@ -646,41 +646,16 @@ export default function AddWikiModal({
               </button>
             </div>
             <Textarea
-              value={wikiStructure}
+              value={wikiStructure || activeTypeDefaultStructure}
               onChange={(e) => {
                 const next = e.target.value;
                 setWikiStructure(next);
                 setWikiStructureEdited(next.trim().length > 0);
               }}
-              placeholder={
-                activeTypeDefaultStructure ||
-                "# Section\n- bullet\n## Another section"
-              }
               rows={6}
               disabled={locked || !wikiType}
               className="min-h-[120px] resize-none font-mono"
             />
-            <span className="text-[11px] leading-4" style={{ color: "#676d76" }}>
-              {wikiStructureEdited
-                ? "Custom format overrides the type's default structure at regen time."
-                : activeTypeDefaultStructure
-                  ? <>
-                      Showing the type default.{" "}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setWikiStructure(activeTypeDefaultStructure);
-                          setWikiStructureEdited(true);
-                        }}
-                        disabled={locked}
-                        className="text-[11px] leading-4 underline disabled:opacity-50"
-                        style={{ color: "var(--wiki-link)", background: "none", border: "none", padding: 0, cursor: locked ? "default" : "pointer" }}
-                      >
-                        Start from default
-                      </button>
-                    </>
-                  : "Empty, uses the wiki type's default structure."}
-            </span>
           </div>
 
           {/* Collections — visible in both create and settings mode. In create
@@ -802,41 +777,16 @@ export default function AddWikiModal({
               </button>
             </div>
             <Textarea
-              value={wikiPrompt}
+              value={wikiPrompt || activeTypeDefaultSystemMessage}
               onChange={(e) => {
                 const next = e.target.value;
                 setWikiPrompt(next);
                 setWikiPromptEdited(next.trim().length > 0);
               }}
-              placeholder={
-                activeTypeDefaultSystemMessage ||
-                "Tone, voice, and persona instructions for this wiki."
-              }
               rows={6}
               disabled={locked || !wikiType}
               className="min-h-[120px] resize-none font-mono"
             />
-            <span className="text-[11px] leading-4" style={{ color: "#676d76" }}>
-              {wikiPromptEdited
-                ? "Custom style overrides the type's tone and voice at regen time."
-                : activeTypeDefaultSystemMessage
-                  ? <>
-                      Showing the type&apos;s tone and voice.{" "}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setWikiPrompt(activeTypeDefaultSystemMessage);
-                          setWikiPromptEdited(true);
-                        }}
-                        disabled={locked}
-                        className="text-[11px] leading-4 underline disabled:opacity-50"
-                        style={{ color: "var(--wiki-link)", background: "none", border: "none", padding: 0, cursor: locked ? "default" : "pointer" }}
-                      >
-                        Start from default
-                      </button>
-                    </>
-                  : "Empty, uses the wiki type's tone and voice."}
-            </span>
           </div>
 
           {/* Fragment Review Mode toggle -- settings mode only */}
