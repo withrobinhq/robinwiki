@@ -280,7 +280,7 @@ export type WikiEntityArticleProps = {
   customBottomSections?: ReactNode;
   /** Per-wiki Wiki Style override to prefill in settings modal (wikis.prompt). */
   promptOverride?: string;
-  /** Per-wiki Document Format override to prefill in settings modal (wikis.structure). */
+  /** Per-wiki Wiki Format override to prefill in settings modal (wikis.structure). */
   structureOverride?: string;
   /** Wiki description / shortDescriptor to prefill in settings modal */
   description?: string;
