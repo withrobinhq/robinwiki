@@ -14,7 +14,7 @@ export type WikiSettingsPrefill = {
    */
   promptOverride?: string;
   /**
-   * Per-wiki Document Format override, persisted to `wikis.structure`.
+   * Per-wiki Wiki Format override, persisted to `wikis.structure`.
    * Swaps the type's `default_structure` at regen time. Same empty /
    * undefined semantics as promptOverride.
    */

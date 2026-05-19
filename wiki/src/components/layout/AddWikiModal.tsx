@@ -94,7 +94,7 @@ export default function AddWikiModal({
   const [wikiPrompt, setWikiPrompt] = useState<string>("");
   const [wikiPromptEdited, setWikiPromptEdited] = useState<boolean>(false);
   /**
-   * Document Format override (#358), persisted to `wikis.structure`.
+   * Wiki Format override (#358), persisted to `wikis.structure`.
    * Swaps the type's `default_structure` (document skeleton, used as
    * `{{structure}}` in the wiki-type template) at regen time. Sibling of
    * `wikiPrompt`; same empty-string semantics.
@@ -144,7 +144,7 @@ export default function AddWikiModal({
   }, [wikiTypesData?.wikiTypes]);
 
   // Per-type defaults used as field placeholders so the empty-state of
-  // Document Format / Wiki Style shows what the override would replace.
+  // Wiki Format / Wiki Style shows what the override would replace.
   const activeType = useMemo(() => {
     if (!wikiType) return null;
     return sortedTypes.find((t) => t.slug === wikiType) ?? null;
@@ -355,7 +355,7 @@ export default function AddWikiModal({
       try {
         // Empty string clears the override; non-empty sets it. Never send
         // null because Zod rejects. Wiki Style edits `wikis.prompt`,
-        // Document Format edits `wikis.structure`. The two are independent
+        // Wiki Format edits `wikis.structure`. The two are independent
         // overrides and both ride on every save so a cleared field reaches
         // the server as "".
         const payload: {
@@ -621,7 +621,7 @@ export default function AddWikiModal({
             />
           </div>
 
-          {/* Document Format (#358). Binds to wikis.structure, overrides
+          {/* Wiki Format (#358). Binds to wikis.structure, overrides
               the type's default_structure (the {{structure}} block in the
               wiki-type template). Sits next to Description because both
               shape WHAT the wiki contains. Empty value = "use the type
@@ -629,7 +629,7 @@ export default function AddWikiModal({
           <div className="px-5 pt-4 flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
               <FieldLabel>
-                Document Format <InfoIcon className="text-[#545353]" />
+                Wiki Format <InfoIcon className="text-[#545353]" />
               </FieldLabel>
               <button
                 type="button"
@@ -638,7 +638,7 @@ export default function AddWikiModal({
                   setWikiStructureEdited(false);
                 }}
                 disabled={locked || !wikiStructureEdited}
-                aria-label="Revert Document Format to default"
+                aria-label="Revert Wiki Format to default"
                 className="text-[11px] leading-4 underline disabled:opacity-50 disabled:no-underline"
                 style={{ color: "var(--wiki-link)", background: "none", border: "none", padding: 0, cursor: locked || !wikiStructureEdited ? "default" : "pointer" }}
               >
@@ -753,7 +753,7 @@ export default function AddWikiModal({
           </div>
 
           {/* Wiki Style (#358). Binds to wikis.prompt, swaps the type's
-              system_message at regen time. Sits below Document Format
+              system_message at regen time. Sits below Wiki Format
               because tone is a customization on top of the document the
               user just shaped. Empty value = "use the type default";
               the Revert button clears the override. */}

@@ -17,7 +17,7 @@ export interface WikiTypeListItem {
   defaultYaml: string;
   /**
    * The type's `default_structure` block extracted from its YAML spec.
-   * Used as the placeholder for the Document Format field in the
+   * Used as the placeholder for the Wiki Format field in the
    * AddWiki settings modal so users see what their override would
    * replace.
    */

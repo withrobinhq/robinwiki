@@ -10,8 +10,8 @@ next-env.d.ts
 .planning
 .uat
 *.rdb
-.claude
-!.claude/skills
+.claude/*
+!.claude/skills/
 !.claude/gitkeep
 
 .nvim.lua
