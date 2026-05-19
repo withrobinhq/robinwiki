@@ -51,10 +51,19 @@ function capitalize(s: string | null | undefined) {
 /**
  * Single-token matcher for infobox `valueKind: 'ref'` cells. Mirrors the
  * canonical `WIKI_LINK_RE` in `packages/shared/src/wiki-links.ts` but
- * anchored to the whole value — a row value that is a single token gets
- * chip treatment; anything else falls back to plain text.
+ * anchored to the whole value — used when the row contains exactly one
+ * token. Multi-token values use REF_TOKEN_GLOBAL_RE below.
  */
 const REF_VALUE_RE = /^\s*\[\[([a-z]+):([a-z0-9-]+)\]\]\s*$/;
+
+/**
+ * Global matcher for finding every `[[kind:slug]]` token inside an
+ * infobox value. Used to render multi-ref rows like
+ * `[[wiki:foo]], [[wiki:bar]], [[wiki:baz]]` — each token becomes a
+ * chip and the separating text (commas, "and", whitespace) renders as
+ * plain text between chips.
+ */
+const REF_TOKEN_GLOBAL_RE = /\[\[([a-z]+):([a-z0-9-]+)\]\]/g;
 
 function hrefForRef(ref: WikiRef): string | undefined {
   switch (ref.kind) {
@@ -80,18 +89,43 @@ function renderInfoboxValue(
   row: WikiInfoboxData["rows"][number],
   refs: Record<string, WikiRef>,
 ): ReactNode {
-  if (row.valueKind === "ref") {
-    const match = row.value.match(REF_VALUE_RE);
-    if (match) {
-      const [, kind, slug] = match;
-      const ref = refs[`${kind}:${slug}`];
-      if (ref) {
-        return <WikiChip label={ref.label} href={hrefForRef(ref)} />;
-      }
-    }
+  if (row.valueKind !== "ref") return row.value;
+
+  // Fast path: single token spans the whole value.
+  const singleMatch = row.value.match(REF_VALUE_RE);
+  if (singleMatch) {
+    const [, kind, slug] = singleMatch;
+    const ref = refs[`${kind}:${slug}`];
+    if (ref) return <WikiChip label={ref.label} href={hrefForRef(ref)} />;
     return row.value;
   }
-  return row.value;
+
+  // Multi-token: walk every [[kind:slug]] in the string, emit chips for
+  // resolvable tokens, and preserve separating text (commas, "and", etc.)
+  // between them. Falls back to plain text for tokens whose ref is
+  // missing from the refs map.
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  let hasToken = false;
+  const re = new RegExp(REF_TOKEN_GLOBAL_RE.source, "g");
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(row.value)) !== null) {
+    hasToken = true;
+    const [whole, kind, slug] = match;
+    if (match.index > cursor) {
+      parts.push(row.value.slice(cursor, match.index));
+    }
+    const ref = refs[`${kind}:${slug}`];
+    if (ref) {
+      parts.push(<WikiChip key={parts.length} label={ref.label} href={hrefForRef(ref)} />);
+    } else {
+      parts.push(whole);
+    }
+    cursor = match.index + whole.length;
+  }
+  if (!hasToken) return row.value;
+  if (cursor < row.value.length) parts.push(row.value.slice(cursor));
+  return <>{parts}</>;
 }
 
 /**
