@@ -4,7 +4,10 @@ import { logger } from '../lib/logger.js'
 const log = logger.child({ component: 'scheduler' })
 
 /**
- * Set up the midnight regen batch scheduler using BullMQ's upsertJobScheduler.
+ * Set up the regen batch scheduler using BullMQ's upsertJobScheduler.
+ * Fires every 12 hours (midnight and noon UTC). The scheduler name
+ * 'midnight-regen' is retained for back-compat with existing BullMQ
+ * persistence: renaming would orphan the previously-registered job.
  * If ENABLE_BATCH_REGEN is explicitly 'false', this is a no-op.
  */
 export async function setupRegenScheduler(queue: Queue): Promise<void> {
@@ -15,7 +18,7 @@ export async function setupRegenScheduler(queue: Queue): Promise<void> {
 
   await queue.upsertJobScheduler(
     'midnight-regen',
-    { pattern: '0 0 * * *' },
+    { pattern: '0 */12 * * *' },
     {
       name: 'regen-batch',
       // SEC-H6: scheduler-emitted jobs flow through the same signed-payload
@@ -31,7 +34,7 @@ export async function setupRegenScheduler(queue: Queue): Promise<void> {
     }
   )
 
-  log.info('midnight regen batch scheduler registered')
+  log.info('regen batch scheduler registered (every 12 hours)')
 }
 
 /**
