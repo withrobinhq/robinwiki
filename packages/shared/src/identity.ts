@@ -93,7 +93,14 @@ export function safeRefToHref(ref: string): string | null {
   return null
 }
 
-const generateUlid = monotonicFactory()
+/**
+ * Monotonic ULID factory. Use for any ephemeral or transient ID that
+ * needs to be unique and time-ordered (React keys, in-memory revision
+ * records, request correlation ids, etc.). For persisted objects with
+ * a known ObjectType, prefer `makeLookupKey(type)` which produces a
+ * type-prefixed key.
+ */
+export const generateUlid = monotonicFactory()
 
 /** Generate a type-prefixed lookup key, e.g. "frag01HZY3Q9R3..." */
 export function makeLookupKey(type: ObjectType): string {

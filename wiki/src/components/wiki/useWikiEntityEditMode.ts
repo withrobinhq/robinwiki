@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { generateUlid } from "@robin/shared/browser";
 import { htmlToPlainText } from "./wikiDiff";
 
 type UseWikiEntityEditModeArgs = {
@@ -107,13 +108,17 @@ export function useWikiEntityEditMode({
         if (prev.length === 0 || prev[0].content === startContent) return prev;
         return [
           {
-            id: `rev-${Date.now()}-head`,
+            id: `rev-${generateUlid()}`,
             timestamp: Date.now(),
             title: startTitle,
             chipLabel: startChipLabel,
             content: startContent,
-            summary: prev[0].summary,
-            author: prev[0].author,
+            // This entry represents the live state of the page at the
+            // moment history was opened, not a recorded edit event,
+            // so the row gets neutral labels instead of inheriting the
+            // previous server revision's summary/author.
+            summary: "Current state",
+            author: "",
           },
           ...prev,
         ];
@@ -127,15 +132,15 @@ export function useWikiEntityEditMode({
       if (content) lastReadHtmlRef.current = content;
       if (seededRef.current) return;
       // Skip seeding a synthetic baseline when there's no real content to
-      // diff against — otherwise the first user save would diff against
+      // diff against. Otherwise the first user save would diff against
       // "" and render the entire article as an additive blob in history.
       // handleSave will create the first revision as "Initial revision"
-      // (via diffSummary(null, …)) and flip seededRef itself.
+      // (via diffSummary(null, ...)) and flip seededRef itself.
       if (htmlToPlainText(content).trim() === "") return;
       seededRef.current = true;
       setRevisions([
         {
-          id: `rev-${Date.now()}-init`,
+          id: `rev-${generateUlid()}`,
           timestamp: Date.now(),
           title,
           chipLabel,
@@ -250,7 +255,7 @@ export function useWikiEntityEditMode({
         return prev;
       }
       const revision: WikiRevision = {
-        id: `rev-${Date.now()}`,
+        id: `rev-${generateUlid()}`,
         timestamp: Date.now(),
         title: draftTitle,
         chipLabel: draftChipLabel,
