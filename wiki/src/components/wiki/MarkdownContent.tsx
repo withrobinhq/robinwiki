@@ -60,7 +60,21 @@ function buildComponents(
 
     const ref = refs?.[resolved.chipKey];
     if (!ref) {
-      // Q1: unresolved tokens render as raw `[[kind:slug]]` plain text.
+      // Unresolved tokens fall back gracefully when we can. Person
+      // tokens like `[[person:sam-altman]]` get rendered as a plain
+      // title-case name ("Sam Altman") so a hallucinated slug or a
+      // missing Person row (e.g. the owner under the single-user
+      // collapse) doesn't leak token syntax into the body. Other
+      // kinds keep the raw-text fallback so they're debuggable.
+      if (resolved.chipKey.startsWith("person:")) {
+        const slug = resolved.chipKey.slice("person:".length);
+        const display = slug
+          .split("-")
+          .filter(Boolean)
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ");
+        return <>{display}</>;
+      }
       return <>{resolved.raw}</>;
     }
 
