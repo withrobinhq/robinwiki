@@ -86,16 +86,18 @@ export function WikiCitationsSection({
         ...style,
       }}
     >
-      <h2
-        style={{
-          fontSize: 18,
-          fontWeight: 600,
-          margin: "0 0 12px",
-          color: "var(--wiki-article-h2)",
-        }}
-      >
-        {heading}
-      </h2>
+      {heading && (
+        <h2
+          style={{
+            fontSize: 18,
+            fontWeight: 600,
+            margin: "0 0 12px",
+            color: "var(--wiki-article-h2)",
+          }}
+        >
+          {heading}
+        </h2>
+      )}
       <ol
         style={{
           listStyle: "decimal",

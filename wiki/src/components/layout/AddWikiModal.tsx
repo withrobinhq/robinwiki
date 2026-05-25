@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { T } from "@/lib/typography";
@@ -38,6 +38,51 @@ export interface AddWikiModalProps {
   prefill?: WikiSettingsPrefill | null;
   /** Wiki id for settings-mode PUT. 'preview' or undefined → skip network call (prototype pages). */
   wikiId?: string;
+  /**
+   * When true, render the form as an inline panel (no Dialog/Modal
+   * chrome). Used by the wiki page's Settings tab so the form appears
+   * inside the article column instead of as a popup. The page already
+   * supplies a title h1 + tab bar; embedded mode skips the
+   * DialogHeader and DialogFooter button-row alignment.
+   *
+   * `open` is ignored in embedded mode; visibility is controlled by
+   * the parent mounting / unmounting this component.
+   */
+  embedded?: boolean;
+  /**
+   * Optional delete-wiki callback. When provided AND the form is in
+   * settings mode (prefill !== null) AND fields are unlocked (Edit
+   * Wiki Settings clicked), a red Delete Wiki button renders inside
+   * the form body. The host owns the confirm dialog + mutation; this
+   * component just triggers the host's handler.
+   */
+  onDelete?: () => void;
+  /**
+   * When true, omit the in-form primary action button (Save / Edit Wiki
+   * Settings / Create). The parent renders its own button somewhere
+   * else (e.g. above the embedded panel in WikiEntityArticle) and
+   * triggers the action via the forwarded ref's `submit()` method.
+   */
+  hideFooter?: boolean;
+  /**
+   * Fired whenever the form's primary-action state changes:
+   *  - "view"       → fields locked (settings prefill loaded, no edit)
+   *  - "edit"       → fields unlocked, ready to Save
+   *  - "submitting" → save / create in flight
+   * Lets a parent that hides the footer render the right button label.
+   */
+  onModeChange?: (mode: WikiSettingsFormMode) => void;
+}
+
+export type WikiSettingsFormMode = "view" | "edit" | "submitting";
+
+/**
+ * Imperative handle exposed via forwardRef so a parent can trigger the
+ * primary action (Save / Edit Wiki Settings / Create) without keeping
+ * its own copy of the form state.
+ */
+export interface WikiSettingsFormHandle {
+  submit: () => void;
 }
 
 function InfoIcon({ className }: { className?: string }) {
@@ -73,14 +118,18 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 }
 
 
-export default function AddWikiModal({
+const AddWikiModal = forwardRef<WikiSettingsFormHandle, AddWikiModalProps>(function AddWikiModal({
   open,
   onClose,
   title = "Create New Wiki",
   confirmLabel = "Create Wiki",
   prefill = null,
   wikiId,
-}: AddWikiModalProps) {
+  embedded = false,
+  onDelete,
+  hideFooter = false,
+  onModeChange,
+}, ref) {
   const wasOpen = useRef(false);
   const [name, setName] = useState("");
   const [wikiType, setWikiType] = useState("");
@@ -152,8 +201,12 @@ export default function AddWikiModal({
   const activeTypeDefaultStructure = activeType?.defaultStructure ?? "";
   const activeTypeDefaultSystemMessage = activeType?.defaultSystemMessage ?? "";
 
+  // In embedded mode the form is always considered "open"; the parent
+  // controls visibility by mounting/unmounting. `wasOpen` still tracks
+  // the open/close/open cycle so prefill reloads on a fresh open.
+  const effectivelyOpen = open || embedded;
   useEffect(() => {
-    if (open) {
+    if (effectivelyOpen) {
       if (!wasOpen.current) {
         setShowSavedToast(false);
         setSubmitError(null);
@@ -217,7 +270,7 @@ export default function AddWikiModal({
     } else {
       wasOpen.current = false;
     }
-  }, [open, prefill]);
+  }, [effectivelyOpen, prefill]);
 
   useEffect(() => {
     return () => {
@@ -511,45 +564,63 @@ export default function AddWikiModal({
     }
   };
 
-  return (
+  // Imperative handle: lets a parent (e.g. Settings tab) trigger the
+  // primary action button without owning a copy of the form state.
+  useImperativeHandle(ref, () => ({
+    submit: () => handleConfirm(),
+  }));
+
+  // Notify parent of mode transitions so it can render the right button
+  // label outside the form (Edit Wiki Settings / Save / Saving…).
+  useEffect(() => {
+    if (!onModeChange) return;
+    const mode: WikiSettingsFormMode = submitting
+      ? "submitting"
+      : locked
+        ? "view"
+        : "edit";
+    onModeChange(mode);
+  }, [submitting, locked, onModeChange]);
+
+  // Form body + footer extracted so they can render inside either a
+  // Dialog (modal mode) or a plain div (embedded, i.e. Settings tab on
+  // the wiki page). In embedded mode the parent already supplies the page
+  // title + tab bar, so the DialogHeader is omitted.
+  const formHeader = !embedded ? (
     <>
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          if (!next) onClose();
-        }}
-      >
-        <DialogContent
-          className="p-0 sm:max-w-[571px] gap-0 rounded-2xl border-black/10 flex flex-col"
-          style={{ maxHeight: "min(631px, 90vh)", overflow: "hidden" }}
+      <DialogHeader className="px-5 pt-5 pb-2 shrink-0">
+        <DialogTitle
+          style={{
+            ...T.h1,
+            color: "#111111",
+            fontWeight: 400,
+            margin: 0,
+          }}
         >
-          <DialogHeader className="px-5 pt-5 pb-2 shrink-0">
-            <DialogTitle
-              style={{
-                ...T.h1,
-                color: "#111111",
-                fontWeight: 400,
-                margin: 0,
-              }}
-            >
-              {title}
-            </DialogTitle>
-            <DialogDescription
-              style={{
-                ...T.micro,
-                lineHeight: "19px",
-                color: "#676d76",
-                margin: 0,
-              }}
-            >
-              {subtitle ?? "Create a new wiki to organize your knowledge."}
-            </DialogDescription>
-          </DialogHeader>
+          {title}
+        </DialogTitle>
+        <DialogDescription
+          style={{
+            ...T.micro,
+            lineHeight: "19px",
+            color: "#676d76",
+            margin: 0,
+          }}
+        >
+          {subtitle ?? "Create a new wiki to organize your knowledge."}
+        </DialogDescription>
+      </DialogHeader>
 
-          <div className="h-px w-full bg-[#e5e5e5] shrink-0" />
+      <div className="h-px w-full bg-[#e5e5e5] shrink-0" />
+    </>
+  ) : null;
 
-          {/* Scrollable body */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
+  const formContents = (
+    <>
+      {formHeader}
+
+      {/* Scrollable body */}
+      <div className={embedded ? "" : "flex-1 min-h-0 overflow-y-auto"}>
 
           {/* Name */}
           <div className="px-5 pt-4 flex flex-col gap-2">
@@ -789,27 +860,12 @@ export default function AddWikiModal({
             />
           </div>
 
-          {/* Fragment Review Mode toggle -- settings mode only */}
-          {isSettingsView && (
-            <div className="px-5 pt-4 flex items-center justify-between gap-3">
-              <div className="flex flex-col gap-0.5">
-                <FieldLabel>Fragment Review Mode</FieldLabel>
-                <span className="text-[11px] leading-4" style={{ color: "#676d76" }}>
-                  {bouncerMode === "review"
-                    ? "New fragments require manual approval"
-                    : "Fragments auto-accepted into this wiki"}
-                </span>
-              </div>
-              <Switch
-                checked={bouncerMode === "review"}
-                onCheckedChange={(checked: boolean) =>
-                  setBouncerMode(checked ? "review" : "auto")
-                }
-                disabled={locked}
-                size="sm"
-              />
-            </div>
-          )}
+          {/* Fragment Review Mode toggle hidden: the bouncer-mode pipeline
+              isn't wired through end-to-end yet, so the switch was making
+              promises the system couldn't keep. State + prefill + save
+              path stay in place (silently no-ops if bouncerMode matches
+              the prefill) so re-enabling is a one-line UI restore once
+              the backend lands. */}
 
           {/* #255: Publish/unpublish toggle — settings mode only.
               Calls the existing /wikis/:id/publish + /unpublish endpoints
@@ -919,6 +975,22 @@ export default function AddWikiModal({
             </div>
           )}
 
+          {/* Delete Wiki: settings mode only, edit-mode only. Mirrors
+              the legacy Read-page delete button: host owns the confirm
+              dialog + mutation; this only triggers the handler. */}
+          {isSettingsView && onDelete && !locked && (
+            <div className="px-5 pt-6 flex flex-col gap-2">
+              <FieldLabel>Danger zone</FieldLabel>
+              <Button
+                type="button"
+                onClick={onDelete}
+                className="self-start rounded-none bg-[var(--destructive)] text-white hover:opacity-90"
+              >
+                Delete Wiki
+              </Button>
+            </div>
+          )}
+
           <div className="pb-5" />
 
           {submitError ? (
@@ -931,32 +1003,66 @@ export default function AddWikiModal({
             </div>
           ) : null}
 
-          </div>
-          {/* /Scrollable body */}
+      </div>
+      {/* /Scrollable body */}
 
-          <div className="h-px w-full bg-[#e5e5e5] shrink-0" />
+      <div className="h-px w-full bg-[#e5e5e5] shrink-0" />
 
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-5 py-4 shrink-0">
-            <Button
-              type="button"
-              onClick={handleConfirm}
-              disabled={submitting}
-              className="rounded-none bg-[var(--wiki-link)] text-white hover:bg-[var(--wiki-link-hover)]"
-            >
-              {locked
-                ? confirmLabel
-                : isSettingsView
-                  ? submitting
-                    ? "Saving…"
-                    : "Save"
-                  : submitting
-                    ? "Creating…"
-                    : confirmLabel}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Footer: hidden when the parent opts to render the primary
+          action button outside the form (embedded Settings tab). */}
+      {!hideFooter && (
+        <div className="flex items-center justify-end gap-3 px-5 py-4 shrink-0">
+          <Button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting}
+            className="rounded-none bg-[var(--wiki-link)] text-white hover:bg-[var(--wiki-link-hover)]"
+          >
+            {locked
+              ? confirmLabel
+              : isSettingsView
+                ? submitting
+                  ? "Saving…"
+                  : "Save"
+                : submitting
+                  ? "Creating…"
+                  : confirmLabel}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <>
+      {embedded ? (
+        <div
+          data-slot="wiki-settings-embedded"
+          className="flex flex-col w-full"
+          style={{
+            border: "1px solid var(--wiki-card-border)",
+            borderRadius: 12,
+            background: "var(--wiki-card-bg, transparent)",
+            overflow: "hidden",
+          }}
+        >
+          {formContents}
+        </div>
+      ) : (
+        <Dialog
+          open={open}
+          onOpenChange={(next) => {
+            if (!next) onClose();
+          }}
+        >
+          <DialogContent
+            className="p-0 sm:max-w-[571px] gap-0 rounded-2xl border-black/10 flex flex-col"
+            style={{ maxHeight: "min(631px, 90vh)", overflow: "hidden" }}
+          >
+            {formContents}
+          </DialogContent>
+        </Dialog>
+      )}
 
       <Toast
         message={toastMessage}
@@ -965,4 +1071,6 @@ export default function AddWikiModal({
       />
     </>
   );
-}
+});
+
+export default AddWikiModal;
