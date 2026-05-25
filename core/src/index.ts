@@ -59,6 +59,7 @@ declare module 'hono' {
   interface ContextVariableMap {
     userId: string
     user: unknown
+    orgId: string | undefined
   }
 }
 

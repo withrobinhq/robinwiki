@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator'
 import { generateSlug, makeLookupKey } from '@robin/shared'
 import { NoOpenRouterKeyError, embedText } from '@robin/agent'
 import { sessionMiddleware } from '../middleware/session.js'
+import { resolveOrgMiddleware, checkPermissionMiddleware } from '../middleware/hooks.js'
 import { db } from '../db/client.js'
 import { wikis, edges, wikiTypes, fragments, people, auditLog, edits, groupWikis, groups } from '../db/schema.js'
 import { resolveWikiSlug } from '../db/slug.js'
@@ -115,6 +116,8 @@ function prepareWiki(
 
 const wikisRouter = new Hono()
 wikisRouter.use('*', sessionMiddleware)
+wikisRouter.use('*', resolveOrgMiddleware)
+wikisRouter.use('*', checkPermissionMiddleware)
 
 // GET /wikis — wiki listing with fragment counts + descriptors
 wikisRouter.get('/', zValidator('query', wikiListQuerySchema, validationHook), async (c) => {

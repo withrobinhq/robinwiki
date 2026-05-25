@@ -6,6 +6,7 @@ import { resolveFragmentSlug } from '../db/slug.js'
 import { computeContentHash, findDuplicateFragment } from '../db/dedup.js'
 import { applyFragmentTitleDatePrefix } from '../lib/fragmentTitlePrefix.js'
 import { sessionMiddleware } from '../middleware/session.js'
+import { resolveOrgMiddleware, checkPermissionMiddleware } from '../middleware/hooks.js'
 import { db } from '../db/client.js'
 import { fragments, entries, edges, wikis, people, edits, auditLog } from '../db/schema.js'
 import { nanoid } from '../lib/id.js'
@@ -31,6 +32,8 @@ const log = logger.child({ component: 'fragments' })
 
 const fragmentsRouter = new Hono()
 fragmentsRouter.use('*', sessionMiddleware)
+fragmentsRouter.use('*', resolveOrgMiddleware)
+fragmentsRouter.use('*', checkPermissionMiddleware)
 
 // GET /fragments — list fragments (metadata only, no content)
 fragmentsRouter.get('/', async (c) => {

@@ -3,10 +3,13 @@ import { db } from '../db/client.js'
 import { loadOpenRouterConfig } from '../lib/openrouter-config.js'
 import { hybridSearch } from '../lib/search.js'
 import { sessionMiddleware } from '../middleware/session.js'
+import { resolveOrgMiddleware, checkPermissionMiddleware } from '../middleware/hooks.js'
 import { searchQuerySchema, searchResponseSchema } from '../schemas/search.schema.js'
 
 const search = new Hono()
 search.use('*', sessionMiddleware)
+search.use('*', resolveOrgMiddleware)
+search.use('*', checkPermissionMiddleware)
 
 // GET /search — hybrid BM25 + pgvector search across fragments, wikis, people
 search.get('/', async (c) => {
