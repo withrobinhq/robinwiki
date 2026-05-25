@@ -3,6 +3,7 @@ import { eq, and, isNull, inArray, sql } from 'drizzle-orm'
 import { zValidator } from '@hono/zod-validator'
 import { generateSlug, makeLookupKey } from '@robin/shared'
 import { sessionMiddleware } from '../middleware/session.js'
+import { resolveOrgMiddleware, checkPermissionMiddleware } from '../middleware/hooks.js'
 import { db } from '../db/client.js'
 import { people, edges, fragments, wikis } from '../db/schema.js'
 import { resolvePersonSlug } from '../db/slug.js'
@@ -53,6 +54,8 @@ function derivePersonInfobox(
 
 const peopleRouter = new Hono()
 peopleRouter.use('*', sessionMiddleware)
+peopleRouter.use('*', resolveOrgMiddleware)
+peopleRouter.use('*', checkPermissionMiddleware)
 
 // GET /people — list all people with pagination
 peopleRouter.get('/', async (c) => {

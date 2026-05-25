@@ -120,6 +120,13 @@
       "when": 1747094400000,
       "tag": "0017_people_status_and_quarantine",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1779708731304,
+      "tag": "0018_add_org_id",
+      "breakpoints": true
     }
   ]
 }
