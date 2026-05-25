@@ -12,8 +12,16 @@ import { enqueueWikiRegen, filterDebouncedWikiKeys, regenDebounceMs } from './re
 
 const log = logger.child({ component: 'regen-worker' })
 
-/** Max wikis to process in a single batch job */
-const BATCH_LIMIT = 5
+/**
+ * Max wikis to process in a single batch job.
+ *
+ * The batch scheduler fires every 12 hours (see scheduler.ts). Each
+ * firing can enqueue up to BATCH_LIMIT regen jobs. At 50, an instance
+ * can clear up to 100 dirty wikis/day via the auto path before users
+ * hit manual-trigger territory. Sized for heavy-ingest scenarios
+ * (e.g. fresh KB builds) without spiking per-tick LLM cost too far.
+ */
+const BATCH_LIMIT = 50
 
 /** Stale threshold removed — wikis only regen when they have new fragments or are stuck */
 
