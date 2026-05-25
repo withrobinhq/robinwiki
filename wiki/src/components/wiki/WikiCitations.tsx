@@ -73,7 +73,11 @@ function CitationSuperscript({ citation, index }: CitationSuperscriptProps) {
   // so hover reveals the quote+capturedAt card.
   return (
     <Tooltip content={tooltipContent}>
-      <sup data-slot="wiki-citation" className="cite">
+      <sup
+        data-slot="wiki-citation"
+        data-fragment-slug={citation.fragmentSlug}
+        className="cite"
+      >
         <a href={href} title={citation.quote ?? undefined}>
           [{index}]
         </a>

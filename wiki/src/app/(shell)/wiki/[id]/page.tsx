@@ -94,7 +94,14 @@ function renderInfoboxValue(
   if (singleMatch) {
     const [, kind, slug] = singleMatch;
     const ref = refs[`${kind}:${slug}`];
-    if (ref) return <WikiChip label={ref.label} href={hrefForRef(ref)} />;
+    if (ref) return (
+      <WikiChip
+        label={ref.label}
+        href={hrefForRef(ref)}
+        tokenKind={ref.kind}
+        tokenSlug={ref.slug}
+      />
+    );
     return row.value;
   }
 
@@ -115,7 +122,15 @@ function renderInfoboxValue(
     }
     const ref = refs[`${kind}:${slug}`];
     if (ref) {
-      parts.push(<WikiChip key={parts.length} label={ref.label} href={hrefForRef(ref)} />);
+      parts.push(
+        <WikiChip
+          key={parts.length}
+          label={ref.label}
+          href={hrefForRef(ref)}
+          tokenKind={ref.kind}
+          tokenSlug={ref.slug}
+        />,
+      );
     } else {
       parts.push(whole);
     }

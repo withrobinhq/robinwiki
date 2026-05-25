@@ -86,14 +86,27 @@ function buildComponents(
         : `[${ref.slug?.charAt(0) ?? "?"}]`;
       const href = fragmentCitationHref(ref.id);
       return (
-        <sup data-slot="wiki-citation-inline" className="cite">
+        <sup
+          data-slot="wiki-citation-inline"
+          data-fragment-slug={ref.slug}
+          className="cite"
+        >
           <a href={href} title={ref.label}>{label}</a>
         </sup>
       );
     }
 
     // Q2: single chip style — pass label + href only, no kind variant.
-    return <WikiChip label={ref.label} href={refToHref(ref)} />;
+    // Pass tokenKind/tokenSlug so the Edit-tab DOM extraction can
+    // round-trip the chip back to its `[[kind:slug]]` token.
+    return (
+      <WikiChip
+        label={ref.label}
+        href={refToHref(ref)}
+        tokenKind={ref.kind}
+        tokenSlug={ref.slug}
+      />
+    );
   };
 
   return {

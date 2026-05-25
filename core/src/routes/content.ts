@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { sessionMiddleware } from '../middleware/session.js'
 import { db } from '../db/client.js'
-import { entries, fragments, wikis, people, edits } from '../db/schema.js'
+import { entries, fragments, wikis, people, edits, edges } from '../db/schema.js'
 import { VALID_TYPES, WRITE_SCHEMAS, type ContentType } from '../lib/content-schemas.js'
 import {
   contentRawResponseSchema,
@@ -12,6 +12,8 @@ import { okResponseSchema } from '../schemas/base.schema.js'
 import { logger } from '../lib/logger.js'
 import { nanoid } from '../lib/id.js'
 import { emitAuditEvent } from '../db/audit.js'
+import { htmlToWikiMarkdown } from '../lib/htmlToWikiMarkdown.js'
+import { deriveCitationDeclarations, type FragmentSlugMap } from '../lib/citations-from-markdown.js'
 
 const log = logger.child({ component: 'content' })
 
@@ -150,18 +152,82 @@ contentRoutes.put('/:type/:key', async (c) => {
       .limit(1)
     const previousContent = currentWiki?.content ?? ''
 
+    // The inline editor (Tiptap) emits HTML; the read pipeline expects
+    // canonical markdown so parseSections / deriveCitationDeclarations /
+    // remark plugins all fire. Normalize on save so wikis.content stays
+    // in one canonical form. htmlToWikiMarkdown is idempotent on
+    // markdown input (no-tag passthrough), so regen output round-
+    // tripping through here doesn't get re-converted.
+    //
+    // Defensive: a converter throw must not 500 the user's save. If the
+    // walker hits something it can't handle, log it and fall back to the
+    // raw HTML body. User keeps their edit; downstream rendering is
+    // degraded (slug-initial citation fallback) until the next regen
+    // restores canonical markdown. Worst case is the pre-fix status quo.
+    let normalizedBody = body
+    try {
+      normalizedBody = htmlToWikiMarkdown(body)
+    } catch (err) {
+      log.warn(
+        {
+          wikiKey: key,
+          err: err instanceof Error ? { name: err.name, message: err.message } : err,
+        },
+        'htmlToWikiMarkdown failed; storing raw body, next regen will recover',
+      )
+    }
+
+    // Re-derive citation declarations from the new body so the read-time
+    // sidecar reflects what the user just wrote, not what regen last cached.
+    // Without this, an edit that drops a `[[fragment:slug]]` reference
+    // leaves the bottom Citations list + the Fragments-tab cited/uncited
+    // status pointing at the pre-edit declarations.
+    //
+    // The wiki's attached fragment edges give us the slug↔lookupKey map
+    // deriveCitationDeclarations needs; tokens that don't resolve to an
+    // attached fragment are silently skipped (same contract as regen).
+    const attachedFragments = await db
+      .select({ lookupKey: fragments.lookupKey, slug: fragments.slug })
+      .from(fragments)
+      .innerJoin(
+        edges,
+        and(
+          eq(edges.srcId, fragments.lookupKey),
+          eq(edges.dstId, key),
+          eq(edges.edgeType, 'FRAGMENT_IN_WIKI'),
+          isNull(edges.deletedAt),
+        ),
+      )
+      .where(isNull(fragments.deletedAt))
+    const fragmentSlugMap: FragmentSlugMap = {
+      slugToKey: new Map(attachedFragments.map((f) => [f.slug, f.lookupKey])),
+      keySet: new Set(attachedFragments.map((f) => f.lookupKey)),
+    }
+    const derivedCitationDeclarations = deriveCitationDeclarations(
+      normalizedBody,
+      fragmentSlugMap,
+    )
+
     await db
       .update(wikis)
       .set({
         name: data.frontmatter.name as string,
         type: (data.frontmatter.type as string) ?? 'log',
         prompt: (data.frontmatter.prompt as string) ?? '',
-        content: body,
+        content: normalizedBody,
+        citationDeclarations: derivedCitationDeclarations,
+        // Stamp dirty_since so the editorial-state dot flips to
+        // "learning" (amber) and reflects that the wiki has unintegrated
+        // changes. The next autoregen pass hits the empty-partition
+        // skip path (no fragment edges changed), clears dirty_since,
+        // and the dot returns to green, body untouched. Without this
+        // stamp, hand edits leave no visible signal on the dot at all.
+        dirtySince: now,
         updatedAt: now,
       })
       .where(eq(wikis.lookupKey, key))
 
-    if (body && body !== previousContent) {
+    if (normalizedBody && normalizedBody !== previousContent) {
       await db.insert(edits).values({
         id: nanoid(),
         objectType: 'wiki',

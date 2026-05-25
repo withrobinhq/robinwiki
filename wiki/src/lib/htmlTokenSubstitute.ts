@@ -96,6 +96,7 @@ function tokenReplacementFragment(
           : `[${ref.slug?.charAt(0) ?? '?'}]`
         const sup = doc.createElement('sup')
         sup.setAttribute('data-slot', 'wiki-citation-inline')
+        sup.setAttribute('data-fragment-slug', ref.slug ?? slug)
         sup.className = 'cite'
         const anchor = doc.createElement('a')
         anchor.setAttribute('href', `#fragment-${ref.id}`)
@@ -107,6 +108,11 @@ function tokenReplacementFragment(
         const anchor = doc.createElement('a')
         anchor.className = 'wchip'
         anchor.setAttribute('data-slot', 'wiki-chip')
+        // Round-trip data: edit-tab extraction reads these to
+        // reconstruct `[[kind:slug]]` text tokens instead of
+        // destroying the chip on a manual edit + save.
+        anchor.setAttribute('data-token-kind', ref.kind)
+        anchor.setAttribute('data-token-slug', ref.slug ?? slug)
         anchor.setAttribute('href', refToHref(ref))
         anchor.textContent = ref.label
         frag.appendChild(anchor)
