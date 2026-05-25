@@ -7,6 +7,7 @@ import { ChevronRight } from 'lucide-react';
 import { useCollections } from '@/hooks/useCollections';
 import { ROUTES } from '@/lib/routes';
 import { T } from '@/lib/typography';
+import AddCollectionModal from '@/components/layout/AddCollectionModal';
 
 interface GroupWiki {
   lookupKey: string;
@@ -169,6 +170,7 @@ function CollectionCard({
 
 export function CollectionsHome() {
   const { data: collections, isLoading } = useCollections();
+  const [addCollectionOpen, setAddCollectionOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -178,11 +180,64 @@ export function CollectionsHome() {
     );
   }
 
+  // Empty state: the home page is organised entirely by collections, so a
+  // workspace that has none has nothing to render. Explain what collections
+  // do and offer a one-click path to create one. AddCollectionModal is the
+  // same modal the header `+ New → Collection` menu opens.
   if (!collections || collections.length === 0) {
     return (
-      <p style={{ ...T.bodySmall, color: 'var(--wiki-count)' }}>
-        No collections yet.
-      </p>
+      <>
+        <section
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 12,
+            padding: '24px 0',
+          }}
+        >
+          <p
+            style={{
+              ...T.bodySmall,
+              color: 'var(--wiki-article-text)',
+              margin: 0,
+            }}
+          >
+            Add Collections to build your Wiki Homepage.
+          </p>
+          <p
+            style={{
+              ...T.micro,
+              color: 'var(--wiki-count)',
+              margin: 0,
+              maxWidth: 540,
+            }}
+          >
+            Collections group your wikis by theme. Once you create one, the
+            homepage organises every wiki into its collection so you can
+            browse from here.
+          </p>
+          <button
+            type="button"
+            onClick={() => setAddCollectionOpen(true)}
+            style={{
+              ...T.bodySmall,
+              color: 'var(--wiki-link)',
+              background: 'none',
+              border: '1px solid var(--wiki-card-border)',
+              padding: '6px 14px',
+              cursor: 'pointer',
+              font: 'inherit',
+            }}
+          >
+            + Add Collection
+          </button>
+        </section>
+        <AddCollectionModal
+          open={addCollectionOpen}
+          onClose={() => setAddCollectionOpen(false)}
+        />
+      </>
     );
   }
 
