@@ -1,10 +1,7 @@
 "use client";
 
-import FeaturedArticle from "@/components/wiki/FeaturedArticle";
-import RecentlyUpdated from "@/components/wiki/RecentlyUpdated";
-import BrowseByType from "@/components/wiki/BrowseByType";
-import WikiFragments from "@/components/wiki/WikiFragments";
 import WikiHomeHero from "@/components/wiki/WikiHomeHero";
+import { CollectionsHome } from "@/components/wiki/CollectionsHome";
 
 export default function WikiArticlePage() {
   return (
@@ -20,16 +17,7 @@ export default function WikiArticlePage() {
           gap: 24,
         }}
       >
-        <div className="wiki-cards-row">
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <FeaturedArticle />
-          </div>
-          <RecentlyUpdated />
-        </div>
-
-        <BrowseByType />
-
-        <WikiFragments />
+        <CollectionsHome />
       </div>
     </div>
   );
