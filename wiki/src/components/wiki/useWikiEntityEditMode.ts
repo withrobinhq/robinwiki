@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { generateUlid } from "@robin/shared/browser";
 import { htmlToPlainText } from "./wikiDiff";
 
 type UseWikiEntityEditModeArgs = {
@@ -101,14 +102,54 @@ export function useWikiEntityEditMode({
   // `readContentRef.current.innerHTML` is empty. We fall back to this snapshot.
   const lastReadHtmlRef = useRef<string>("");
 
+  // When revisions are seeded from the server they hold contentSnippet values
+  // which are BEFORE states. The actual current content (AFTER the latest edit)
+  // is only available at interaction time (openHistory / enterEditMode). If the
+  // head revision doesn't already reflect the current content, prepend it so
+  // the timeline and handleSave diff against the real state instead of an
+  // empty/stale BEFORE snapshot.
+  const prependCurrentIfNeeded = useCallback(
+    (startContent: string, startTitle: string, startChipLabel: string) => {
+      if (!seededRef.current) return; // local seedInitialRevision handles this
+      if (savedContent !== null) return; // handleSave already manages the head
+      if (!startContent) return;
+      setRevisions((prev) => {
+        if (prev.length === 0 || prev[0].content === startContent) return prev;
+        return [
+          {
+            id: `rev-${generateUlid()}`,
+            timestamp: Date.now(),
+            title: startTitle,
+            chipLabel: startChipLabel,
+            content: startContent,
+            // This entry represents the live state of the page at the
+            // moment history was opened, not a recorded edit event,
+            // so the row gets neutral labels instead of inheriting the
+            // previous server revision's summary/author.
+            summary: "Current state",
+            author: "",
+          },
+          ...prev,
+        ];
+      });
+    },
+    [savedContent],
+  );
+
   const seedInitialRevision = useCallback(
     (content: string, title: string, chipLabel: string) => {
       if (content) lastReadHtmlRef.current = content;
       if (seededRef.current) return;
+      // Skip seeding a synthetic baseline when there's no real content to
+      // diff against. Otherwise the first user save would diff against
+      // "" and render the entire article as an additive blob in history.
+      // handleSave will create the first revision as "Initial revision"
+      // (via diffSummary(null, ...)) and flip seededRef itself.
+      if (htmlToPlainText(content).trim() === "") return;
       seededRef.current = true;
       setRevisions([
         {
-          id: `rev-${Date.now()}-init`,
+          id: `rev-${generateUlid()}`,
           timestamp: Date.now(),
           title,
           chipLabel,
@@ -156,6 +197,7 @@ export function useWikiEntityEditMode({
       const startTitle = savedTitle ?? currentTitle;
       const startChipLabel = savedChipLabel ?? currentChipLabel;
       seedInitialRevision(startContent, startTitle, startChipLabel);
+      prependCurrentIfNeeded(startContent, startTitle, startChipLabel);
       infoVisibleBeforeEditingRef.current = infoVisible;
       setBaselineContent(startContent);
       setBaselineTitle(startTitle);
@@ -167,7 +209,7 @@ export function useWikiEntityEditMode({
       setIsViewingHistory(false);
       setIsEditing(true);
     },
-    [infoVisible, savedChipLabel, savedContent, savedTitle, seedInitialRevision, setInfoVisible],
+    [infoVisible, prependCurrentIfNeeded, savedChipLabel, savedContent, savedTitle, seedInitialRevision, setInfoVisible],
   );
 
   const openHistory = useCallback(
@@ -184,12 +226,13 @@ export function useWikiEntityEditMode({
       const startTitle = savedTitle ?? currentTitle;
       const startChipLabel = savedChipLabel ?? currentChipLabel;
       seedInitialRevision(startContent, startTitle, startChipLabel);
+      prependCurrentIfNeeded(startContent, startTitle, startChipLabel);
       infoVisibleBeforeHistoryRef.current = infoVisible;
       setInfoVisible(false);
       setIsEditing(false);
       setIsViewingHistory(true);
     },
-    [infoVisible, savedChipLabel, savedContent, savedTitle, seedInitialRevision, setInfoVisible],
+    [infoVisible, prependCurrentIfNeeded, savedChipLabel, savedContent, savedTitle, seedInitialRevision, setInfoVisible],
   );
 
   const closeHistory = useCallback(() => {
@@ -221,7 +264,7 @@ export function useWikiEntityEditMode({
         return prev;
       }
       const revision: WikiRevision = {
-        id: `rev-${Date.now()}`,
+        id: `rev-${generateUlid()}`,
         timestamp: Date.now(),
         title: draftTitle,
         chipLabel: draftChipLabel,
@@ -231,6 +274,9 @@ export function useWikiEntityEditMode({
       };
       return [revision, ...prev];
     });
+    // Once a real revision exists, lock out further seeding — otherwise a
+    // later enterEditMode/openHistory would overwrite the saved history.
+    seededRef.current = true;
     exitEditMode();
   }, [draftChipLabel, draftContent, draftTitle, exitEditMode]);
 
