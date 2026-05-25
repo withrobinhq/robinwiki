@@ -128,7 +128,7 @@ export function makeSidecarDeps(db: DB, wikiKey?: string): SidecarDeps {
 
     if (kind === 'fragment') {
       // Quill sometimes emits [[fragment:<lookupKey>]] instead of
-      // [[fragment:<slug>]] — the prompt example `frag-abc123` looks
+      // [[fragment:<slug>]]; the prompt example `frag-abc123` looks
       // lookup-key-shaped and the model conflates them. Try slug first
       // (canonical), then fall back to lookupKey so both shapes resolve
       // until the prompt is tightened upstream.
