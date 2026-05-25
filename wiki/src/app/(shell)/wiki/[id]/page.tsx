@@ -4,7 +4,7 @@ import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Check, LinkIcon, RefreshCw, Trash2 } from "lucide-react";
-import { T } from "@/lib/typography";
+import { T, FONT } from "@/lib/typography";
 import { Spinner } from "@/components/ui/spinner";
 import { useWiki } from "@/hooks/useWiki";
 import { useRegenerateWiki } from "@/hooks/useRegenerateWiki";
@@ -34,7 +34,6 @@ import { useWikiTokenSubstitution } from "@/lib/htmlTokenSubstitute";
 import type { FragmentCitationMap } from "@/components/wiki/MarkdownContent";
 import { sanitizeWikiHtml } from "@/lib/sanitizeWikiHtml";
 import { EditorialStateDot } from "@/components/wiki/EditorialStateDot";
-import WikiRegenTimeline from "@/components/wiki/WikiRegenTimeline";
 import type {
   WikiInfobox as WikiInfoboxData,
   WikiRef,
@@ -168,6 +167,10 @@ export default function WikiDetailPage() {
   const queryClient = useQueryClient();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  // Phase 2: Fragments tab edit mode toggle. When false, fragment actions
+  // (un-attach, attach) and Regenerate are hidden. Mirrors the view-to-edit
+  // pattern used for Settings.
+  const [fragmentsManageMode, setFragmentsManageMode] = useState(false);
 
   // Section-scoped edit state. `editingSectionId` doubles as the
   // "dialog open" indicator — non-null ⇒ open. The anchor id is stable
@@ -313,6 +316,12 @@ export default function WikiDetailPage() {
     return map;
   })();
 
+  // Set of fragment IDs that are cited anywhere in the current wiki body.
+  // Drives the Fragments-tab status column (cited vs uncited) so the user
+  // can tell which attached fragments are actually doing work in this wiki
+  // and which are dormant.
+  const citedFragmentIds = new Set<string>(htmlFragmentCitationMap.keys());
+
   // Resolve the currently-editing section's heading + body-only prefill.
   // Parses the live wiki content so a mid-session regeneration is
   // detected at dialog-open time — if the anchor no longer resolves,
@@ -345,6 +354,7 @@ export default function WikiDetailPage() {
       : sectionSaveError;
 
   return (
+    <>
     <WikiEntityArticle
       chipIcon={getWikiTypeIcon(typeLabel)}
       chipLabel={typeLabel}
@@ -380,6 +390,9 @@ export default function WikiDetailPage() {
           : undefined
       }
       wikiId={wiki.id}
+      onDeleteWiki={() => setShowDeleteConfirm(true)}
+      onRegenerateWiki={() => regenerate.mutate(wiki.id)}
+      regenerateBusy={regenerate.isPending}
       editorialStateDot={{
         editorialState: wiki.editorialState,
         state: wiki.state,
@@ -387,58 +400,92 @@ export default function WikiDetailPage() {
         lastRebuiltAt: wiki.lastRebuiltAt,
       }}
       onSave={handleSaveToApi}
+      fragmentsTabContent={
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Manage / Done toggle gates fragment-write actions and the
+              Regenerate button. Read mode shows the list only. The tab
+              label already says "Fragments", so no in-content heading. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ ...T.bodySmall, fontFamily: FONT.SANS, color: "var(--wiki-count)" }}>
+              {wiki.fragments?.length ?? 0} fragments
+            </span>
+            <div style={{ flex: 1 }} />
+            {fragmentsManageMode ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => regenerate.mutate(wiki.id)}
+                  disabled={regenerate.isPending}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "6px 16px",
+                    fontSize: 13,
+                    fontFamily: FONT.SANS,
+                    color: "#fff",
+                    background: "var(--wiki-link)",
+                    border: "1px solid var(--wiki-link)",
+                    cursor: regenerate.isPending ? "default" : "pointer",
+                    opacity: regenerate.isPending ? 0.6 : 1,
+                  }}
+                >
+                  <RefreshCw
+                    size={14}
+                    strokeWidth={1.5}
+                    style={regenerate.isPending ? { animation: "spin 1s linear infinite" } : undefined}
+                  />
+                  {regenerate.isPending ? "Regenerating..." : "Regenerate"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFragmentsManageMode(false)}
+                  style={{
+                    padding: "6px 16px",
+                    fontSize: 13,
+                    fontFamily: FONT.SANS,
+                    color: "var(--wiki-article-text)",
+                    background: "none",
+                    border: "1px solid var(--wiki-card-border)",
+                    cursor: "pointer",
+                  }}
+                >
+                  Done
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setFragmentsManageMode(true)}
+                style={{
+                  padding: "6px 16px",
+                  fontSize: 13,
+                  fontFamily: FONT.SANS,
+                  color: "#fff",
+                  background: "var(--wiki-link)",
+                  border: "1px solid var(--wiki-link)",
+                  cursor: "pointer",
+                }}
+              >
+                Manage Fragments
+              </button>
+            )}
+          </div>
+          <MemberFragmentsManagementTable
+            wikiId={wiki.id}
+            fragments={wiki.fragments ?? []}
+            manageMode={fragmentsManageMode}
+            citedFragmentIds={citedFragmentIds}
+          />
+        </div>
+      }
       customBottomSections={
         <>
+          {/* Phase 2: BouncerModeToggle, Regenerate, and Delete Wiki moved
+              off Read: BouncerModeToggle + Delete go into Settings; Regenerate
+              moves to the Fragments tab (Manage mode). Share link stays here
+              for now since it's a Read-mode discoverability action. */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <BouncerModeToggle
-              wikiId={wiki.id}
-              bouncerMode={(wiki.bouncerMode as 'auto' | 'review') ?? 'auto'}
-            />
-            <span style={{ width: 1, height: 16, background: "var(--wiki-card-border)" }} />
-            <button
-              type="button"
-              onClick={() => regenerate.mutate(wiki.id)}
-              disabled={regenerate.isPending}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "4px 10px",
-                fontSize: 12,
-                color: "var(--wiki-article-text)",
-                background: "none",
-                border: "1px solid var(--wiki-card-border)",
-                cursor: regenerate.isPending ? "default" : "pointer",
-                opacity: regenerate.isPending ? 0.6 : 1,
-              }}
-            >
-              <RefreshCw
-                size={14}
-                strokeWidth={1.5}
-                style={regenerate.isPending ? { animation: "spin 1s linear infinite" } : undefined}
-              />
-              {regenerate.isPending ? "Regenerating..." : "Regenerate"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowDeleteConfirm(true)}
-              disabled={deleteWiki.isPending}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "4px 10px",
-                fontSize: 12,
-                color: "red",
-                background: "none",
-                border: "1px solid var(--wiki-card-border)",
-                cursor: deleteWiki.isPending ? "default" : "pointer",
-                opacity: deleteWiki.isPending ? 0.6 : 1,
-              }}
-            >
-              <Trash2 size={14} strokeWidth={1.5} />
-              {deleteWiki.isPending ? "Deleting..." : "Delete Wiki"}
-            </button>
             {wiki.published && wiki.publishedSlug && (
               <button
                 type="button"
@@ -484,19 +531,9 @@ export default function WikiDetailPage() {
               </span>
             )}
           </div>
-          <DestructiveConfirmDialog
-            open={showDeleteConfirm}
-            onOpenChange={setShowDeleteConfirm}
-            title="Delete Wiki"
-            description="Are you sure? This permanently deletes this wiki."
-            confirmText={wiki.name}
-            confirmLabel="Delete"
-            onConfirm={() => {
-              deleteWiki.mutate(wiki.id, {
-                onSuccess: () => router.push("/wiki"),
-              });
-            }}
-          />
+          {/* DestructiveConfirmDialog moved to a sibling of WikiEntityArticle
+              below so it stays mounted when the user clicks Delete from the
+              Settings tab (customBottomSections unmounts on Settings). */}
         </>
       }
     >
@@ -548,11 +585,35 @@ export default function WikiDetailPage() {
           dedups by lookupKey internally so a fragment cited from
           multiple sections appears once at the bottom and every
           superscript anchor lands on the same row. */}
-      {sidecarSections.length > 0 && (
-        <WikiCitationsSection
-          citations={sidecarSections.flatMap((s) => s.citations ?? [])}
-        />
-      )}
+      {(() => {
+        const allCitations = sidecarSections.flatMap((s) => s.citations ?? []);
+        if (allCitations.length === 0) return null;
+        return (
+          <details style={{ paddingTop: 20, width: "100%" }}>
+            <summary
+              style={{
+                cursor: "pointer",
+                margin: 0,
+                ...T.h2,
+                color: "var(--wiki-article-h2)",
+                display: "flex",
+                alignItems: "baseline",
+                gap: 8,
+                userSelect: "none",
+                listStyle: "revert",
+              }}
+            >
+              <span>Citations</span>
+              <span style={{ ...T.bodySmall, fontFamily: FONT.SANS, fontWeight: 400, color: "var(--wiki-count)" }}>
+                ({new Set(allCitations.map((c) => c.fragmentId)).size})
+              </span>
+            </summary>
+            <div style={{ marginTop: 8 }}>
+              <WikiCitationsSection heading="" citations={allCitations} />
+            </div>
+          </details>
+        );
+      })()}
       <SectionEditor
         open={editingSectionId !== null}
         onOpenChange={(next) => {
@@ -572,17 +633,28 @@ export default function WikiDetailPage() {
         }}
       />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <WikiSectionH2 title="Member Fragments" count={wiki.fragments?.length ?? 0} />
-        <MemberFragmentsManagementTable
-          wikiId={wiki.id}
-          fragments={wiki.fragments ?? []}
-        />
-      </div>
+      {/* Member Fragments moved to the dedicated Fragments tab. */}
 
       {wiki.people && wiki.people.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <WikiSectionH2 title="Mentioned People" count={wiki.people.length} />
+        <details style={{ paddingTop: 20, width: "100%" }}>
+          <summary
+            style={{
+              cursor: "pointer",
+              margin: 0,
+              ...T.h2,
+              color: "var(--wiki-article-h2)",
+              display: "flex",
+              alignItems: "baseline",
+              gap: 8,
+              userSelect: "none",
+              listStyle: "revert",
+            }}
+          >
+            <span>Mentioned People</span>
+            <span style={{ ...T.bodySmall, fontFamily: FONT.SANS, fontWeight: 400, color: "var(--wiki-count)" }}>
+              ({wiki.people.length})
+            </span>
+          </summary>
           <ul
             style={{
               ...bodyStyle,
@@ -609,13 +681,24 @@ export default function WikiDetailPage() {
               </li>
             ))}
           </ul>
-        </div>
+        </details>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <WikiSectionH2 title="Timeline" />
-        <WikiRegenTimeline wikiId={wiki.id} />
-      </div>
+      {/* Timeline moved into the History tab (merged with revisions). */}
     </WikiEntityArticle>
+    <DestructiveConfirmDialog
+      open={showDeleteConfirm}
+      onOpenChange={setShowDeleteConfirm}
+      title="Delete Wiki"
+      description="Are you sure? This permanently deletes this wiki."
+      confirmText={wiki.name}
+      confirmLabel="Delete"
+      onConfirm={() => {
+        deleteWiki.mutate(wiki.id, {
+          onSuccess: () => router.push("/wiki"),
+        });
+      }}
+    />
+    </>
   );
 }

@@ -6,9 +6,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import AddWikiModal from "@/components/layout/AddWikiModal";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import AddWikiModal, {
+  type WikiSettingsFormHandle,
+  type WikiSettingsFormMode,
+} from "@/components/layout/AddWikiModal";
 import InlineEditor from "@/components/editor/InlineEditor";
 import WikiHistoryTimeline from "@/components/wiki/WikiHistoryTimeline";
+import WikiRegenTimeline from "@/components/wiki/WikiRegenTimeline";
 import { T, FONT } from "@/lib/typography";
 import {
   EDITABLE_WIKI_TYPES,
@@ -278,6 +283,14 @@ export type WikiEntityArticleProps = {
    * Optional sections rendered after divider and before modal.
    */
   customBottomSections?: ReactNode;
+  /**
+   * Content rendered in the dedicated "Fragments" tab. Caller owns the
+   * fragment management surface (typically <MemberFragmentsManagementTable>).
+   * When this prop is provided AND the user clicks the Fragments tab, the
+   * main content area swaps to this node and Read/Edit/History content
+   * are hidden.
+   */
+  fragmentsTabContent?: ReactNode;
   /** Per-wiki Wiki Style override to prefill in settings modal (wikis.prompt). */
   promptOverride?: string;
   /** Per-wiki Wiki Format override to prefill in settings modal (wikis.structure). */
@@ -301,6 +314,21 @@ export type WikiEntityArticleProps = {
   onSave?: (data: { title: string; chipLabel: string; content: string }) => void;
   /** Custom settings click handler — when provided, the header gear calls this instead of opening AddWikiModal. */
   onSettingsClick?: () => void;
+  /**
+   * Optional delete-wiki callback. Forwarded to the Settings-tab form's
+   * Delete Wiki button. Host owns the confirm dialog + mutation; this
+   * component just triggers it when the user clicks Delete.
+   */
+  onDeleteWiki?: () => void;
+  /**
+   * Optional regenerate-wiki callback. When provided, a Regenerate button
+   * renders in the Settings tab's action row alongside Edit Wiki Settings /
+   * Save (only while fields are unlocked). The host owns the mutation; this
+   * component just triggers it.
+   */
+  onRegenerateWiki?: () => void;
+  /** Disables the Settings-tab Regenerate button + shows "Regenerating…". */
+  regenerateBusy?: boolean;
   /** Editorial state dot rendered inline with the title. */
   editorialStateDot?: EditorialStateDotProps;
   children: ReactNode;
@@ -343,6 +371,7 @@ export function WikiEntityArticle({
   infobox,
   renderCustomInfobox,
   customBottomSections,
+  fragmentsTabContent,
   promptOverride,
   structureOverride,
   description,
@@ -354,12 +383,48 @@ export function WikiEntityArticle({
   collections,
   onSave,
   onSettingsClick: onSettingsClickProp,
+  onDeleteWiki,
+  onRegenerateWiki,
+  regenerateBusy = false,
   editorialStateDot,
   children,
 }: WikiEntityArticleProps) {
   const [infoVisible, setInfoVisible] = useState(true);
-  const [wikiSettingsOpen, setWikiSettingsOpen] = useState(false);
+  // Tab and URL sync (Phase 2). ?tab=fragments / ?tab=history reflects
+  // state so the user can deep-link or refresh-with-tab-preserved. Edit
+  // isn't synced because it's a write-in-progress mode; coming back via
+  // URL would lose the draft anyway.
+  //
+  // The initial tab is read once from the URL via the useState
+  // initializer (which runs only on mount), avoiding a cascading
+  // setState in useEffect.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // Fragments and Settings render inline in the main content area (no modal).
+  // The modal mode of AddWikiModal is still used by the global header's
+  // "+ New" create flow; hosts can also override via `onSettingsClickProp`
+  // (e.g. preview pages) to keep their own popup.
+  const [isViewingFragments, setIsViewingFragments] = useState(
+    () => searchParams.get("tab") === "fragments",
+  );
+  const [isViewingSettings, setIsViewingSettings] = useState(
+    () => searchParams.get("tab") === "settings",
+  );
+  // Settings form: parent-rendered primary button + delete confirmation
+  // live above the embedded form panel, so we expose the form's submit
+  // via ref and track its mode for the button label.
+  const settingsFormRef = useRef<WikiSettingsFormHandle>(null);
+  const [settingsMode, setSettingsMode] = useState<WikiSettingsFormMode>("view");
   const readContentRef = useRef<HTMLDivElement | null>(null);
+
+  const updateTabInUrl = (tab: "read" | "fragments" | "history" | "settings" | null) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (!tab || tab === "read") params.delete("tab");
+    else params.set("tab", tab);
+    const next = params.toString();
+    router.replace(next ? `${pathname}?${next}` : pathname);
+  };
 
   const { data: historyData } = useWikiEditHistory(wikiId);
   const serverRevisions = useMemo<WikiRevision[] | undefined>(() => {
@@ -431,7 +496,7 @@ export function WikiEntityArticle({
     [displayTitle, displayChipLabel, description, promptOverride, structureOverride, bouncerMode, published, publishedSlug, publishedOrigin, collections],
   );
 
-  const tabs = ["Read", "Edit", "View history"] as const;
+  const tabs = ["Read", "Edit", "Fragments", "History", "Settings"] as const;
 
   return (
     <div className="wiki-page wiki-page--article">
@@ -460,79 +525,80 @@ export function WikiEntityArticle({
               width: "100%",
             }}
           >
-            {isEditing ? (
-              wikiTypeLocked ? (
-                <div style={{ display: "inline-flex", flexDirection: "column", gap: 6 }}>
-                  <WikiTypeBadge type={displayChipLabel} icon={displayChipIcon} />
-                </div>
-              ) : (
-                <div
-                  style={{
-                    display: "inline-flex",
-                    flexDirection: "column",
-                    gap: 0,
-                    alignItems: "flex-start",
-                  }}
-                >
-                  <Combobox
-                    value={draftChipLabel}
-                    items={EDITABLE_WIKI_TYPES}
-                    filter={null}
-                    onValueChange={(value) => setDraftChipLabel(String(value))}
+            {/* Top metadata row: collections on the left, Wiki Type badge +
+                editorial-state dot + Private indicator on the right. Type
+                change is owned by Settings only (not Edit). */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                width: "100%",
+              }}
+            >
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  flexWrap: "wrap",
+                }}
+              >
+                {(collections ?? []).map((c) => (
+                  <span
+                    key={c.id}
+                    data-slot="wiki-collection-chip"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "2px 8px",
+                      ...T.micro,
+                      fontFamily: FONT.SANS,
+                      color: "var(--wiki-article-text)",
+                      border: "1px solid var(--wiki-card-border)",
+                      whiteSpace: "nowrap",
+                    }}
                   >
-                    <ComboboxTrigger
-                      className="inline-flex w-fit items-center gap-1 rounded-sm border border-border bg-white text-xs [&>svg]:text-black"
-                      render={<button type="button" />}
+                    <span
                       style={{
-                        paddingLeft: 6,
-                        paddingRight: 6,
-                        paddingTop: 3,
-                        paddingBottom: 3,
+                        display: "inline-block",
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        backgroundColor: c.color || "var(--wiki-count)",
                       }}
-                    >
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 4,
-                          backgroundColor: draftChipColors.bg,
-                          color: "var(--foreground)",
-                          borderColor: draftChipColors.border,
-                          borderWidth: 1,
-                          borderStyle: "solid",
-                          borderRadius: 2,
-                          padding: "2px 8px",
-                          lineHeight: "16px",
-                        }}
-                      >
-                        {(() => {
-                          const DraftIcon = getWikiTypeIcon(draftChipLabel);
-                          return DraftIcon ? <DraftIcon /> : null;
-                        })()}
-                        <ComboboxValue />
-                      </span>
-                    </ComboboxTrigger>
-                    <ComboboxContent className="rounded-none px-2 py-1">
-                      <ComboboxEmpty>No wiki type found.</ComboboxEmpty>
-                      <ComboboxList>
-                        <ComboboxCollection>
-                          {(item) => {
-                            const type = item as WikiType;
-                            return (
-                              <ComboboxItem value={type}>
-                                <WikiTypeBadge type={type} />
-                              </ComboboxItem>
-                            );
-                          }}
-                        </ComboboxCollection>
-                      </ComboboxList>
-                    </ComboboxContent>
-                  </Combobox>
-                </div>
-              )
-            ) : (
-              <WikiTypeBadge type={displayChipLabel} icon={displayChipIcon ?? ChipIcon} />
-            )}
+                      aria-hidden
+                    />
+                    {c.name}
+                  </span>
+                ))}
+              </div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <WikiTypeBadge type={displayChipLabel} icon={displayChipIcon ?? ChipIcon} />
+                {editorialStateDot && <EditorialStateDot {...editorialStateDot} />}
+                {/* Private badge renders identically across all 5 sub-pages
+                    alongside the Type badge and editorial-state dot. */}
+                {published === false && (
+                  <span
+                    data-testid="wiki-private-badge"
+                    aria-label="Private"
+                    style={{
+                      ...T.micro,
+                      color: "var(--wiki-infobox-text)",
+                      opacity: 0.7,
+                      fontFamily: FONT.SANS,
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
+                    Private
+                  </span>
+                )}
+              </div>
+            </div>
 
             <div
               style={{
@@ -547,138 +613,61 @@ export function WikiEntityArticle({
                 className="wiki-article-title-wrap"
                 style={{
                   display: "flex",
-                  alignItems: "flex-end",
-                  justifyContent: "space-between",
+                  flexDirection: "column",
+                  alignItems: "stretch",
+                  gap: 8,
                   width: "100%",
                   borderBottom: showTitleUnderline
                     ? "1px solid var(--wiki-search-section-line)"
                     : "none",
                 }}
               >
-                {isEditing ? (
-                  <input
-                    value={draftTitle}
-                    onChange={(event) => setDraftTitle(event.target.value)}
-                    aria-label="Wiki title"
-                    style={{
-                      margin: 0,
-                      paddingBottom: 8,
-                      ...T.h1,
-                      fontFamily: FONT.SERIF,
-                      color: "var(--wiki-title)",
-                      minWidth: 0,
-                      flex: 1,
-                      border: "none",
-                      outline: "none",
-                      background: "transparent",
-                    }}
-                  />
-                ) : (
-                  <h1
-                    className="wiki-article-h1"
-                    style={{
-                      margin: 0,
-                      paddingBottom: 8,
-                      ...T.h1,
-                      fontFamily: FONT.SERIF,
-                      color: "var(--wiki-title)",
-                      overflow: titleEllipsis ? "hidden" : undefined,
-                      textOverflow: titleEllipsis ? "ellipsis" : undefined,
-                      whiteSpace: titleEllipsis ? "nowrap" : undefined,
-                      minWidth: 0,
-                      flex: 1,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    {displayTitle}
-                    {editorialStateDot && (
-                      <EditorialStateDot {...editorialStateDot} />
-                    )}
-                  </h1>
-                )}
-                {/* Private badge — visible whenever the wiki is unpublished.
-                    Tells the operator at a glance that nobody else can read
-                    this surface. Suppressed in edit mode to keep the editor
-                    chrome calm. Caller wires `published` from the wiki row
-                    (defaults to false at the schema layer per #277). */}
-                {!isEditing && published === false && (
-                  <span
-                    data-testid="wiki-private-badge"
-                    aria-label="Private"
-                    style={{
-                      ...T.micro,
-                      color: "var(--wiki-infobox-text)",
-                      opacity: 0.7,
-                      fontFamily: FONT.SANS,
-                      paddingBottom: 10,
-                      whiteSpace: "nowrap",
-                      flexShrink: 0,
-                      marginRight: 12,
-                    }}
-                  >
-                    Private
-                  </span>
-                )}
+                {/* Title is identical across all modes (Read / Edit / Fragments /
+                    History / Settings). Title rename lives in Settings (along
+                    with type change). */}
+                <h1
+                  className="wiki-article-h1"
+                  style={{
+                    margin: 0,
+                    paddingBottom: 8,
+                    ...T.h1,
+                    fontFamily: FONT.SERIF,
+                    color: "var(--wiki-title)",
+                    overflow: titleEllipsis ? "hidden" : undefined,
+                    textOverflow: titleEllipsis ? "ellipsis" : undefined,
+                    whiteSpace: titleEllipsis ? "nowrap" : undefined,
+                    minWidth: 0,
+                    flex: 1,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  {displayTitle}
+                </h1>
+                {/* Phase 2: editorial-state dot + Private badge moved up
+                    next to the Wiki Type badge so the title has the full
+                    horizontal lane. */}
                 <div
                   className="wiki-article-tabs"
                   style={{
                     display: "flex",
                     alignItems: "flex-end",
+                    justifyContent: "flex-end",
                     gap: 12,
                     flexShrink: 0,
+                    flexWrap: "wrap",
                   }}
                 >
-                  {isEditing ? (
-                    <>
-                      <button
-                        type="button"
-                        className="wiki-article-tab"
-                        onClick={() => {
-                          handleSave();
-                          onSave?.({ title: draftTitle || title, chipLabel: draftChipLabel || chipLabel, content: draftContent });
-                        }}
-                        style={{
-                          background: "none",
-                          borderTop: "none",
-                          borderLeft: "none",
-                          borderRight: "none",
-                          cursor: "pointer",
-                          ...T.bodySmall,
-                          fontFamily: FONT.SANS,
-                          lineHeight: "20px",
-                          paddingBottom: 8,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        className="wiki-article-tab-muted"
-                        onClick={handleCancel}
-                        style={{
-                          background: "none",
-                          borderTop: "none",
-                          borderLeft: "none",
-                          borderRight: "none",
-                          cursor: "pointer",
-                          ...T.bodySmall,
-                          fontFamily: FONT.SANS,
-                          lineHeight: "20px",
-                          paddingBottom: 8,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    tabs.map((tab) => {
+                  {/* Tabs render identically across all modes. Save / Cancel
+                      for Edit live inline below the editor, not in the tab bar. */}
+                  {tabs.map((tab) => {
                       const active =
-                        (tab === "Read" && !isViewingHistory) ||
-                        (tab === "View history" && isViewingHistory);
+                        (tab === "Read" && !isEditing && !isViewingHistory && !isViewingFragments && !isViewingSettings) ||
+                        (tab === "Edit" && isEditing) ||
+                        (tab === "Fragments" && isViewingFragments) ||
+                        (tab === "History" && isViewingHistory) ||
+                        (tab === "Settings" && isViewingSettings);
                       return (
                         <button
                           key={tab}
@@ -689,20 +678,13 @@ export function WikiEntityArticle({
                               : "wiki-article-tab"
                           }
                           onClick={() => {
-                            // Scope the read-mode HTML capture to the `[data-wiki-body]`
-                            // subtree so sidebar chrome (Member Fragments,
-                            // Mentioned People, citations, etc.) never leaks
-                            // into the Tiptap draft and gets baked into
-                            // `wikis.content` on save (#241). Fall back to the
-                            // wrapper innerHTML for callers that haven't opted
-                            // in yet (e.g. the People page).
-                            //
-                            // Within the body, strip `[data-slot]` affordances
-                            // (the inline `[edit]` link rendered by
-                            // `WikiEditLink`, citation superscripts, etc.) —
-                            // they are interactive UI, not author content, and
-                            // round-tripping them turns live affordances into
-                            // inert markup permanently baked into the body.
+                            // Scope the read-mode HTML capture to the
+                            // `[data-wiki-body]` subtree so sidebar chrome
+                            // (Member Fragments, Mentioned People, citations,
+                            // etc.) never leaks into the Tiptap draft.
+                            // Strip [data-slot] affordances (edit-link,
+                            // references, see-also, citation chips) since
+                            // they are interactive UI, not author content.
                             let bodyHtml = "";
                             const bodyEl = readContentRef.current?.querySelector("[data-wiki-body]");
                             if (bodyEl) {
@@ -713,19 +695,48 @@ export function WikiEntityArticle({
                               bodyHtml = readContentRef.current?.innerHTML ?? "";
                             }
                             if (tab === "Edit") {
+                              setIsViewingFragments(false);
+                              setIsViewingSettings(false);
                               enterEditMode({
                                 currentHtml: bodyHtml,
                                 currentTitle: displayTitle,
                                 currentChipLabel: displayChipLabel,
                               });
-                            } else if (tab === "View history") {
+                              updateTabInUrl(null);
+                            } else if (tab === "Fragments") {
+                              if (isViewingHistory) closeHistory();
+                              setIsViewingSettings(false);
+                              setIsViewingFragments(true);
+                              setInfoVisible(false);
+                              updateTabInUrl("fragments");
+                            } else if (tab === "History") {
+                              setIsViewingFragments(false);
+                              setIsViewingSettings(false);
                               openHistory({
                                 currentHtml: bodyHtml,
                                 currentTitle: displayTitle,
                                 currentChipLabel: displayChipLabel,
                               });
+                              updateTabInUrl("history");
+                            } else if (tab === "Settings") {
+                              // Settings renders inline as its own page now.
+                              // The legacy modal path (onSettingsClickProp) is
+                              // still respected for hosts that wire their own
+                              // handler, e.g. preview / prototype pages.
+                              if (onSettingsClickProp) {
+                                onSettingsClickProp();
+                              } else {
+                                if (isViewingHistory) closeHistory();
+                                setIsViewingFragments(false);
+                                setInfoVisible(false);
+                                setIsViewingSettings(true);
+                              }
+                              updateTabInUrl("settings");
                             } else if (tab === "Read") {
+                              setIsViewingFragments(false);
+                              setIsViewingSettings(false);
                               if (isViewingHistory) closeHistory();
+                              updateTabInUrl(null);
                             }
                           }}
                           style={{
@@ -744,9 +755,8 @@ export function WikiEntityArticle({
                           {tab}
                         </button>
                       );
-                    })
-                  )}
-                  {showInfobox && !isEditing && !isViewingHistory ? (
+                    })}
+                  {showInfobox && !isEditing && !isViewingHistory && !isViewingFragments && !isViewingSettings ? (
                     <button
                       type="button"
                       title={infoVisible ? "Hide infobox" : "Show infobox"}
@@ -765,29 +775,125 @@ export function WikiEntityArticle({
                       {infoVisible ? <EyeOpenIcon /> : <EyeClosedIcon />}
                     </button>
                   ) : null}
-                  {showSettings && !isEditing && !isViewingHistory ? (
-                    <button
-                      type="button"
-                      title="Wiki settings"
-                      onClick={() => onSettingsClickProp ? onSettingsClickProp() : setWikiSettingsOpen(true)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 24,
-                        paddingBottom: 12,
-                      }}
-                    >
-                      <SettingsIcon />
-                    </button>
-                  ) : null}
+                  {/* Settings gear icon removed; Settings is now a tab. */}
                 </div>
               </div>
             </div>
           </div>
+
+          {/* Page-action row: sits below the tab bar, above the content
+              box. Hosts mode-specific buttons:
+                - Edit mode → Save / Cancel
+                - Settings tab → Edit Wiki Settings / Save (label tracks
+                  the embedded form's mode via WikiSettingsFormHandle).
+              Right-aligned to match the tab bar. */}
+          {isEditing && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 8,
+                paddingTop: 12,
+                paddingBottom: 12,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  handleSave();
+                  onSave?.({
+                    title: draftTitle || title,
+                    chipLabel: draftChipLabel || chipLabel,
+                    content: draftContent,
+                  });
+                }}
+                style={{
+                  padding: "6px 16px",
+                  fontSize: 13,
+                  fontFamily: FONT.SANS,
+                  color: "#fff",
+                  background: "var(--wiki-link)",
+                  border: "1px solid var(--wiki-link)",
+                  cursor: "pointer",
+                }}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={handleCancel}
+                style={{
+                  padding: "6px 16px",
+                  fontSize: 13,
+                  fontFamily: FONT.SANS,
+                  color: "var(--wiki-article-text)",
+                  background: "none",
+                  border: "1px solid var(--wiki-card-border)",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {isViewingSettings && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 8,
+                paddingTop: 12,
+                paddingBottom: 12,
+              }}
+            >
+              {/* Regenerate lives in the Settings action row too, so it's
+                  surfaceable from somewhere other than the Fragments tab
+                  (which is easy to miss). Only shows once the form is
+                  unlocked, mirroring the Delete Wiki button's gating
+                  (destructive / heavyweight actions require entering edit
+                  mode first). */}
+              {settingsMode === "edit" && onRegenerateWiki && (
+                <button
+                  type="button"
+                  onClick={() => onRegenerateWiki()}
+                  disabled={regenerateBusy}
+                  style={{
+                    padding: "6px 16px",
+                    fontSize: 13,
+                    fontFamily: FONT.SANS,
+                    color: "var(--wiki-article-text)",
+                    background: "none",
+                    border: "1px solid var(--wiki-card-border)",
+                    cursor: regenerateBusy ? "default" : "pointer",
+                    opacity: regenerateBusy ? 0.6 : 1,
+                  }}
+                >
+                  {regenerateBusy ? "Regenerating…" : "Regenerate"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => settingsFormRef.current?.submit()}
+                disabled={settingsMode === "submitting"}
+                style={{
+                  padding: "6px 16px",
+                  fontSize: 13,
+                  fontFamily: FONT.SANS,
+                  color: "#fff",
+                  background: "var(--wiki-link)",
+                  border: "1px solid var(--wiki-link)",
+                  cursor: settingsMode === "submitting" ? "default" : "pointer",
+                  opacity: settingsMode === "submitting" ? 0.6 : 1,
+                }}
+              >
+                {settingsMode === "submitting"
+                  ? "Saving…"
+                  : settingsMode === "edit"
+                    ? "Save"
+                    : "Edit Wiki Settings"}
+              </button>
+            </div>
+          )}
 
           {/*
             Structured `.winfo` infobox (sidecar-driven) renders inline as
@@ -817,7 +923,7 @@ export function WikiEntityArticle({
                 display: "flow-root",
               }}
             >
-              {showInfobox && infoVisible && !isEditing && !isViewingHistory && renderCustomInfobox
+              {showInfobox && infoVisible && !isEditing && !isViewingHistory && !isViewingFragments && !isViewingSettings && renderCustomInfobox
                 ? renderCustomInfobox()
                 : null}
               {isEditing ? (
@@ -827,7 +933,39 @@ export function WikiEntityArticle({
                   editable
                 />
               ) : isViewingHistory ? (
-                <WikiHistoryTimeline revisions={revisions} />
+                // Phase 2: History is the unified stream. WikiRegenTimeline
+                // already merges /history (edit revisions) + /timeline (audit
+                // events) internally, so we use it as-is. WikiHistoryTimeline
+                // (the older revision-only view) stays as a fallback when we
+                // don't have a wikiId.
+                wikiId ? <WikiRegenTimeline wikiId={wikiId} /> : <WikiHistoryTimeline revisions={revisions} />
+              ) : isViewingFragments ? (
+                fragmentsTabContent ?? (
+                  <div style={{ ...T.bodySmall, color: "var(--muted-foreground)" }}>
+                    No fragments tab content provided by this page.
+                  </div>
+                )
+              ) : isViewingSettings ? (
+                // Inline Settings tab: renders the same form the legacy gear
+                // modal used, embedded directly in the article column. The
+                // page-level title h1 + tab bar already supply chrome, so
+                // `embedded` strips the DialogHeader.
+                <AddWikiModal
+                  ref={settingsFormRef}
+                  embedded
+                  hideFooter
+                  open={false}
+                  onClose={() => {
+                    setIsViewingSettings(false);
+                    updateTabInUrl(null);
+                  }}
+                  title="Wiki Settings"
+                  confirmLabel="Edit Wiki Settings"
+                  prefill={wikiSettingsPrefill}
+                  wikiId={wikiId ?? "preview"}
+                  onDelete={onDeleteWiki}
+                  onModeChange={setSettingsMode}
+                />
               ) : (
                 <div ref={readContentRef}>
                   {savedContent ? (
@@ -842,7 +980,7 @@ export function WikiEntityArticle({
               )}
             </div>
 
-            {showInfobox && infoVisible && !isEditing && !isViewingHistory && !renderCustomInfobox
+            {showInfobox && infoVisible && !isEditing && !isViewingHistory && !isViewingFragments && !isViewingSettings && !renderCustomInfobox
               ? (
                   <div className="hidden md:block">
                     {renderInfobox(infobox)}
@@ -852,17 +990,12 @@ export function WikiEntityArticle({
           </div>
         </div>
 
-        {customBottomSections}
+        {/* customBottomSections (citations + mentioned-people + share button)
+            hide in the Fragments and Settings tabs since those tabs own the
+            entire content area. Read, Edit, History still show them. */}
+        {!isViewingFragments && !isViewingSettings && customBottomSections}
       </div>
 
-      <AddWikiModal
-        open={wikiSettingsOpen}
-        onClose={() => setWikiSettingsOpen(false)}
-        title="Wiki Settings"
-        confirmLabel="Edit Wiki Settings"
-        prefill={wikiSettingsPrefill}
-        wikiId={wikiId ?? "preview"}
-      />
     </div>
   );
 }

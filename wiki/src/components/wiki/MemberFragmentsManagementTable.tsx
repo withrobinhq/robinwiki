@@ -28,11 +28,27 @@ export interface MemberFragment {
 interface MemberFragmentsManagementTableProps {
   wikiId: string;
   fragments: MemberFragment[];
+  /**
+   * When true, the Actions column (with the Un-attach button) is shown.
+   * When false, the table is read-only and the Actions column is hidden
+   * entirely so the row chrome doesn't suggest an interactive surface.
+   */
+  manageMode?: boolean;
+  /**
+   * Set of fragment IDs that appear as citations in the current wiki
+   * body. Drives the "cited" / "uncited" label in the Status column.
+   * The prior label was always "active", which carries no information
+   * since every row in this table is by definition an attached
+   * (active-edge) fragment.
+   */
+  citedFragmentIds?: Set<string>;
 }
 
 export function MemberFragmentsManagementTable({
   wikiId,
   fragments,
+  manageMode = false,
+  citedFragmentIds,
 }: MemberFragmentsManagementTableProps) {
   const detach = useDetachFragment();
   const [confirmTarget, setConfirmTarget] = useState<MemberFragment | null>(null);
@@ -68,12 +84,14 @@ export function MemberFragmentsManagementTable({
             >
               Status
             </TableHead>
-            <TableHead
-              style={{ ...T.micro, fontWeight: 600, fontFamily: FONT.SANS }}
-              className="text-right"
-            >
-              Actions
-            </TableHead>
+            {manageMode && (
+              <TableHead
+                style={{ ...T.micro, fontWeight: 600, fontFamily: FONT.SANS }}
+                className="text-right"
+              >
+                Actions
+              </TableHead>
+            )}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -109,43 +127,62 @@ export function MemberFragmentsManagementTable({
                 )}
               </TableCell>
               <TableCell>
-                <span
-                  style={{
-                    ...T.micro,
-                    color:
-                      frag.edgeStatus === "pending"
-                        ? "var(--wiki-count)"
-                        : "var(--wiki-article-text)",
-                    fontStyle:
-                      frag.edgeStatus === "pending" ? "italic" : "normal",
-                  }}
-                >
-                  {frag.edgeStatus === "pending" ? "pending" : "active"}
-                </span>
+                {(() => {
+                  // "pending" beats cited/uncited because the edge isn't
+                  // even active yet, so citation status would be misleading.
+                  if (frag.edgeStatus === "pending") {
+                    return (
+                      <span
+                        style={{
+                          ...T.micro,
+                          color: "var(--wiki-count)",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        pending
+                      </span>
+                    );
+                  }
+                  const cited = citedFragmentIds?.has(frag.id) ?? false;
+                  return (
+                    <span
+                      style={{
+                        ...T.micro,
+                        color: cited
+                          ? "var(--wiki-article-text)"
+                          : "var(--wiki-count)",
+                      }}
+                    >
+                      {cited ? "cited" : "uncited"}
+                    </span>
+                  );
+                })()}
               </TableCell>
-              <TableCell className="text-right">
-                <button
-                  type="button"
-                  title="Un-attach fragment"
-                  onClick={() => setConfirmTarget(frag)}
-                  disabled={detach.isPending}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 4,
-                    padding: "2px 8px",
-                    fontSize: 12,
-                    color: "var(--wiki-article-text)",
-                    background: "none",
-                    border: "1px solid var(--wiki-card-border)",
-                    cursor: detach.isPending ? "default" : "pointer",
-                    opacity: detach.isPending ? 0.5 : 1,
-                  }}
-                >
-                  <Unlink size={12} strokeWidth={1.5} />
-                  Un-attach
-                </button>
-              </TableCell>
+              {manageMode && (
+                <TableCell className="text-right">
+                  <button
+                    type="button"
+                    title="Un-attach fragment"
+                    onClick={() => setConfirmTarget(frag)}
+                    disabled={detach.isPending}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "2px 8px",
+                      fontSize: 12,
+                      color: "var(--wiki-article-text)",
+                      background: "none",
+                      border: "1px solid var(--wiki-card-border)",
+                      cursor: detach.isPending ? "default" : "pointer",
+                      opacity: detach.isPending ? 0.5 : 1,
+                    }}
+                  >
+                    <Unlink size={12} strokeWidth={1.5} />
+                    Un-attach
+                  </button>
+                </TableCell>
+              )}
             </TableRow>
           ))}
         </TableBody>
