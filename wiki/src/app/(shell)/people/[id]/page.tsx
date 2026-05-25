@@ -69,7 +69,14 @@ function renderInfoboxValue(
       const [, kind, slug] = match;
       const ref = refs[`${kind}:${slug}`];
       if (ref) {
-        return <WikiChip label={ref.label} href={hrefForRef(ref)} />;
+        return (
+          <WikiChip
+            label={ref.label}
+            href={hrefForRef(ref)}
+            tokenKind={ref.kind}
+            tokenSlug={ref.slug}
+          />
+        );
       }
     }
     // Unresolved ref — fall back to the raw string so the user still sees

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -12,6 +13,7 @@ import AddWikiModal, {
   type WikiSettingsFormMode,
 } from "@/components/layout/AddWikiModal";
 import InlineEditor from "@/components/editor/InlineEditor";
+import { WikiDiffInline } from "@/components/wiki/WikiDiffInline";
 import WikiHistoryTimeline from "@/components/wiki/WikiHistoryTimeline";
 import WikiRegenTimeline from "@/components/wiki/WikiRegenTimeline";
 import { T, FONT } from "@/lib/typography";
@@ -416,6 +418,18 @@ export function WikiEntityArticle({
   // via ref and track its mode for the button label.
   const settingsFormRef = useRef<WikiSettingsFormHandle>(null);
   const [settingsMode, setSettingsMode] = useState<WikiSettingsFormMode>("view");
+  // Edit-mode diff toggle: when on, swap the InlineEditor for a
+  // read-only word-diff view in the same column space. Off by default
+  // so editing is the primary state; user opts in to "see what
+  // changed" when they want it. Effect below resets it on edit-mode
+  // exit so re-entering Edit always lands in the editor view.
+  const [showEditDiff, setShowEditDiff] = useState(false);
+  // True once the InlineEditor has mounted and reseated the baseline for
+  // the current Edit session. Subsequent editor mounts (e.g. after
+  // toggling Show changes off) must NOT re-anchor the baseline, or
+  // user-typed edits get re-classified as pristine and Save / Cancel
+  // disappear mid-edit. Reset in the effect that runs on isEditing=false.
+  const baselineAnchoredRef = useRef(false);
   const readContentRef = useRef<HTMLDivElement | null>(null);
 
   const updateTabInUrl = (tab: "read" | "fragments" | "history" | "settings" | null) => {
@@ -442,9 +456,11 @@ export function WikiEntityArticle({
 
   const {
     isEditing,
+    isDirty,
     isViewingHistory,
     draftContent,
     savedContent,
+    baselineContent,
     draftTitle,
     savedTitle,
     draftChipLabel,
@@ -453,6 +469,7 @@ export function WikiEntityArticle({
     setDraftContent,
     setDraftTitle,
     setDraftChipLabel,
+    setBaselineContent,
     enterEditMode,
     openHistory,
     closeHistory,
@@ -463,6 +480,18 @@ export function WikiEntityArticle({
     setInfoVisible,
     serverRevisions,
   });
+
+  // Reset Edit-session ephemera when isEditing flips off:
+  //  - diff toggle so re-entering Edit lands in the editor
+  //  - baseline-anchored flag so the NEXT Edit session reseats baseline
+  //    from a fresh Tiptap normalization (the one for the new editor
+  //    instance, not the one we cached last session).
+  useEffect(() => {
+    if (!isEditing) {
+      setShowEditDiff(false);
+      baselineAnchoredRef.current = false;
+    }
+  }, [isEditing]);
 
   const displayTitle = savedTitle ?? title;
   const displayChipLabel = savedChipLabel ?? chipLabel;
@@ -678,21 +707,94 @@ export function WikiEntityArticle({
                               : "wiki-article-tab"
                           }
                           onClick={() => {
-                            // Scope the read-mode HTML capture to the
-                            // `[data-wiki-body]` subtree so sidebar chrome
-                            // (Member Fragments, Mentioned People, citations,
-                            // etc.) never leaks into the Tiptap draft.
-                            // Strip [data-slot] affordances (edit-link,
-                            // references, see-also, citation chips) since
-                            // they are interactive UI, not author content.
+                            // Scope the read-mode HTML capture to the `[data-wiki-body]`
+                            // subtree so sidebar chrome (Member Fragments,
+                            // Mentioned People, citations, etc.) never leaks
+                            // into the Tiptap draft and gets baked into
+                            // `wikis.content` on save (#241). Fall back to the
+                            // wrapper innerHTML for callers that haven't opted
+                            // in yet (e.g. the People page).
+                            //
+                            // Within the body, three passes so citation
+                            // tokens roundtrip cleanly through Tiptap:
+                            //  1. Replace inline citation chips
+                            //     (wiki-citation / wiki-citation-inline)
+                            //     with plain-text `[[fragment:slug]]`
+                            //     tokens. Read-mode's
+                            //     useWikiTokenSubstitution will swap them
+                            //     back to numbered chips at render time.
+                            //  2. Unwrap the citations wrapper span
+                            //     (wiki-citations): keep its now-text
+                            //     children, drop the wrapper. Otherwise
+                            //     pass 3 would remove the wrapper AND
+                            //     the text tokens inside it.
+                            //  3. Strip remaining [data-slot] affordances
+                            //     (edit-link, references, see-also, hint,
+                            //     citations-section, etc.) which are interactive
+                            //     UI, not author content.
                             let bodyHtml = "";
                             const bodyEl = readContentRef.current?.querySelector("[data-wiki-body]");
                             if (bodyEl) {
                               const clone = bodyEl.cloneNode(true) as HTMLElement;
+                              clone
+                                .querySelectorAll(
+                                  '[data-slot="wiki-citation"], [data-slot="wiki-citation-inline"]',
+                                )
+                                .forEach((n) => {
+                                  const slug = (n as HTMLElement).dataset.fragmentSlug;
+                                  if (slug) {
+                                    n.replaceWith(
+                                      document.createTextNode(`[[fragment:${slug}]]`),
+                                    );
+                                  } else {
+                                    n.remove();
+                                  }
+                                });
+                              // Cross-reference chips (`[[kind:slug]]` for
+                              // person / wiki / entry) round-trip back
+                              // to their text-token form using the
+                              // data-token-* attributes baked into the
+                              // rendered chip by WikiChip + the runtime
+                              // walker. Skip if either attr is missing
+                              // (legacy chips without the round-trip
+                              // metadata fall through to the strip pass).
+                              clone
+                                .querySelectorAll('[data-slot="wiki-chip"]')
+                                .forEach((n) => {
+                                  const el = n as HTMLElement;
+                                  const kind = el.dataset.tokenKind;
+                                  const slug = el.dataset.tokenSlug;
+                                  if (kind && slug) {
+                                    n.replaceWith(
+                                      document.createTextNode(`[[${kind}:${slug}]]`),
+                                    );
+                                  } else {
+                                    n.remove();
+                                  }
+                                });
+                              clone
+                                .querySelectorAll('[data-slot="wiki-citations"]')
+                                .forEach((n) => {
+                                  const parent = n.parentNode;
+                                  if (!parent) return;
+                                  while (n.firstChild) parent.insertBefore(n.firstChild, n);
+                                  parent.removeChild(n);
+                                });
                               clone.querySelectorAll("[data-slot]").forEach((n) => n.remove());
                               bodyHtml = clone.innerHTML;
                             } else {
                               bodyHtml = readContentRef.current?.innerHTML ?? "";
+                            }
+                            // Edit mode is exclusive: the editor branch
+                            // wins the content render, so any other tab
+                            // click is a no-op visually until edit mode
+                            // exits. Auto-exit when pristine (nothing
+                            // to lose). When dirty, block the nav, since
+                            // Save / Cancel are visible above to resolve
+                            // explicitly.
+                            if (tab !== "Edit" && isEditing) {
+                              if (isDirty) return;
+                              handleCancel();
                             }
                             if (tab === "Edit") {
                               setIsViewingFragments(false);
@@ -783,11 +885,12 @@ export function WikiEntityArticle({
 
           {/* Page-action row: sits below the tab bar, above the content
               box. Hosts mode-specific buttons:
-                - Edit mode → Save / Cancel
+                - Edit mode: Save / Cancel (only while isDirty, since no point
+                  saving or bailing out before anything's changed)
                 - Settings tab → Edit Wiki Settings / Save (label tracks
                   the embedded form's mode via WikiSettingsFormHandle).
               Right-aligned to match the tab bar. */}
-          {isEditing && (
+          {isEditing && isDirty && (
             <div
               style={{
                 display: "flex",
@@ -797,6 +900,21 @@ export function WikiEntityArticle({
                 paddingBottom: 12,
               }}
             >
+              <button
+                type="button"
+                onClick={() => setShowEditDiff((v) => !v)}
+                style={{
+                  padding: "6px 16px",
+                  fontSize: 13,
+                  fontFamily: FONT.SANS,
+                  color: "var(--wiki-article-text)",
+                  background: "none",
+                  border: "1px solid var(--wiki-card-border)",
+                  cursor: "pointer",
+                }}
+              >
+                {showEditDiff ? "Hide changes" : "Show changes"}
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -927,11 +1045,36 @@ export function WikiEntityArticle({
                 ? renderCustomInfobox()
                 : null}
               {isEditing ? (
-                <InlineEditor
-                  content={draftContent}
-                  onChange={setDraftContent}
-                  editable
-                />
+                // Show-changes toggle swaps the editor for a read-only
+                // word-diff view in the same column slot. Same green-add
+                // / red-strikethrough treatment as the History tab.
+                showEditDiff && isDirty ? (
+                  <WikiDiffInline
+                    beforeHtml={baselineContent}
+                    afterHtml={draftContent}
+                  />
+                ) : (
+                  <InlineEditor
+                    content={draftContent}
+                    onChange={setDraftContent}
+                    editable
+                    onReady={(normalized) => {
+                      // Tiptap reformats the input on mount: citations,
+                      // unknown attrs, etc. get stripped. Reseat both
+                      // baseline and draft to that normalized snapshot
+                      // so a pristine editor reads as !isDirty.
+                      //
+                      // Only do this ONCE per Edit session. The editor
+                      // re-mounts when the user toggles Show changes
+                      // on/off, and re-anchoring there would wipe
+                      // isDirty mid-edit and disappear Save / Cancel.
+                      if (baselineAnchoredRef.current) return;
+                      baselineAnchoredRef.current = true;
+                      setBaselineContent(normalized);
+                      setDraftContent(normalized);
+                    }}
+                  />
+                )
               ) : isViewingHistory ? (
                 // Phase 2: History is the unified stream. WikiRegenTimeline
                 // already merges /history (edit revisions) + /timeline (audit

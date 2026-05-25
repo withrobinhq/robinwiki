@@ -25,6 +25,8 @@ export type WikiEntityEditMode = {
   isDirty: boolean;
   draftContent: string;
   savedContent: string | null;
+  /** Snapshot of body HTML at the moment enterEditMode() ran. */
+  baselineContent: string;
   draftTitle: string;
   savedTitle: string | null;
   draftChipLabel: string;
@@ -33,6 +35,13 @@ export type WikiEntityEditMode = {
   setDraftContent: (value: string) => void;
   setDraftTitle: (value: string) => void;
   setDraftChipLabel: (value: string) => void;
+  /** Reseat the baseline used by isDirty + the diff preview. The
+   *  editor normalizes HTML on mount (StarterKit strips unknown tags,
+   *  reformats attribute order, etc.), so the raw HTML we passed into
+   *  enterEditMode doesn't match what Tiptap produces. Once the editor
+   *  emits its post-mount snapshot, callers reseat baseline + draft to
+   *  that snapshot so a pristine editor reads as !isDirty. */
+  setBaselineContent: (value: string) => void;
   enterEditMode: (args: {
     currentHtml: string;
     currentTitle: string;
@@ -273,6 +282,10 @@ export function useWikiEntityEditMode({
     isDirty,
     draftContent,
     savedContent,
+    /** Snapshot taken when enterEditMode() ran; drives the diff
+     *  preview in WikiEntityArticle so "before" stays the version the
+     *  user started editing from, not the most recently saved one. */
+    baselineContent,
     draftTitle,
     savedTitle,
     draftChipLabel,
@@ -281,6 +294,7 @@ export function useWikiEntityEditMode({
     setDraftContent,
     setDraftTitle,
     setDraftChipLabel,
+    setBaselineContent,
     enterEditMode,
     openHistory,
     closeHistory,

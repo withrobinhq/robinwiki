@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -10,6 +10,16 @@ type InlineEditorProps = {
   onChange: (html: string) => void;
   editable?: boolean;
   placeholder?: string;
+  /**
+   * Fired once when the editor has mounted and produced its first
+   * round-tripped HTML. The caller should reseat any "baseline" copy
+   * of the content to this value, because Tiptap normalizes input on
+   * load (StarterKit strips unknown tags, reformats whitespace, etc.)
+   * so the raw HTML we passed in does not match what the editor will
+   * report on subsequent updates. Without this, isDirty fires as soon
+   * as the editor mounts.
+   */
+  onReady?: (initialHtml: string) => void;
 };
 
 /**
@@ -24,7 +34,13 @@ export default function InlineEditor({
   onChange,
   editable = true,
   placeholder = "Write something...",
+  onReady,
 }: InlineEditorProps) {
+  // Keep the latest onReady in a ref so we can fire it from onCreate
+  // without rebuilding the editor every time the prop reference changes.
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -33,6 +49,9 @@ export default function InlineEditor({
     content,
     editable,
     immediatelyRender: false,
+    onCreate: ({ editor: instance }) => {
+      onReadyRef.current?.(instance.getHTML());
+    },
     onUpdate: ({ editor: instance }) => {
       onChange(instance.getHTML());
     },
