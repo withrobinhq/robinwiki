@@ -103,7 +103,6 @@ export const groups = pgTable(
     id: text('id')
       .primaryKey()
       .$defaultFn(() => nanoid()),
-    orgId: text('org_id'),
     name: text('name').notNull(),
     slug: text('slug').notNull(),
     icon: text('icon').notNull().default(''),
@@ -284,7 +283,6 @@ export const fragments = pgTable(
     // created the fragment. Replaces audit_log.detail.source_client so the
     // value is queryable per row.
     sourceClient: text('source_client'),
-    orgId: text('org_id'), // Add nullable org id to allow multi-org support in enteprise.
   },
   (t) => [
     uniqueIndex('fragments_slug_uidx').on(t.slug),
@@ -377,7 +375,6 @@ export const wikis = pgTable(
     // created or last edited the wiki. Replaces audit_log.detail.source_client
     // so the value is queryable per row.
     sourceClient: text('source_client'),
-    orgId: text('org_id'), // Add nullable org id to allow multi-org support in enteprise.
   },
   (t) => [
     uniqueIndex('wikis_slug_uidx').on(t.slug).where(sql`${t.deletedAt} IS NULL`),
@@ -434,7 +431,6 @@ export const people = pgTable(
     embeddingAttemptCount: integer('embedding_attempt_count').notNull().default(0),
     embeddingLastAttemptAt: timestamp('embedding_last_attempt_at'),
     searchVector: tsvector('search_vector'),
-    orgId: text('org_id'), // Add nullable org id to allow multi-org support in enteprise.
   },
   (t) => [
     uniqueIndex('people_slug_uidx').on(t.slug),
