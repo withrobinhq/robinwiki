@@ -4,7 +4,6 @@ import {
   MarkdownContent,
   type FragmentCitationMap,
 } from "@/components/wiki/MarkdownContent";
-import { WikiCitations } from "@/components/wiki/WikiCitations";
 import { WikiEditLink } from "@/components/wiki/WikiFurniture";
 import {
   parseSectionsFromMarkdown,
@@ -142,9 +141,10 @@ function SectionHeadingWithEdit({
 
 /**
  * Render the markdown body as a sequence of section-scoped
- * `<MarkdownContent>` blocks, each followed by its `<WikiCitations>`
- * superscripts. Preamble before the first heading (if any) renders as
- * an unattributed leading block.
+ * `<MarkdownContent>` blocks. Inline `[N]` superscripts are the only
+ * citation surface; the document-wide bibliography lives at the
+ * article foot via `<WikiCitationsSection>`. Preamble before the first
+ * heading (if any) renders as an unattributed leading block.
  *
  * If the body has no headings, falls back to a single whole-body render.
  *
@@ -219,9 +219,6 @@ export function SectionedMarkdownBody({
     // double-rendering all H2+ content. See module docstring above.
     if (section.level === 1) continue;
 
-    const matched = citationsByAnchor.get(section.anchor);
-    const citations = matched?.citations ?? [];
-
     const canExtractHeading =
       section.level >= 2 && section.level <= 4 && onEditSection !== undefined;
 
@@ -240,9 +237,6 @@ export function SectionedMarkdownBody({
           {bodyOnly.trim().length > 0 && (
             <MarkdownContent content={bodyOnly} refs={refs} style={style} fragmentCitationMap={fragmentCitationMap} />
           )}
-          {citations.length > 0 && (
-            <WikiCitations citations={citations} citationMap={fragmentCitationMap} />
-          )}
         </div>,
       );
       continue;
@@ -253,9 +247,6 @@ export function SectionedMarkdownBody({
     blocks.push(
       <div key={section.anchor} id={section.anchor}>
         <MarkdownContent content={body} refs={refs} style={style} fragmentCitationMap={fragmentCitationMap} />
-        {citations.length > 0 && (
-          <WikiCitations citations={citations} citationMap={fragmentCitationMap} />
-        )}
       </div>,
     );
   }

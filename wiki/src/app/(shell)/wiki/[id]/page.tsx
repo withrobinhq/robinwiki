@@ -20,7 +20,6 @@ import { getWikiTypeIcon } from "@/components/wiki/WikiTypeBadge";
 import { MarkdownContent } from "@/components/wiki/MarkdownContent";
 import { WikiInfobox } from "@/components/wiki/WikiInfobox";
 import { WikiChip } from "@/components/wiki/WikiChip";
-import { WikiCitations } from "@/components/wiki/WikiCitations";
 import { WikiCitationsSection } from "@/components/wiki/WikiCitationsSection";
 import { WikiEditLink } from "@/components/wiki/WikiFurniture";
 import { MemberFragmentsManagementTable } from "@/components/wiki/MemberFragmentsManagementTable";
@@ -520,32 +519,6 @@ export default function WikiDetailPage() {
                 fragmentCitationMap={htmlFragmentCitationMap}
               />
             </div>
-            {sidecarSections.length > 0 && (
-              <div
-                style={{
-                  marginTop: 16,
-                  paddingTop: 12,
-                  borderTop: "1px solid var(--wiki-card-border)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 6,
-                }}
-              >
-                {sidecarSections
-                  .filter((section) => (section.citations ?? []).length > 0)
-                  .map((section) => (
-                    <div
-                      key={section.anchor}
-                      style={{ ...bodyStyle, display: "flex", gap: 8, alignItems: "baseline" }}
-                    >
-                      <span style={{ opacity: 0.7 }}>
-                        {section.heading}
-                      </span>
-                      <WikiCitations citations={section.citations ?? []} citationMap={htmlFragmentCitationMap} />
-                    </div>
-                  ))}
-              </div>
-            )}
           </>
         ) : (
           // Markdown body (LLM-emitted): `<MarkdownContent>` owns token
@@ -566,10 +539,6 @@ export default function WikiDetailPage() {
               refs={refs}
               sections={sidecarSections}
               style={bodyStyle}
-              onEditSection={(sectionId) => {
-                setSectionSaveError(null);
-                setEditingSectionId(sectionId);
-              }}
             />
           </div>
         )
