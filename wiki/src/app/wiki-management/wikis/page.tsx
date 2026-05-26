@@ -160,15 +160,17 @@ function Legend() {
 
 function CollectionSection({
   group,
+  expanded,
+  onToggle,
   onRegenSuccess,
   onRegenError,
 }: {
   group: CollectionGroup;
+  expanded: boolean;
+  onToggle: () => void;
   onRegenSuccess: (wiki: WikiListEntry) => void;
   onRegenError: (wikiId: string, msg: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-
   return (
     <div
       style={{
@@ -180,7 +182,7 @@ function CollectionSection({
     >
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={onToggle}
         aria-expanded={expanded}
         style={{
           width: "100%",
@@ -261,6 +263,7 @@ export default function SettingsWikisPage() {
     visible: false,
     message: "",
   });
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const showToast = (message: string) => setToast({ visible: true, message });
 
@@ -308,6 +311,10 @@ export default function SettingsWikisPage() {
             <CollectionSection
               key={g.id}
               group={g}
+              expanded={expandedId === g.id}
+              onToggle={() =>
+                setExpandedId((curr) => (curr === g.id ? null : g.id))
+              }
               onRegenSuccess={(wiki) =>
                 showToast(`Regen queued for ${wiki.name} (${wiki.id.slice(0, 8)})`)
               }
