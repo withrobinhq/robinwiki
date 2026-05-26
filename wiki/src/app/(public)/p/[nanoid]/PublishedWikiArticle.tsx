@@ -3,13 +3,9 @@
 import type { CSSProperties } from "react";
 import Image from "next/image";
 import { T, FONT } from "@/lib/typography";
-import { WikiInfobox } from "@/components/wiki/WikiInfobox";
 import { MarkdownContent } from "@/components/wiki/MarkdownContent";
 import { sanitizeWikiHtml } from "@/lib/sanitizeWikiHtml";
-import type {
-  WikiInfobox as WikiInfoboxData,
-  WikiRef,
-} from "@/lib/sidecarTypes";
+import type { WikiRef } from "@/lib/sidecarTypes";
 
 const ROBIN_KNOWLEDGE_URL = "https://www.withrobin.ai/knowledge";
 
@@ -19,7 +15,6 @@ export interface PublishedWikiData {
   publishedAt: string;
   content: string;
   refs?: Record<string, WikiRef>;
-  infobox?: WikiInfoboxData | null;
 }
 
 const bodyStyle: CSSProperties = {
@@ -108,22 +103,6 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
         >
           Published {publishedDate}
         </p>
-
-        {wiki.infobox && (
-          <WikiInfobox
-            title={wiki.name}
-            image={wiki.infobox.image?.url}
-            caption={wiki.infobox.caption}
-            sections={[
-              {
-                rows: wiki.infobox.rows.map((row) => ({
-                  key: row.label,
-                  value: row.value,
-                })),
-              },
-            ]}
-          />
-        )}
 
         {isHtmlBody ? (
           <div
