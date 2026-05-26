@@ -32,13 +32,13 @@ export function QuarantineTopbar({ personKey, personName }: Props) {
 
   const handleApprove = () => {
     approve.mutate(personKey, {
-      onSuccess: () => router.push("/settings/people"),
+      onSuccess: () => router.push("/wiki-management/people"),
     });
   };
   const handleReject = () => {
     reject.mutate(
       { personKey },
-      { onSuccess: () => router.push("/settings/people") },
+      { onSuccess: () => router.push("/wiki-management/people") },
     );
   };
 

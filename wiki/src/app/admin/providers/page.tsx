@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { AuthGuard } from "@/components/AuthGuard";
+import { ModelSelector } from "@/components/ModelSelector";
+import {
+  isEmbeddingModel,
+  useModelPreferences,
+} from "@/hooks/useModelPreferences";
 
 interface StageInfo {
   model: string;
@@ -39,6 +44,7 @@ export default function ProvidersPage() {
   const [data, setData] = useState<ProvidersResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const modelPrefs = useModelPreferences();
 
   useEffect(() => {
     let cancelled = false;
@@ -67,12 +73,12 @@ export default function ProvidersPage() {
         <div className="mx-auto max-w-[780px] px-10 pt-12 pb-20">
           <button
             type="button"
-            onClick={() => router.push("/profile")}
+            onClick={() => router.push("/admin")}
             className="mb-6 -ml-2 flex cursor-pointer items-center gap-1.5 border-none bg-transparent px-2"
             style={{ ...T.bodySmall, color: "var(--wiki-count)" }}
           >
             <ArrowLeft className="size-4" strokeWidth={1.5} />
-            Back to profile
+            Back to admin
           </button>
 
           <h1
@@ -188,25 +194,108 @@ export default function ProvidersPage() {
                 className="mt-8"
                 style={{ display: "flex", flexDirection: "column", gap: 12 }}
               >
-                <p style={sectionLabel}>Change a model</p>
+                <p style={sectionLabel}>AI Models</p>
+
                 <Card size="sm" className="rounded-none">
-                  <CardContent className="flex items-center justify-between gap-3">
+                  <CardContent className="space-y-1">
                     <p
                       style={{
-                        ...T.bodySmall,
+                        ...T.micro,
                         color: "var(--heading-secondary)",
                         margin: 0,
                       }}
                     >
-                      Per-stage model selection lives on the profile page.
+                      Configure which models Robin uses for each pipeline stage.
                     </p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => router.push("/profile")}
-                    >
-                      <span style={T.buttonSmall}>Open profile</span>
-                    </Button>
+
+                    {modelPrefs.loading ? (
+                      <div className="flex items-center gap-2 py-4">
+                        <Spinner className="size-4" />
+                        <span
+                          style={{
+                            ...T.micro,
+                            color: "var(--wiki-count)",
+                          }}
+                        >
+                          Loading models...
+                        </span>
+                      </div>
+                    ) : modelPrefs.error && !modelPrefs.preferences ? (
+                      <p
+                        style={{
+                          ...T.micro,
+                          color: "var(--destructive)",
+                          paddingTop: 16,
+                          paddingBottom: 16,
+                        }}
+                      >
+                        {modelPrefs.error}
+                      </p>
+                    ) : (
+                      <div className="grid gap-4 pt-2 sm:grid-cols-2">
+                        <ModelSelector
+                          label="Extraction"
+                          description="Extracts atomic ideas from raw thoughts"
+                          models={modelPrefs.models}
+                          value={modelPrefs.preferences.extraction}
+                          onChange={(id) =>
+                            modelPrefs.updatePreference("extraction", id)
+                          }
+                          disabled={modelPrefs.saveStatus === "saving"}
+                        />
+                        <ModelSelector
+                          label="Classification"
+                          description="Classifies fragments into topic clusters"
+                          models={modelPrefs.models}
+                          value={modelPrefs.preferences.classification}
+                          onChange={(id) =>
+                            modelPrefs.updatePreference("classification", id)
+                          }
+                          disabled={modelPrefs.saveStatus === "saving"}
+                        />
+                        <ModelSelector
+                          label="Wiki Generation"
+                          description="Generates and updates wiki pages"
+                          models={modelPrefs.models}
+                          value={modelPrefs.preferences.wikiGeneration}
+                          onChange={(id) =>
+                            modelPrefs.updatePreference("wikiGeneration", id)
+                          }
+                          disabled={modelPrefs.saveStatus === "saving"}
+                        />
+                        <ModelSelector
+                          label="Embeddings"
+                          description="Creates vector embeddings (1536-dim only)"
+                          models={modelPrefs.models}
+                          value={modelPrefs.preferences.embedding}
+                          onChange={(id) =>
+                            modelPrefs.updatePreference("embedding", id)
+                          }
+                          filterFn={isEmbeddingModel}
+                          disabled={modelPrefs.saveStatus === "saving"}
+                        />
+                      </div>
+                    )}
+
+                    {modelPrefs.saveStatus !== "idle" && (
+                      <p
+                        style={{
+                          ...T.micro,
+                          paddingTop: 4,
+                          transition: "opacity 0.15s",
+                          color:
+                            modelPrefs.saveStatus === "saving"
+                              ? "var(--wiki-count)"
+                              : modelPrefs.saveStatus === "saved"
+                                ? "var(--emerald-600, #059669)"
+                                : "var(--destructive)",
+                        }}
+                      >
+                        {modelPrefs.saveStatus === "saving" && "Saving..."}
+                        {modelPrefs.saveStatus === "saved" && "Saved"}
+                        {modelPrefs.saveStatus === "error" && "Failed to save"}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               </section>

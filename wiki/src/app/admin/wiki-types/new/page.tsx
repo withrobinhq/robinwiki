@@ -89,7 +89,7 @@ export default function NewWikiTypePage() {
         },
         {
           onSuccess: () => {
-            router.push("/settings/wiki-types");
+            router.push("/admin/wiki-types");
           },
           onError: (err) => {
             const message = err instanceof Error ? err.message : "Creation failed";
@@ -112,6 +112,8 @@ export default function NewWikiTypePage() {
     <SettingsShell
       title="Create Wiki Type"
       subtitle="Define a new wiki type for classification and generation."
+      backTo="/admin/wiki-types"
+      backLabel="Back to wiki types"
     >
       <form
         onSubmit={handleSubmit}
@@ -205,7 +207,7 @@ export default function NewWikiTypePage() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => router.push("/settings/wiki-types")}
+            onClick={() => router.push("/admin/wiki-types")}
           >
             Cancel
           </Button>

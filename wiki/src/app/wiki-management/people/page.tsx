@@ -21,6 +21,8 @@ export default function SettingsPeoplePage() {
     <SettingsShell
       title="People"
       subtitle="Pending-person triage. Approve to bring into retrieval, reject to keep out."
+      backTo="/wiki-management"
+      backLabel="Back to wiki management"
     >
       <AutoAcceptToggle />
 

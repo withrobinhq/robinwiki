@@ -31,6 +31,8 @@ export default function SettingsWikisPage() {
     <SettingsShell
       title="Wikis"
       subtitle="Per-wiki autoregen toggle, on-demand regeneration, and agent_schema status."
+      backTo="/wiki-management"
+      backLabel="Back to wiki management"
     >
       {isLoading ? (
         <div className="flex justify-center py-16">
