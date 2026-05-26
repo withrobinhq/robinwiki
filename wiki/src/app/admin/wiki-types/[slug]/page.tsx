@@ -28,7 +28,7 @@ export default function PromptEditorPage({
 
   const item = findWikiType(wikiTypes.data, slug);
 
-  const goBack = () => router.push("/profile/prompts");
+  const goBack = () => router.push("/admin/wiki-types");
 
   const handleBack = () => {
     if (dirty) {

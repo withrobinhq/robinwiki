@@ -66,53 +66,61 @@ export default function SettingsWikiTypesPage() {
             <li
               key={wt.slug}
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 16,
-                padding: "14px 16px",
                 borderBottom: "1px solid var(--border)",
               }}
             >
-              <div style={{ minWidth: 0 }}>
-                <p
-                  style={{
-                    ...T.body,
-                    fontWeight: 500,
-                    color: "var(--heading-color)",
-                    margin: 0,
-                  }}
-                >
-                  {wt.displayLabel}
-                </p>
-                <p
-                  style={{
-                    ...T.micro,
-                    color: "var(--heading-secondary)",
-                    margin: 0,
-                    marginTop: 2,
-                  }}
-                >
-                  {wt.displayShortDescriptor}
-                </p>
-              </div>
+              <Link
+                href={`/admin/wiki-types/${wt.slug}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 16,
+                  padding: "14px 16px",
+                  textDecoration: "none",
+                  color: "inherit",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <p
+                    style={{
+                      ...T.body,
+                      fontWeight: 500,
+                      color: "var(--heading-color)",
+                      margin: 0,
+                    }}
+                  >
+                    {wt.displayLabel}
+                  </p>
+                  <p
+                    style={{
+                      ...T.micro,
+                      color: "var(--heading-secondary)",
+                      margin: 0,
+                      marginTop: 2,
+                    }}
+                  >
+                    {wt.displayShortDescriptor}
+                  </p>
+                </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                {wt.userModified && (
-                  <Badge variant="secondary" className="text-[10px]">
-                    modified
-                  </Badge>
-                )}
-                <span
-                  style={{
-                    ...T.micro,
-                    color: "var(--heading-secondary)",
-                    fontFamily: "var(--font-ibm-plex-mono), monospace",
-                  }}
-                >
-                  {wt.slug}
-                </span>
-              </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  {wt.userModified && (
+                    <Badge variant="secondary" className="text-[10px]">
+                      modified
+                    </Badge>
+                  )}
+                  <span
+                    style={{
+                      ...T.micro,
+                      color: "var(--heading-secondary)",
+                      fontFamily: "var(--font-ibm-plex-mono), monospace",
+                    }}
+                  >
+                    {wt.slug}
+                  </span>
+                </div>
+              </Link>
             </li>
           ))}
         </ul>
