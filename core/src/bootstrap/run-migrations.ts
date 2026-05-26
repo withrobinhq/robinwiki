@@ -110,11 +110,11 @@ export async function runMigrations(): Promise<void> {
   let appliedBefore = 0
   try {
     const rows = await db.execute<{ created_at: number }>(
-      /* sql */ `SELECT created_at FROM "__drizzle_migrations" ORDER BY created_at`
+      /* sql */ `SELECT created_at FROM "drizzle"."__drizzle_migrations" ORDER BY created_at`
     )
     appliedBefore = Array.isArray(rows) ? rows.length : 0
-  } catch {
-    // Table doesn't exist yet — first run, zero applied
+  } catch (err) {
+    log.warn({ err }, 'could not count pre-migrate rows — assuming first run')
     appliedBefore = 0
   }
 
@@ -125,10 +125,11 @@ export async function runMigrations(): Promise<void> {
   let appliedAfter = 0
   try {
     const rows = await db.execute<{ created_at: number }>(
-      /* sql */ `SELECT created_at FROM "__drizzle_migrations" ORDER BY created_at`
+      /* sql */ `SELECT created_at FROM "drizzle"."__drizzle_migrations" ORDER BY created_at`
     )
     appliedAfter = Array.isArray(rows) ? rows.length : 0
-  } catch {
+  } catch (err) {
+    log.warn({ err }, 'could not count post-migrate rows — newCount will be unreliable')
     appliedAfter = appliedBefore
   }
 
