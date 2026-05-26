@@ -16,6 +16,8 @@ export default function SettingsWikiTypesPage() {
     <SettingsShell
       title="Wiki Types"
       subtitle="Manage wiki type definitions that control how wikis are classified and generated."
+      backTo="/admin"
+      backLabel="Back to admin"
     >
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
         <Link href="/admin/wiki-types/new">

@@ -15,6 +15,8 @@ export default function SettingsBackfillPage() {
     <SettingsShell
       title="Backfill"
       subtitle="Detect gaps in wiki_agent_schema and trigger backfill on demand."
+      backTo="/admin"
+      backLabel="Back to admin"
     >
       <BackfillPanel />
     </SettingsShell>

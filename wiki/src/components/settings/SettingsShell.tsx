@@ -4,23 +4,36 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { T, FONT } from "@/lib/typography";
 import { AuthGuard } from "@/components/AuthGuard";
-import { SettingsNav } from "./SettingsNav";
 
-// Stream U: shared shell for the three operator panels. Holds AuthGuard,
-// the back-to-profile chrome, the page title, and the side-nav. Each
-// panel passes its own header text and main content as children.
+// Shared shell for the admin / wiki-management subpages. Holds
+// AuthGuard, a parametrised back-button, the page title and subtitle,
+// then renders children below.
 //
-// Match the existing /settings/providers and /settings/spend visual
-// register: max-width content, 12pt top, ArrowLeft back-button, serif
-// h1, micro secondary text underneath.
+// Caller passes `backTo` and `backLabel` so the same shell can serve
+// pages under both /admin and /wiki-management. The previous
+// SettingsNav side-nav has been removed — section-level navigation
+// happens via the cards on the /admin and /wiki-management landing
+// pages.
+//
+// Visual register matches /admin and /profile: max-width content,
+// 12pt top, ArrowLeft back-button, serif h1, micro secondary text
+// underneath.
 
 interface Props {
   title: string;
   subtitle?: string;
+  backTo: string;
+  backLabel: string;
   children: React.ReactNode;
 }
 
-export function SettingsShell({ title, subtitle, children }: Props) {
+export function SettingsShell({
+  title,
+  subtitle,
+  backTo,
+  backLabel,
+  children,
+}: Props) {
   const router = useRouter();
 
   return (
@@ -32,54 +45,39 @@ export function SettingsShell({ title, subtitle, children }: Props) {
         >
           <button
             type="button"
-            onClick={() => router.push("/profile")}
+            onClick={() => router.push(backTo)}
             className="mb-6 -ml-2 flex cursor-pointer items-center gap-1.5 border-none bg-transparent px-2"
             style={{ ...T.bodySmall, color: "var(--wiki-count)" }}
           >
             <ArrowLeft className="size-4" strokeWidth={1.5} />
-            Back to profile
+            {backLabel}
           </button>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 48,
-              alignItems: "flex-start",
-            }}
-          >
-            <SettingsNav />
-
-            <main
+          <main style={{ minWidth: 0 }}>
+            <h1
               style={{
-                flex: 1,
-                minWidth: 0,
+                ...T.h1,
+                fontFamily: FONT.SERIF,
+                color: "var(--heading-color)",
+                margin: 0,
               }}
             >
-              <h1
+              {title}
+            </h1>
+            {subtitle ? (
+              <p
                 style={{
-                  ...T.h1,
-                  fontFamily: FONT.SERIF,
-                  color: "var(--heading-color)",
-                  margin: 0,
+                  ...T.bodySmall,
+                  color: "var(--heading-secondary)",
+                  marginTop: 4,
                 }}
               >
-                {title}
-              </h1>
-              {subtitle ? (
-                <p
-                  style={{
-                    ...T.bodySmall,
-                    color: "var(--heading-secondary)",
-                    marginTop: 4,
-                  }}
-                >
-                  {subtitle}
-                </p>
-              ) : null}
+                {subtitle}
+              </p>
+            ) : null}
 
-              <div style={{ marginTop: 32 }}>{children}</div>
-            </main>
-          </div>
+            <div style={{ marginTop: 32 }}>{children}</div>
+          </main>
         </div>
       </div>
     </AuthGuard>

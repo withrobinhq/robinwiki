@@ -112,6 +112,8 @@ export default function NewWikiTypePage() {
     <SettingsShell
       title="Create Wiki Type"
       subtitle="Define a new wiki type for classification and generation."
+      backTo="/admin/wiki-types"
+      backLabel="Back to wiki types"
     >
       <form
         onSubmit={handleSubmit}
