@@ -18,7 +18,7 @@ export default function SettingsWikiTypesPage() {
       subtitle="Manage wiki type definitions that control how wikis are classified and generated."
     >
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-        <Link href="/settings/wiki-types/new">
+        <Link href="/admin/wiki-types/new">
           <Button size="sm">
             <Plus className="size-3.5" strokeWidth={1.5} />
             Create wiki type

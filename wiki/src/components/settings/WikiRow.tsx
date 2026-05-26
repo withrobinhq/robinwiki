@@ -177,7 +177,7 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
 
       {needsBackfill ? (
         <Link
-          href="/settings/backfill"
+          href="/admin/backfill"
           title={`Agent schema gap: ${wiki.agentSchemaStatus}`}
           aria-label={`Agent schema gap: ${wiki.agentSchemaStatus}. Open Backfill panel.`}
           style={{

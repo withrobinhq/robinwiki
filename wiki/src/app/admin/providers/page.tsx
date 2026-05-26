@@ -67,12 +67,12 @@ export default function ProvidersPage() {
         <div className="mx-auto max-w-[780px] px-10 pt-12 pb-20">
           <button
             type="button"
-            onClick={() => router.push("/profile")}
+            onClick={() => router.push("/admin")}
             className="mb-6 -ml-2 flex cursor-pointer items-center gap-1.5 border-none bg-transparent px-2"
             style={{ ...T.bodySmall, color: "var(--wiki-count)" }}
           >
             <ArrowLeft className="size-4" strokeWidth={1.5} />
-            Back to profile
+            Back to admin
           </button>
 
           <h1
@@ -203,7 +203,7 @@ export default function ProvidersPage() {
                     <Button
                       type="button"
                       size="sm"
-                      onClick={() => router.push("/profile")}
+                      onClick={() => router.push("/admin")}
                     >
                       <span style={T.buttonSmall}>Open profile</span>
                     </Button>

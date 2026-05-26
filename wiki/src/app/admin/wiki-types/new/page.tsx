@@ -89,7 +89,7 @@ export default function NewWikiTypePage() {
         },
         {
           onSuccess: () => {
-            router.push("/settings/wiki-types");
+            router.push("/admin/wiki-types");
           },
           onError: (err) => {
             const message = err instanceof Error ? err.message : "Creation failed";
@@ -205,7 +205,7 @@ export default function NewWikiTypePage() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => router.push("/settings/wiki-types")}
+            onClick={() => router.push("/admin/wiki-types")}
           >
             Cancel
           </Button>
