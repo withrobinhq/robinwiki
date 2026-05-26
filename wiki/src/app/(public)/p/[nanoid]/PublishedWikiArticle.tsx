@@ -9,6 +9,57 @@ import type { WikiRef } from "@/lib/sidecarTypes";
 
 const ROBIN_KNOWLEDGE_URL = "https://www.withrobin.ai/knowledge";
 
+/**
+ * Regen emits a leading title line (often "{Type}: {Name}") at the top
+ * of the wiki body. On the read-only published page the page chrome
+ * already renders {wiki.name} as the H1, so leaving the body-side title
+ * in place makes the title appear twice. Strip the first heading- or
+ * bold-paragraph-shaped line if its text contains the wiki name. Keep
+ * the rule narrow (only structural title constructs, not arbitrary
+ * paragraphs) so legitimate prose that happens to mention the title
+ * doesn't get clipped.
+ */
+function stripLeadingTitle(content: string, name: string): string {
+  if (!content || !name) return content;
+  const needle = name.toLowerCase();
+
+  // HTML body (Tiptap save): first <h1..h3> or first <p><strong>...
+  if (content.trim().startsWith("<")) {
+    const match = content.match(
+      /^\s*(<(h[1-3])[^>]*>\s*(.*?)\s*<\/\2>|<p[^>]*>\s*<strong>\s*(.*?)\s*<\/strong>\s*<\/p>)\s*/is,
+    );
+    if (match) {
+      const inner = (match[3] ?? match[4] ?? "").replace(/<[^>]*>/g, "").trim();
+      if (inner.toLowerCase().includes(needle)) {
+        return content.slice(match[0].length);
+      }
+    }
+    return content;
+  }
+
+  // Markdown body: leading `#`-heading or bold-only line `**...**`
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    if (raw.trim() === "") continue;
+    const stripped = raw
+      .trim()
+      .replace(/^#+\s+/, "")
+      .replace(/^\*\*(.+)\*\*$/, "$1")
+      .trim();
+    const isTitleShape = /^#+\s+/.test(raw.trim()) || /^\*\*.+\*\*$/.test(raw.trim());
+    if (isTitleShape && stripped.toLowerCase().includes(needle)) {
+      lines.splice(i, 1);
+      while (lines[i] !== undefined && lines[i].trim() === "") {
+        lines.splice(i, 1);
+      }
+      return lines.join("\n");
+    }
+    break;
+  }
+  return content;
+}
+
 export interface PublishedWikiData {
   name: string;
   type: string;
@@ -35,8 +86,9 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
   // `dangerouslySetInnerHTML` (#253). Sanitised through `sanitizeWikiHtml`
   // (#sec-phase-1-chain-a). Trust boundary: AI-generated bodies and Tiptap
   // saves are both treated as untrusted.
+  const bodyContent = stripLeadingTitle(wiki.content ?? "", wiki.name);
   const isHtmlBody =
-    typeof wiki.content === "string" && wiki.content.trim().startsWith("<");
+    typeof bodyContent === "string" && bodyContent.trim().startsWith("<");
 
   return (
     <div className="published-page">
@@ -108,11 +160,11 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
           <div
             className="wiki-richtext-rendered"
             style={bodyStyle}
-            dangerouslySetInnerHTML={{ __html: sanitizeWikiHtml(wiki.content) }}
+            dangerouslySetInnerHTML={{ __html: sanitizeWikiHtml(bodyContent) }}
           />
         ) : (
           <MarkdownContent
-            content={wiki.content}
+            content={bodyContent}
             refs={wiki.refs}
             style={bodyStyle}
           />
