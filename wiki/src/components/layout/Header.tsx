@@ -344,7 +344,7 @@ export default function Header({ onMenuToggle }: HeaderProps) {
                 top: "calc(100% + 6px)",
                 right: 0,
                 zIndex: 50,
-                minWidth: 160,
+                minWidth: 200,
                 backgroundColor: "var(--bg)",
                 border: "1px solid var(--card-border)",
                 borderRadius: 6,
@@ -489,6 +489,7 @@ function DropdownMenuItem({
         border: "none",
         ...T.caption,
         color: "var(--heading-color)",
+        whiteSpace: "nowrap",
       }}
       onMouseEnter={(e) =>
         (e.currentTarget.style.backgroundColor = "var(--card-border)")
