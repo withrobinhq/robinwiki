@@ -352,34 +352,83 @@ export default function Header({ onMenuToggle }: HeaderProps) {
                 boxShadow: "var(--shadow-dropdown)",
               }}
             >
-              <button
+              {/* Three-section menu — Wiki Management / Profile / Admin.
+                  In personal mode all three are visible to the single user.
+                  In enterprise mode each item is role-gated to its allowed roles:
+                    Wiki Management → Guardians + Admins
+                    Profile         → everyone
+                    Admin           → Admins only
+                  Role gating not in this PR; see enterprise PRD. */}
+              <DropdownMenuItem
+                label="Wiki Management"
+                onClick={() => {
+                  setDropdownOpen(false);
+                  router.push("/wiki-management");
+                }}
+                icon={
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M3 7h18M3 12h18M3 17h18"
+                      stroke="var(--wiki-header-icon)"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                }
+              />
+              <DropdownMenuItem
+                label="Profile"
                 onClick={() => {
                   setDropdownOpen(false);
                   router.push("/profile");
                 }}
-                className="flex w-full cursor-pointer items-center"
-                style={{
-                  gap: 10,
-                  padding: "8px 14px",
-                  background: "none",
-                  border: "none",
-                  ...T.caption,
-                  color: "var(--heading-color)",
+                icon={
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z"
+                      stroke="var(--wiki-header-icon)"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                }
+              />
+              <DropdownMenuItem
+                label="Admin"
+                onClick={() => {
+                  setDropdownOpen(false);
+                  router.push("/admin");
                 }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.backgroundColor =
-                    "var(--card-border)")
+                icon={
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M12 2 4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4z"
+                      stroke="var(--wiki-header-icon)"
+                      strokeWidth="1.5"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.backgroundColor = "transparent")
-                }
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" stroke="var(--wiki-header-icon)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  <circle cx="12" cy="12" r="3" stroke="var(--wiki-header-icon)" strokeWidth="1.5"/>
-                </svg>
-                Settings
-              </button>
+              />
               <button
                 onClick={async () => {
                   setDropdownOpen(false);
@@ -417,5 +466,39 @@ export default function Header({ onMenuToggle }: HeaderProps) {
       <AddPersonModal open={addPersonOpen} onClose={() => setAddPersonOpen(false)} />
       <AddCollectionModal open={addCollectionOpen} onClose={() => setAddCollectionOpen(false)} />
     </header>
+  );
+}
+
+function DropdownMenuItem({
+  label,
+  onClick,
+  icon,
+}: {
+  label: string;
+  onClick: () => void;
+  icon: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full cursor-pointer items-center"
+      style={{
+        gap: 10,
+        padding: "8px 14px",
+        background: "none",
+        border: "none",
+        ...T.caption,
+        color: "var(--heading-color)",
+      }}
+      onMouseEnter={(e) =>
+        (e.currentTarget.style.backgroundColor = "var(--card-border)")
+      }
+      onMouseLeave={(e) =>
+        (e.currentTarget.style.backgroundColor = "transparent")
+      }
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
