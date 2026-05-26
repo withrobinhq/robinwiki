@@ -2,15 +2,21 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { RefreshCw, AlertCircle } from "lucide-react";
+import { RefreshCw, AlertCircle, Globe } from "lucide-react";
 import { T } from "@/lib/typography";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
 import { EditorialStateDot } from "@/components/wiki/EditorialStateDot";
+import { getWikiTypeIcon } from "@/components/wiki/WikiTypeBadge";
 import type { ThreadListResponseSchema } from "@/lib/generated/types.gen";
 import { useToggleAutoRegen } from "@/hooks/useToggleAutoRegen";
 import { useRegenerateWiki } from "@/hooks/useRegenerateWiki";
+
+function capitalize(s: string | null | undefined): string {
+  if (!s) return "";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 // The generator emits the wiki list shape under the legacy "thread" alias
 // (Thread* mirrors the v0 thread tag in openapi.json). The single wiki
@@ -114,7 +120,26 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
         borderBottom: "1px solid var(--border)",
       }}
     >
-      <div style={{ minWidth: 0 }}>
+      <div
+        style={{
+          minWidth: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        {(() => {
+          const typeLabel = capitalize(wiki.type);
+          const TypeIcon = getWikiTypeIcon(typeLabel);
+          return TypeIcon ? (
+            <TypeIcon
+              className="size-3.5 shrink-0"
+              strokeWidth={1.5}
+              style={{ color: "var(--wiki-count)" }}
+              aria-label={`Type: ${typeLabel}`}
+            />
+          ) : null;
+        })()}
         <Link
           href={`/wiki/${wiki.id}?tab=settings`}
           style={{
@@ -122,10 +147,31 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
             fontWeight: 500,
             color: "var(--heading-color)",
             textDecoration: "none",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
           }}
+          title={capitalize(wiki.type)}
         >
           {wiki.name}
         </Link>
+        {wiki.published && wiki.publishedSlug && wiki.publishedOrigin ? (
+          <a
+            href={`${wiki.publishedOrigin}/p/${wiki.publishedSlug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Published: ${wiki.publishedOrigin}/p/${wiki.publishedSlug}`}
+            aria-label={`Open published page for ${wiki.name}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              color: "var(--wiki-count)",
+              flexShrink: 0,
+            }}
+          >
+            <Globe className="size-3.5" strokeWidth={1.5} />
+          </a>
+        ) : null}
       </div>
 
       <Switch
