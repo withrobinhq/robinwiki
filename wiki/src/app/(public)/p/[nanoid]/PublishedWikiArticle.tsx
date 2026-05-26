@@ -26,7 +26,7 @@ function stripLeadingTitle(content: string, name: string): string {
   // HTML body (Tiptap save): first <h1..h3> or first <p><strong>...
   if (content.trim().startsWith("<")) {
     const match = content.match(
-      /^\s*(<(h[1-3])[^>]*>\s*(.*?)\s*<\/\2>|<p[^>]*>\s*<strong>\s*(.*?)\s*<\/strong>\s*<\/p>)\s*/is,
+      /^\s*(<(h[1-3])[^>]*>\s*([\s\S]*?)\s*<\/\2>|<p[^>]*>\s*<strong>\s*([\s\S]*?)\s*<\/strong>\s*<\/p>)\s*/i,
     );
     if (match) {
       const inner = (match[3] ?? match[4] ?? "").replace(/<[^>]*>/g, "").trim();
