@@ -30,7 +30,7 @@ export interface PendingPerson {
 }
 
 interface PendingPersonsResponse {
-  people: PendingPerson[]
+  persons: PendingPerson[]
 }
 
 export function usePendingPersons() {
@@ -42,7 +42,7 @@ export function usePendingPersons() {
       })
       if (res.status === 404) {
         // Stream P not yet merged — surface as empty rather than error.
-        return { people: [] }
+        return { persons: [] }
       }
       if (!res.ok) {
         const text = await res.text().catch(() => '')
