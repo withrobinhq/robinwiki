@@ -16,6 +16,7 @@ import {
   DollarSign,
   Users,
   Lock,
+  Star,
 } from "lucide-react";
 import { T, FONT } from "@/lib/typography";
 
@@ -247,16 +248,40 @@ export default function AdminPage() {
         style={{ background: "var(--background)", color: "var(--foreground)" }}
       >
         <div className="mx-auto max-w-[780px] px-10 pt-12 pb-20">
-          {/* Back navigation */}
-          <button
-            type="button"
-            onClick={() => router.push("/wiki")}
-            className="mb-6 -ml-2 flex cursor-pointer items-center gap-1.5 border-none bg-transparent px-2"
-            style={{ ...T.bodySmall, color: "var(--wiki-count)" }}
-          >
-            <ArrowLeft className="size-4" strokeWidth={1.5} />
-            Back
-          </button>
+          {/* Top row: back nav (left) + Star on GitHub (right) */}
+          <div className="mb-6 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => router.push("/wiki")}
+              className="-ml-2 flex cursor-pointer items-center gap-1.5 border-none bg-transparent px-2"
+              style={{ ...T.bodySmall, color: "var(--wiki-count)" }}
+            >
+              <ArrowLeft className="size-4" strokeWidth={1.5} />
+              Back
+            </button>
+            <a
+              href="https://github.com/withrobinhq/robinwiki"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Star Robin Wiki on GitHub"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 10px",
+                borderRadius: 6,
+                border: "1px solid var(--card-border)",
+                color: "var(--heading-color)",
+                textDecoration: "none",
+                background: "var(--bg)",
+              }}
+            >
+              <Star className="size-4" strokeWidth={1.6} />
+              <span style={{ ...T.bodySmall, fontWeight: 500 }}>
+                Star on GitHub
+              </span>
+            </a>
+          </div>
 
           {/* Header */}
           <h1
