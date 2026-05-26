@@ -20,8 +20,9 @@ type WikiListEntry = ThreadListResponseSchema["wikis"][number];
 
 // Column track sizing shared by WikiRow and WikiRowHeader so a header
 // renders directly above a body row without drift.
+// Tracks: Wiki | Autoregen | Last regen | Frags | State | Regen | Backfill
 const GRID_TEMPLATE =
-  "minmax(0, 1.6fr) 96px 96px 24px 56px 44px 24px";
+  "minmax(0, 1.6fr) 96px 96px 56px 24px 44px 24px";
 
 const headerCell = {
   ...T.micro,
@@ -48,8 +49,8 @@ export function WikiRowHeader() {
       <span style={headerCell}>Wiki</span>
       <span style={headerCell}>Autoregen</span>
       <span style={headerCell}>Last regen</span>
-      <span style={headerCell}>State</span>
       <span style={{ ...headerCell, textAlign: "right" as const }}>Frags</span>
+      <span style={{ ...headerCell, textAlign: "right" as const }}>State</span>
       <span aria-hidden />
       <span aria-hidden />
     </li>
@@ -100,7 +101,6 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
   const lastRegen = formatTimeAgo(wiki.lastRebuiltAt);
   const needsBackfill =
     wiki.agentSchemaStatus && wiki.agentSchemaStatus !== "complete";
-  const isFiled = wiki.editorialState === "filed";
 
   return (
     <li
@@ -147,11 +147,6 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
         {lastRegen}
       </span>
 
-      <EditorialStateDot
-        editorialState={wiki.editorialState ?? "empty"}
-        size={10}
-      />
-
       <span
         style={{
           ...T.micro,
@@ -163,20 +158,37 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
         {wiki.noteCount}
       </span>
 
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={handleRegen}
-        disabled={regen.isPending || isFiled}
-        aria-label={`Regenerate ${wiki.name} now`}
-        title={isFiled ? "Already up to date" : "Regenerate now"}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+        }}
       >
-        {regen.isPending ? (
-          <Spinner className="size-3" />
-        ) : (
-          <RefreshCw className="size-3" strokeWidth={1.5} />
-        )}
-      </Button>
+        <EditorialStateDot
+          editorialState={wiki.editorialState ?? "empty"}
+          size={10}
+        />
+      </div>
+
+      {wiki.editorialState === "learning" ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleRegen}
+          disabled={regen.isPending}
+          aria-label={`Regenerate ${wiki.name} now`}
+          title="Regenerate now"
+        >
+          {regen.isPending ? (
+            <Spinner className="size-3" />
+          ) : (
+            <RefreshCw className="size-3" strokeWidth={1.5} />
+          )}
+        </Button>
+      ) : (
+        <span aria-hidden />
+      )}
 
       {needsBackfill ? (
         <Link
