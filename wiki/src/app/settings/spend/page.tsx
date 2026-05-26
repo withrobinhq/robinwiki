@@ -4,9 +4,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { T, FONT } from "@/lib/typography";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { AuthGuard } from "@/components/AuthGuard";
 
@@ -24,25 +22,12 @@ interface SpendStageRollup {
   eventCount: number;
 }
 
-interface SpendBudget {
-  limitUsdMicros: number;
-}
-
 interface SpendResponse {
   rangeStart: string;
   rangeEnd: string;
   totalCostUsdMicros: number;
   totalTokens: number;
   byStage: SpendStageRollup[];
-  budgets: {
-    regen: SpendBudget;
-    embed: SpendBudget;
-    classify: SpendBudget;
-  };
-  outstanding: {
-    fragmentRelationshipBackfillQueueDepth: number | null;
-    lastCronRunAt: string | null;
-  };
 }
 
 const STAGE_LABELS: Record<string, string> = {
@@ -55,28 +40,6 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 const STAGE_ORDER = ["capture", "fragment", "classify", "regen", "embed", "search"];
-
-const BUDGET_KINDS: Array<{
-  key: "regen" | "embed" | "classify";
-  label: string;
-  description: string;
-}> = [
-  {
-    key: "regen",
-    label: "Regen budget",
-    description: "Monthly cap on wiki-regeneration spend.",
-  },
-  {
-    key: "embed",
-    label: "Embed budget",
-    description: "Monthly cap on embedding spend (capture + retry path).",
-  },
-  {
-    key: "classify",
-    label: "Classify budget",
-    description: "Monthly cap on classification spend (link worker).",
-  },
-];
 
 const sectionLabel: CSSProperties = {
   ...T.micro,
@@ -127,60 +90,29 @@ export default function SpendPage() {
   const [data, setData] = useState<SpendResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Local edit state for the three caps. Stored as input strings (USD)
-  // so the form does not flicker while the user is typing.
-  const [budgetEdits, setBudgetEdits] = useState<Record<string, string>>({});
-  const [savingKind, setSavingKind] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const refresh = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/settings/spend", { credentials: "include" });
-      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-      const body = (await res.json()) as SpendResponse;
-      setData(body);
-      setError(null);
-      setBudgetEdits({
-        regen: (body.budgets.regen.limitUsdMicros / 1_000_000).toString(),
-        embed: (body.budgets.embed.limitUsdMicros / 1_000_000).toString(),
-        classify: (body.budgets.classify.limitUsdMicros / 1_000_000).toString(),
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load spend");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    void refresh();
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/settings/spend", { credentials: "include" });
+        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+        const body = (await res.json()) as SpendResponse;
+        if (!cancelled) {
+          setData(body);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load spend");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  const saveBudget = async (kind: "regen" | "embed" | "classify") => {
-    const raw = budgetEdits[kind] ?? "";
-    const usd = Number(raw);
-    if (!Number.isFinite(usd) || usd < 0) {
-      setSaveError(`Invalid ${kind} budget`);
-      return;
-    }
-    setSavingKind(kind);
-    setSaveError(null);
-    try {
-      const res = await fetch(`/api/settings/budgets/${kind}`, {
-        method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit_usd_micros: Math.round(usd * 1_000_000) }),
-      });
-      if (!res.ok) throw new Error(`Save failed: ${res.status}`);
-      await refresh();
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Save failed");
-    } finally {
-      setSavingKind(null);
-    }
-  };
 
   // Sort stages by canonical order so the UI is stable across reloads
   // even when one stage has zero events this month.
@@ -223,8 +155,7 @@ export default function SpendPage() {
             Spend
           </h1>
           <p style={{ ...bodyText, marginTop: 4 }}>
-            Cost this month, broken down by pipeline stage. Edit budget caps
-            below.
+            Cost this month, broken down by pipeline stage.
           </p>
 
           {loading ? (
@@ -337,128 +268,10 @@ export default function SpendPage() {
                 </Card>
               </section>
 
-              {/* Budget caps */}
-              <section
-                className="mt-8"
-                style={{ display: "flex", flexDirection: "column", gap: 12 }}
-              >
-                <p style={sectionLabel}>Budget caps</p>
-                <Card size="sm" className="rounded-none">
-                  <CardContent>
-                    <p style={bodySmallText}>
-                      Caps are advisory for v0.2.0. Wiring caps into the
-                      worker scheduler lands in a follow-up.
-                    </p>
-                    <div
-                      className="mt-4 flex flex-col gap-4"
-                      style={{ display: "flex", flexDirection: "column" }}
-                    >
-                      {BUDGET_KINDS.map((kind) => (
-                        <div key={kind.key} className="flex flex-col gap-1">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <p style={titleText}>{kind.label}</p>
-                              <p style={{ ...bodySmallText, marginTop: 2 }}>
-                                {kind.description}
-                              </p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-2">
-                              <span
-                                style={{
-                                  ...T.micro,
-                                  color: "var(--wiki-count)",
-                                }}
-                              >
-                                $
-                              </span>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={budgetEdits[kind.key] ?? ""}
-                                onChange={(e) =>
-                                  setBudgetEdits((prev) => ({
-                                    ...prev,
-                                    [kind.key]: e.target.value,
-                                  }))
-                                }
-                                style={{ width: 120 }}
-                              />
-                              <Button
-                                type="button"
-                                size="sm"
-                                onClick={() => void saveBudget(kind.key)}
-                                disabled={savingKind === kind.key}
-                              >
-                                <span style={T.buttonSmall}>
-                                  {savingKind === kind.key
-                                    ? "Saving..."
-                                    : "Save"}
-                                </span>
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    {saveError && (
-                      <p
-                        style={{
-                          ...T.micro,
-                          color: "var(--destructive)",
-                          marginTop: 8,
-                        }}
-                      >
-                        {saveError}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </section>
-
-              {/* Outstanding work placeholder */}
-              <section
-                className="mt-8"
-                style={{ display: "flex", flexDirection: "column", gap: 12 }}
-              >
-                <p style={sectionLabel}>Outstanding work</p>
-                <Card size="sm" className="rounded-none">
-                  <CardContent>
-                    <p style={bodySmallText}>
-                      Fragment-relationship backfill and last-cron-run
-                      timestamps land in a follow-up wave. This section is
-                      reserved for that surface.
-                    </p>
-                    <dl className="mt-3 flex flex-col gap-1.5">
-                      <Row
-                        label="Fragment relationship backfill queue"
-                        value={
-                          data.outstanding.fragmentRelationshipBackfillQueueDepth ?? "—"
-                        }
-                      />
-                      <Row
-                        label="Last cron run"
-                        value={data.outstanding.lastCronRunAt ?? "—"}
-                      />
-                    </dl>
-                  </CardContent>
-                </Card>
-              </section>
             </>
           ) : null}
         </div>
       </div>
     </AuthGuard>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span style={bodySmallText}>{label}</span>
-      <span style={{ ...T.micro, color: "var(--heading-color)" }}>
-        {value}
-      </span>
-    </div>
   );
 }
