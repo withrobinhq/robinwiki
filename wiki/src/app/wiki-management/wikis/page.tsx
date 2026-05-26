@@ -6,12 +6,33 @@ import { T } from "@/lib/typography";
 import { Spinner } from "@/components/ui/spinner";
 import { Toast } from "@/components/ui/toast";
 import { SettingsShell } from "@/components/settings/SettingsShell";
-import { WikiRow } from "@/components/settings/WikiRow";
+import { WikiRow, WikiRowHeader } from "@/components/settings/WikiRow";
+import { EditorialStateDot } from "@/components/wiki/EditorialStateDot";
 import { useWikis } from "@/hooks/useWikis";
 import { useCollections, type Collection } from "@/hooks/useCollections";
-import type { ThreadListResponseSchema } from "@/lib/generated/types.gen";
+import type {
+  EditorialStateSchema,
+  ThreadListResponseSchema,
+} from "@/lib/generated/types.gen";
 
 type WikiListEntry = ThreadListResponseSchema["wikis"][number];
+
+// Display labels for the editorial-state legend on this page. The
+// underlying state names (`filed`, `learning`, `dreaming`, `empty`) are
+// kept as the source of truth — these strings are operator-facing copy
+// scoped to wiki management.
+const STATE_ORDER: EditorialStateSchema[] = [
+  "filed",
+  "learning",
+  "dreaming",
+  "empty",
+];
+const STATE_LABELS: Record<EditorialStateSchema, string> = {
+  filed: "Up to date",
+  learning: "Regen Pending",
+  dreaming: "Regenerating Now",
+  empty: "Empty Wiki",
+};
 
 interface CollectionGroup {
   id: string;
@@ -56,6 +77,85 @@ function groupWikisByCollection(
   }
 
   return groups.filter((g) => g.wikis.length > 0);
+}
+
+function stateCounts(wikis: WikiListEntry[]): Record<EditorialStateSchema, number> {
+  const counts: Record<EditorialStateSchema, number> = {
+    filed: 0,
+    learning: 0,
+    dreaming: 0,
+    empty: 0,
+  };
+  for (const w of wikis) {
+    const s = (w.editorialState ?? "empty") as EditorialStateSchema;
+    counts[s] = (counts[s] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function StateCounts({ wikis }: { wikis: WikiListEntry[] }) {
+  const counts = stateCounts(wikis);
+  const visible = STATE_ORDER.filter((s) => counts[s] > 0);
+  if (visible.length === 0) return null;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        marginRight: 8,
+      }}
+    >
+      {visible.map((s) => (
+        <span
+          key={s}
+          title={`${STATE_LABELS[s]}: ${counts[s]}`}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            ...T.micro,
+            color: "var(--wiki-count)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          <EditorialStateDot editorialState={s} size={8} />
+          {counts[s]}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Legend() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: 16,
+        marginTop: 12,
+        marginBottom: 20,
+      }}
+    >
+      {STATE_ORDER.map((s) => (
+        <span
+          key={s}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            ...T.micro,
+            color: "var(--heading-secondary)",
+          }}
+        >
+          <EditorialStateDot editorialState={s} size={8} />
+          {STATE_LABELS[s]}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function CollectionSection({
@@ -114,6 +214,7 @@ function CollectionSection({
         >
           {group.name}
         </span>
+        <StateCounts wikis={group.wikis} />
         <span
           style={{
             ...T.micro,
@@ -138,6 +239,7 @@ function CollectionSection({
             background: "var(--bg)",
           }}
         >
+          <WikiRowHeader />
           {group.wikis.map((wiki) => (
             <WikiRow
               key={wiki.id}
@@ -176,6 +278,8 @@ export default function SettingsWikisPage() {
       backTo="/wiki-management"
       backLabel="Back to wiki management"
     >
+      <Legend />
+
       {loading ? (
         <div className="flex justify-center py-16">
           <Spinner className="size-5" />

@@ -4,30 +4,57 @@ import Link from "next/link";
 import { useState } from "react";
 import { RefreshCw, AlertCircle } from "lucide-react";
 import { T } from "@/lib/typography";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
+import { EditorialStateDot } from "@/components/wiki/EditorialStateDot";
 import type { ThreadListResponseSchema } from "@/lib/generated/types.gen";
+import { useToggleAutoRegen } from "@/hooks/useToggleAutoRegen";
+import { useRegenerateWiki } from "@/hooks/useRegenerateWiki";
 
 // The generator emits the wiki list shape under the legacy "thread" alias
 // (Thread* mirrors the v0 thread tag in openapi.json). The single wiki
 // entry type matches what GET /wikis returns; aliasing here so call
 // sites read naturally.
 type WikiListEntry = ThreadListResponseSchema["wikis"][number];
-import { useToggleAutoRegen } from "@/hooks/useToggleAutoRegen";
-import { useRegenerateWiki } from "@/hooks/useRegenerateWiki";
 
-// Stream U: one row per wiki in the settings Wikis panel.
-//
-// Columns: name + slug, autoregen switch, last regen time, editorial
-// state badge, fragment count, regen-now button, agent_schema gap dot.
-//
-// The autoregen switch flips optimistically; on error the optimistic
-// flag reverts so the UI mirrors the server. Regen-now fires the
-// existing /wikis/:id/regenerate HTTP route; the toast is owned by
-// the parent panel so multiple in-flight regens collapse to one
-// notification surface.
+// Column track sizing shared by WikiRow and WikiRowHeader so a header
+// renders directly above a body row without drift.
+const GRID_TEMPLATE =
+  "minmax(0, 1.6fr) 96px 96px 24px 56px 44px 24px";
+
+const headerCell = {
+  ...T.micro,
+  textTransform: "uppercase" as const,
+  letterSpacing: "0.05em",
+  color: "var(--heading-secondary)",
+  fontWeight: 600,
+};
+
+export function WikiRowHeader() {
+  return (
+    <li
+      style={{
+        display: "grid",
+        gridTemplateColumns: GRID_TEMPLATE,
+        gap: 16,
+        alignItems: "center",
+        padding: "10px 16px",
+        borderBottom: "1px solid var(--border)",
+        background:
+          "color-mix(in srgb, var(--heading-secondary) 6%, transparent)",
+      }}
+    >
+      <span style={headerCell}>Wiki</span>
+      <span style={headerCell}>Autoregen</span>
+      <span style={headerCell}>Last regen</span>
+      <span style={headerCell}>State</span>
+      <span style={{ ...headerCell, textAlign: "right" as const }}>Frags</span>
+      <span aria-hidden />
+      <span aria-hidden />
+    </li>
+  );
+}
 
 interface Props {
   wiki: WikiListEntry;
@@ -41,8 +68,7 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
 
   // Optimistic snapshot of the autoregen flag. Mirrors the server while
   // the mutation is pending; reverts to wiki.autoregen if the mutation
-  // throws. Initialising from props handles the React Query cache update
-  // case (the parent re-renders with the new value).
+  // throws.
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
   const checked = optimistic ?? wiki.autoregen ?? false;
 
@@ -73,24 +99,24 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
 
   const lastRegen = formatTimeAgo(wiki.lastRebuiltAt);
   const needsBackfill =
-    wiki.agentSchemaStatus &&
-    wiki.agentSchemaStatus !== "complete";
+    wiki.agentSchemaStatus && wiki.agentSchemaStatus !== "complete";
+  const isFiled = wiki.editorialState === "filed";
 
   return (
     <li
       className="settings-wiki-row"
       style={{
         display: "grid",
-        gridTemplateColumns: "minmax(0, 1.6fr) auto auto auto auto auto auto",
+        gridTemplateColumns: GRID_TEMPLATE,
         gap: 16,
         alignItems: "center",
-        padding: "14px 16px",
+        padding: "12px 16px",
         borderBottom: "1px solid var(--border)",
       }}
     >
       <div style={{ minWidth: 0 }}>
         <Link
-          href={`/wiki/${wiki.id}`}
+          href={`/wiki/${wiki.id}?tab=settings`}
           style={{
             ...T.body,
             fontWeight: 500,
@@ -100,37 +126,15 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
         >
           {wiki.name}
         </Link>
-        <p
-          style={{
-            ...T.micro,
-            color: "var(--heading-secondary)",
-            margin: 0,
-            marginTop: 2,
-          }}
-        >
-          /{wiki.slug}
-        </p>
       </div>
 
-      <label
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          cursor: "pointer",
-        }}
-      >
-        <Switch
-          size="sm"
-          checked={checked}
-          onCheckedChange={handleToggle}
-          disabled={toggle.isPending}
-          aria-label={`Toggle autoregen for ${wiki.name}`}
-        />
-        <span style={{ ...T.micro, color: "var(--heading-secondary)" }}>
-          autoregen
-        </span>
-      </label>
+      <Switch
+        size="sm"
+        checked={checked}
+        onCheckedChange={handleToggle}
+        disabled={toggle.isPending}
+        aria-label={`Toggle autoregen for ${wiki.name}`}
+      />
 
       <span
         title={
@@ -143,36 +147,35 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
         {lastRegen}
       </span>
 
-      <Badge
-        variant={editorialBadgeVariant(wiki.editorialState)}
-        className="text-[10px]"
-      >
-        {wiki.editorialState ?? "empty"}
-      </Badge>
+      <EditorialStateDot
+        editorialState={wiki.editorialState ?? "empty"}
+        size={10}
+      />
 
       <span
         style={{
           ...T.micro,
           color: "var(--heading-secondary)",
           fontVariantNumeric: "tabular-nums",
+          textAlign: "right",
         }}
       >
-        {wiki.noteCount} {wiki.noteCount === 1 ? "frag" : "frags"}
+        {wiki.noteCount}
       </span>
 
       <Button
-        variant="outline"
-        size="sm"
+        variant="ghost"
+        size="icon"
         onClick={handleRegen}
-        disabled={regen.isPending}
+        disabled={regen.isPending || isFiled}
         aria-label={`Regenerate ${wiki.name} now`}
+        title={isFiled ? "Already up to date" : "Regenerate now"}
       >
         {regen.isPending ? (
           <Spinner className="size-3" />
         ) : (
           <RefreshCw className="size-3" strokeWidth={1.5} />
         )}
-        regen now
       </Button>
 
       {needsBackfill ? (
@@ -197,28 +200,6 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
       )}
     </li>
   );
-}
-
-function editorialBadgeVariant(
-  state: WikiListEntry["editorialState"] | undefined,
-):
-  | "default"
-  | "secondary"
-  | "destructive"
-  | "outline"
-  | "ghost"
-  | "link" {
-  switch (state) {
-    case "filed":
-      return "default";
-    case "dreaming":
-      return "secondary";
-    case "learning":
-      return "outline";
-    case "empty":
-    default:
-      return "ghost";
-  }
 }
 
 function formatTimeAgo(input: WikiListEntry["lastRebuiltAt"]): string {
