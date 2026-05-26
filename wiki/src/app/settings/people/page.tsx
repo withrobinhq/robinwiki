@@ -32,7 +32,7 @@ export default function SettingsPeoplePage() {
         <p style={{ ...T.bodySmall, color: "var(--destructive)" }}>
           Failed to load pending people. Try refreshing the page.
         </p>
-      ) : !data?.people?.length ? (
+      ) : !data?.persons?.length ? (
         <div
           style={{
             padding: "48px 16px",
@@ -57,7 +57,7 @@ export default function SettingsPeoplePage() {
             overflow: "hidden",
           }}
         >
-          {data.people.map((person) => (
+          {data.persons.map((person) => (
             <PersonRow
               key={person.lookupKey}
               person={person}
