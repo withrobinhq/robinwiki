@@ -90,7 +90,7 @@ export function WikiRow({ wiki, onRegenSuccess, onRegenError }: Props) {
     >
       <div style={{ minWidth: 0 }}>
         <Link
-          href={`/wiki/${wiki.slug}`}
+          href={`/wiki/${wiki.id}`}
           style={{
             ...T.body,
             fontWeight: 500,
