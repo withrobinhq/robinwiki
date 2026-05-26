@@ -686,6 +686,17 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
 wikisRouter.post('/:id/publish', async (c) => {
   const id = c.req.param('id')
   const origin = (() => {
+    // Prefer the forwarded host. Reverse proxies (Next.js rewrites,
+    // nginx, Railway's edge) set X-Forwarded-Host to the original
+    // user-facing host, while c.req.url resolves to whatever URL Core
+    // itself sees, which on a multi-host deployment is Core's own
+    // hostname, not the front-end's. Storing that origin in
+    // wikis.publishedOrigin means consumers (MCP responses, the
+    // settings-modal Open button, etc) build /p/<slug> URLs pointing
+    // at Core, which doesn't serve the public page.
+    const fwdHost = c.req.header('x-forwarded-host')
+    const fwdProto = c.req.header('x-forwarded-proto') ?? 'https'
+    if (fwdHost) return `${fwdProto}://${fwdHost}`
     try {
       return new URL(c.req.url).origin
     } catch {

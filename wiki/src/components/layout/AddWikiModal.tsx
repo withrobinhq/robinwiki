@@ -939,7 +939,13 @@ const AddWikiModal = forwardRef<WikiSettingsFormHandle, AddWikiModalProps>(funct
                     <button
                       type="button"
                       onClick={() => {
-                        const base = publishedOrigin || window.location.origin;
+                        // Use window.location.origin. wikis.publishedOrigin
+                        // records whichever URL Core saw at publish time (often
+                        // its own internal/public hostname, e.g.
+                        // robincore-production-xxx.up.railway.app), which is
+                        // NOT where /p/[nanoid] is served. The frontend always
+                        // knows its own host, so trust that.
+                        const base = window.location.origin;
                         const url = `${base}/p/${publishedSlug}`;
                         void navigator.clipboard.writeText(url).catch(() => {});
                       }}
@@ -957,7 +963,13 @@ const AddWikiModal = forwardRef<WikiSettingsFormHandle, AddWikiModalProps>(funct
                     <button
                       type="button"
                       onClick={() => {
-                        const base = publishedOrigin || window.location.origin;
+                        // Use window.location.origin. wikis.publishedOrigin
+                        // records whichever URL Core saw at publish time (often
+                        // its own internal/public hostname, e.g.
+                        // robincore-production-xxx.up.railway.app), which is
+                        // NOT where /p/[nanoid] is served. The frontend always
+                        // knows its own host, so trust that.
+                        const base = window.location.origin;
                         const url = `${base}/p/${publishedSlug}`;
                         window.open(url, "_blank", "noopener,noreferrer");
                       }}

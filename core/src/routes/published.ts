@@ -6,6 +6,7 @@ import { publicWikiResponseSchema } from '../schemas/wikis.schema.js'
 import { buildSidecar } from '../lib/wikiSidecar.js'
 import { makeSidecarDeps } from '../lib/wikiSidecarDeps.js'
 import { stripWikiContent } from '../lib/strip-wiki-content.js'
+import { prepareContentForPublish } from '../lib/published-content.js'
 
 const publishedRoutes = new Hono()
 
@@ -52,13 +53,23 @@ publishedRoutes.get('/wiki/:nanoid', async (c) => {
     return c.text(stripWikiContent(wiki.content, sidecar.refs))
   }
 
+  // Rewrite cross-refs and strip citations before sending to the public
+  // reader. Anchors to private wikis / fragments / people / entries get
+  // demoted to plain text; cross-refs to other published wikis are
+  // emitted as inline markdown links to /p/<their-slug>. Inline [N]
+  // citation markers are stripped: public readers can't open source
+  // fragments anyway, so they're noise.
+  const publicContent = await prepareContentForPublish(db, wiki.content, sidecar.refs)
+
   return c.json(
     publicWikiResponseSchema.parse({
       name: wiki.name,
       type: wiki.type,
       publishedAt: wiki.publishedAt,
-      content: wiki.content,
-      refs: sidecar.refs,
+      content: publicContent,
+      // Content is now self-contained markdown; surviving cross-refs
+      // are real anchors, so the client doesn't need the refs map.
+      refs: {},
       infobox: sidecar.infobox,
       sections: sidecar.sections,
     })

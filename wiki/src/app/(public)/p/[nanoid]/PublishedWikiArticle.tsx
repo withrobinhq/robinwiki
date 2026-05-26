@@ -1,14 +1,64 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import Image from "next/image";
 import { T, FONT } from "@/lib/typography";
-import { WikiInfobox } from "@/components/wiki/WikiInfobox";
 import { MarkdownContent } from "@/components/wiki/MarkdownContent";
 import { sanitizeWikiHtml } from "@/lib/sanitizeWikiHtml";
-import type {
-  WikiInfobox as WikiInfoboxData,
-  WikiRef,
-} from "@/lib/sidecarTypes";
+import type { WikiRef } from "@/lib/sidecarTypes";
+
+const ROBIN_KNOWLEDGE_URL = "https://www.withrobin.ai/knowledge";
+
+/**
+ * Regen emits a leading title line (often "{Type}: {Name}") at the top
+ * of the wiki body. On the read-only published page the page chrome
+ * already renders {wiki.name} as the H1, so leaving the body-side title
+ * in place makes the title appear twice. Strip the first heading- or
+ * bold-paragraph-shaped line if its text contains the wiki name. Keep
+ * the rule narrow (only structural title constructs, not arbitrary
+ * paragraphs) so legitimate prose that happens to mention the title
+ * doesn't get clipped.
+ */
+function stripLeadingTitle(content: string, name: string): string {
+  if (!content || !name) return content;
+  const needle = name.toLowerCase();
+
+  // HTML body (Tiptap save): first <h1..h3> or first <p><strong>...
+  if (content.trim().startsWith("<")) {
+    const match = content.match(
+      /^\s*(<(h[1-3])[^>]*>\s*([\s\S]*?)\s*<\/\2>|<p[^>]*>\s*<strong>\s*([\s\S]*?)\s*<\/strong>\s*<\/p>)\s*/i,
+    );
+    if (match) {
+      const inner = (match[3] ?? match[4] ?? "").replace(/<[^>]*>/g, "").trim();
+      if (inner.toLowerCase().includes(needle)) {
+        return content.slice(match[0].length);
+      }
+    }
+    return content;
+  }
+
+  // Markdown body: leading `#`-heading or bold-only line `**...**`
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    if (raw.trim() === "") continue;
+    const stripped = raw
+      .trim()
+      .replace(/^#+\s+/, "")
+      .replace(/^\*\*(.+)\*\*$/, "$1")
+      .trim();
+    const isTitleShape = /^#+\s+/.test(raw.trim()) || /^\*\*.+\*\*$/.test(raw.trim());
+    if (isTitleShape && stripped.toLowerCase().includes(needle)) {
+      lines.splice(i, 1);
+      while (lines[i] !== undefined && lines[i].trim() === "") {
+        lines.splice(i, 1);
+      }
+      return lines.join("\n");
+    }
+    break;
+  }
+  return content;
+}
 
 export interface PublishedWikiData {
   name: string;
@@ -16,7 +66,6 @@ export interface PublishedWikiData {
   publishedAt: string;
   content: string;
   refs?: Record<string, WikiRef>;
-  infobox?: WikiInfoboxData | null;
 }
 
 const bodyStyle: CSSProperties = {
@@ -37,8 +86,9 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
   // `dangerouslySetInnerHTML` (#253). Sanitised through `sanitizeWikiHtml`
   // (#sec-phase-1-chain-a). Trust boundary: AI-generated bodies and Tiptap
   // saves are both treated as untrusted.
+  const bodyContent = stripLeadingTitle(wiki.content ?? "", wiki.name);
   const isHtmlBody =
-    typeof wiki.content === "string" && wiki.content.trim().startsWith("<");
+    typeof bodyContent === "string" && bodyContent.trim().startsWith("<");
 
   return (
     <div className="published-page">
@@ -52,7 +102,7 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
         }}
       >
         <a
-          href="https://withrobin.ai/knowledge"
+          href={ROBIN_KNOWLEDGE_URL}
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Powered by Robin — withrobin.ai/knowledge"
@@ -64,20 +114,14 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
             textDecoration: "none",
           }}
         >
-          <svg
-            viewBox="0 0 27 27"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            width={22}
-            height={22}
-            aria-hidden
+          <Image
+            src="/logo.png"
+            alt=""
+            width={24}
+            height={24}
             style={{ flexShrink: 0 }}
-          >
-            <path
-              d="M9.13646 11.1135L11.4799 13.4569L11.4869 13.45L13.121 15.084L13.1279 15.091L15.5145 17.4775C17.7112 19.6742 21.2727 19.6742 23.4694 17.4775C25.6662 15.2808 25.6662 11.7193 23.4694 9.52255C21.2727 7.32584 17.7112 7.32584 15.5145 9.52255L14.7119 10.3251L16.3029 11.9161L17.1055 11.1135C18.4234 9.79552 20.5604 9.79552 21.8784 11.1135C23.1965 12.4316 23.1965 14.5684 21.8784 15.8865C20.5604 17.2045 18.4234 17.2045 17.1055 15.8865L14.7741 13.5553L14.7671 13.5623L10.7274 9.52255C8.53075 7.32584 4.9692 7.32584 2.7725 9.52255C0.575797 11.7193 0.575797 15.2808 2.7725 17.4775C4.9692 19.6742 8.53075 19.6742 10.7274 17.4775L11.5299 16.675L9.93893 15.084L9.13646 15.8865C7.81844 17.2045 5.6815 17.2045 4.36349 15.8865C3.04547 14.5684 3.04547 12.4316 4.36349 11.1135C5.6815 9.79552 7.81844 9.79552 9.13646 11.1135Z"
-              fill="currentColor"
-            />
-          </svg>
+            aria-hidden
+          />
           <span
             style={{
               ...T.bodySmall,
@@ -86,49 +130,6 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
             }}
           >
             Powered by Robin
-          </span>
-        </a>
-        <a
-          href="https://github.com/withrobinhq/robinwiki"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Star Robin Wiki on GitHub"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "6px 10px",
-            borderRadius: 6,
-            border: "1px solid var(--card-border)",
-            color: "var(--heading-color)",
-            textDecoration: "none",
-            background: "var(--bg)",
-          }}
-        >
-          <svg
-            className="lucide-star"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.6}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            xmlns="http://www.w3.org/2000/svg"
-            width={16}
-            height={16}
-            aria-hidden
-            style={{ flexShrink: 0 }}
-          >
-            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-          </svg>
-          <span
-            style={{
-              ...T.bodySmall,
-              fontWeight: 500,
-              color: "var(--heading-color)",
-            }}
-          >
-            Star on GitHub
           </span>
         </a>
       </header>
@@ -155,31 +156,15 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
           Published {publishedDate}
         </p>
 
-        {wiki.infobox && (
-          <WikiInfobox
-            title={wiki.name}
-            image={wiki.infobox.image?.url}
-            caption={wiki.infobox.caption}
-            sections={[
-              {
-                rows: wiki.infobox.rows.map((row) => ({
-                  key: row.label,
-                  value: row.value,
-                })),
-              },
-            ]}
-          />
-        )}
-
         {isHtmlBody ? (
           <div
             className="wiki-richtext-rendered"
             style={bodyStyle}
-            dangerouslySetInnerHTML={{ __html: sanitizeWikiHtml(wiki.content) }}
+            dangerouslySetInnerHTML={{ __html: sanitizeWikiHtml(bodyContent) }}
           />
         ) : (
           <MarkdownContent
-            content={wiki.content}
+            content={bodyContent}
             refs={wiki.refs}
             style={bodyStyle}
           />
@@ -187,9 +172,18 @@ export function PublishedWikiArticle({ wiki }: { wiki: PublishedWikiData }) {
       </article>
 
       <footer className="published-footer">
-        <span style={{ ...T.micro, color: "var(--wiki-count)" }}>
+        <a
+          href={ROBIN_KNOWLEDGE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            ...T.micro,
+            color: "var(--wiki-count)",
+            textDecoration: "none",
+          }}
+        >
           Powered by Robin Wiki
-        </span>
+        </a>
       </footer>
     </div>
   );
