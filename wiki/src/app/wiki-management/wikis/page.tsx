@@ -70,8 +70,8 @@ function groupWikisByCollection(
   if (uncategorized.length > 0) {
     groups.push({
       id: UNCATEGORIZED_ID,
-      name: "Uncategorized",
-      color: "var(--card-border)",
+      name: "Uncategorised Wikis",
+      color: "var(--heading-secondary)",
       wikis: uncategorized,
     });
   }
