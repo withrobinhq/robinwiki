@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight } from 'lucide-react';
 import { useCollections } from '@/hooks/useCollections';
+import { useWikis } from '@/hooks/useWikis';
 import { ROUTES } from '@/lib/routes';
 import { T } from '@/lib/typography';
 import AddCollectionModal from '@/components/layout/AddCollectionModal';
@@ -168,6 +169,130 @@ function CollectionCard({
   );
 }
 
+function UncategorisedCard() {
+  const [expanded, setExpanded] = useState(false);
+  const { data: wikiData, isLoading } = useWikis();
+  const uncategorised = useMemo(() => {
+    const all = wikiData?.wikis ?? [];
+    return all.filter((w) => (w.collections ?? []).length === 0);
+  }, [wikiData?.wikis]);
+
+  if (isLoading || uncategorised.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        border: '1px solid var(--card-border)',
+        borderRadius: 8,
+        background: 'var(--bg)',
+        overflow: 'hidden',
+        transition: 'box-shadow 0.15s ease',
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          padding: '14px 18px',
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          textAlign: 'left',
+          borderLeft: '4px solid var(--heading-secondary)',
+        }}
+      >
+        <ChevronRight
+          size={18}
+          style={{
+            color: 'var(--wiki-count)',
+            transform: expanded ? 'rotate(90deg)' : 'rotate(0)',
+            transition: 'transform 0.15s ease',
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            ...T.h4,
+            color: 'var(--heading-color)',
+            flex: 1,
+            fontWeight: 600,
+          }}
+        >
+          Uncategorised Wikis
+        </span>
+        <span
+          style={{
+            ...T.micro,
+            color: 'var(--wiki-count)',
+            background: 'var(--card-border)',
+            padding: '3px 10px',
+            borderRadius: 12,
+            fontWeight: 500,
+          }}
+        >
+          {uncategorised.length} wiki{uncategorised.length === 1 ? '' : 's'}
+        </span>
+      </button>
+
+      {expanded && (
+        <div
+          style={{
+            padding: '4px 18px 14px 36px',
+            borderTop: '1px solid var(--card-border)',
+            background: 'var(--bg)',
+          }}
+        >
+          <ul
+            style={{
+              margin: '8px 0 0',
+              padding: 0,
+              listStyle: 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+            }}
+          >
+            {uncategorised.map((w) => (
+              <li key={w.lookupKey}>
+                <Link
+                  href={ROUTES.wiki(w.lookupKey)}
+                  style={{
+                    ...T.bodySmall,
+                    color: 'var(--wiki-link)',
+                    textDecoration: 'none',
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    gap: 10,
+                    padding: '4px 0',
+                  }}
+                >
+                  <span style={{ flex: 1 }}>{w.name}</span>
+                  {typeof w.noteCount === 'number' && w.noteCount > 0 ? (
+                    <span
+                      style={{
+                        ...T.micro,
+                        color: 'var(--wiki-count)',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {w.noteCount}
+                    </span>
+                  ) : null}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CollectionsHome() {
   const { data: collections, isLoading } = useCollections();
   const [addCollectionOpen, setAddCollectionOpen] = useState(false);
@@ -267,6 +392,7 @@ export function CollectionsHome() {
           wikiCount={c.wikiCount}
         />
       ))}
+      <UncategorisedCard />
     </section>
   );
 }
