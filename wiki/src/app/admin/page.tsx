@@ -14,6 +14,8 @@ import {
   Layers,
   RefreshCw as RefreshCwIcon,
   DollarSign,
+  Users,
+  Lock,
 } from "lucide-react";
 import { T, FONT } from "@/lib/typography";
 
@@ -511,6 +513,13 @@ export default function AdminPage() {
                 icon={<DollarSign className="size-4" strokeWidth={1.5} />}
                 onClick={() => router.push("/admin/spend")}
               />
+              <SubrouteCard
+                title="Members"
+                description="User and Guardian accounts, role assignment, audit"
+                icon={<Users className="size-4" strokeWidth={1.5} />}
+                disabled
+                disabledLabel="Enterprise only"
+              />
             </div>
           </section>
 
@@ -712,12 +721,93 @@ function SubrouteCard({
   description,
   icon,
   onClick,
+  disabled,
+  disabledLabel,
 }: {
   title: string;
   description: string;
   icon: React.ReactNode;
-  onClick: () => void;
+  onClick?: () => void;
+  disabled?: boolean;
+  disabledLabel?: string;
 }) {
+  const body = (
+    <>
+      <span
+        className="mt-0.5 shrink-0"
+        style={{ color: "var(--wiki-count)" }}
+      >
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p
+            style={{
+              ...T.body,
+              fontWeight: 500,
+              color: "var(--heading-color)",
+              margin: 0,
+            }}
+          >
+            {title}
+          </p>
+          {disabled && disabledLabel ? (
+            <span
+              style={{
+                ...T.micro,
+                color: "var(--heading-secondary)",
+                background:
+                  "color-mix(in srgb, var(--heading-secondary) 12%, transparent)",
+                padding: "1px 8px",
+                borderRadius: 10,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontWeight: 500,
+              }}
+            >
+              <Lock className="size-3" strokeWidth={1.5} />
+              {disabledLabel}
+            </span>
+          ) : null}
+        </div>
+        <p
+          style={{
+            ...T.micro,
+            color: "var(--heading-secondary)",
+            margin: 0,
+            marginTop: 2,
+          }}
+        >
+          {description}
+        </p>
+      </div>
+    </>
+  );
+
+  if (disabled) {
+    return (
+      <Card
+        size="sm"
+        className="rounded-none"
+        style={{
+          background:
+            "color-mix(in srgb, var(--muted) 50%, transparent)",
+          opacity: 0.85,
+        }}
+      >
+        <CardContent>
+          <div
+            className="flex w-full items-start gap-3"
+            aria-disabled="true"
+          >
+            {body}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card size="sm" className="rounded-none">
       <CardContent>
@@ -726,34 +816,7 @@ function SubrouteCard({
           onClick={onClick}
           className="flex w-full cursor-pointer items-start gap-3 border-none bg-transparent text-left"
         >
-          <span
-            className="mt-0.5 shrink-0"
-            style={{ color: "var(--wiki-count)" }}
-          >
-            {icon}
-          </span>
-          <div className="min-w-0">
-            <p
-              style={{
-                ...T.body,
-                fontWeight: 500,
-                color: "var(--heading-color)",
-                margin: 0,
-              }}
-            >
-              {title}
-            </p>
-            <p
-              style={{
-                ...T.micro,
-                color: "var(--heading-secondary)",
-                margin: 0,
-                marginTop: 2,
-              }}
-            >
-              {description}
-            </p>
-          </div>
+          {body}
         </button>
       </CardContent>
     </Card>
