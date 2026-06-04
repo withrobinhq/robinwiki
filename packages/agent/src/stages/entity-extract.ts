@@ -121,6 +121,7 @@ interface EntityExtractInput {
   content: string
   entryKey: string
   jobId: string
+  entryType?: string
 }
 
 export async function entityExtract(
@@ -158,6 +159,7 @@ export async function entityExtract(
   const spec = loadPeopleExtractionSpec({
     content: input.content,
     knownPeople: knownPeopleJson,
+    entryType: input.entryType,
   })
 
   // 4. Call LLM (returns Zod-validated output, accepts both v3 buckets
@@ -264,6 +266,29 @@ export async function entityExtract(
     }
   }
 
+  // Build authorshipMentions by correlating resolved outcomes back to bucket roles.
+  const mentionToRole = new Map<string, 'byline' | 'quoted' | 'mentioned'>()
+  for (const m of buckets.matched) {
+    if (m.authorshipRole) mentionToRole.set(m.mention, m.authorshipRole)
+  }
+  for (const c of buckets.candidates) {
+    if (c.authorshipRole) mentionToRole.set(c.mention, c.authorshipRole)
+  }
+
+  const authorshipMentions: EntityExtractResult['authorshipMentions'] = []
+  for (const outcome of outcomes) {
+    if (outcome.kind === 'dropped') continue
+    const role = mentionToRole.get(outcome.mention)
+    if (role === 'byline' || role === 'quoted') {
+      authorshipMentions.push({
+        personKey: outcome.lookupKey,
+        role,
+        sourceSpan: outcome.sourceSpan.text,
+        mention: outcome.mention,
+      })
+    }
+  }
+
   const denominator = rawMentionsSeen
   const dropRatePct =
     denominator > 0
@@ -297,6 +322,7 @@ export async function entityExtract(
       newAliases,
       extractions: matchedExtractions,
       newPeople,
+      authorshipMentions,
     },
     durationMs: Date.now() - start,
   }

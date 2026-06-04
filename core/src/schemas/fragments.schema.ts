@@ -38,6 +38,13 @@ export const fragmentDetailResponseSchema = fragmentWithContentResponseSchema.ex
       similarity: z.number(),
     })
   ).default([]),
+  authors: z.array(
+    z.object({
+      personKey: z.string(),
+      name: z.string(),
+      role: z.string(),
+    })
+  ).default([]),
 })
 
 export const fragmentListResponseSchema = z.object({

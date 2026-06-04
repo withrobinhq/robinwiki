@@ -118,6 +118,7 @@ export default function EntryPage() {
         type: entry.type,
         source: entry.source,
         createdAt: formatDate(entry.createdAt),
+        authors: (entry as unknown as { authors?: Array<{ personKey: string; name: string; role: string }> }).authors,
       }}
       body={
         <MarkdownContent

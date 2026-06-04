@@ -37,6 +37,13 @@ export interface ExtractionResult {
   entryKey: string
   fragmentKeys: string[]
   personKeys: string[]
+  authorshipMentions: Array<{
+    personKey: string
+    role: 'byline' | 'quoted'
+    sourceSpan: string
+    mention: string
+  }>
+  fragmentContents: Array<{ key: string; content: string }>
 }
 
 /**
@@ -110,6 +117,7 @@ export async function runExtraction(
           content: input.content,
           entryKey: input.entryKey,
           jobId: input.jobId,
+          entryType: input.entryType,
         }),
       ])
 
@@ -174,6 +182,11 @@ export async function runExtraction(
         entryKey: input.entryKey,
         fragmentKeys: persistResult.data.fragmentKeys,
         personKeys: entityResult ? Array.from(entityResult.peopleMap.values()) : [],
+        authorshipMentions: entityResult?.authorshipMentions ?? [],
+        fragmentContents: persistResult.data.fragmentKeys.map((key, i) => ({
+          key,
+          content: fragResult.data.fragments[i]?.content ?? '',
+        })),
       }
     }
   )

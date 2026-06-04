@@ -262,8 +262,11 @@ Do not gatekeep — the user decides. But make sure it's a conscious decision.
 
 Call whichever you chose during the mode-specific path:
 
-- **`Robin:log_entry`** — pass the structured content string and `source: "mcp"`. Robin handles fragmentation and cross-wiki routing.
-- **`Robin:log_fragment`** — pass the content and the target wiki's `threadSlug` (still called `threadSlug` even though Robin renamed thread → wiki everywhere else). Lands directly in that wiki, no routing.
+- **`Robin:log_entry`** — pass `content`, `source: "mcp"`, and structured metadata:
+  - `type` — infer from content: `article` for written pieces with a byline, `transcript` for multi-speaker conversations, `email` for messages with a From header, `document` for uploaded files, `thought` for personal reflections (default).
+  - `authors` — extract from attribution: pass as an array of names (e.g. `["Sarah Mwangi", "Barzan Mozafari"]`). Do NOT put attribution only in the content text — pass it as this parameter so Robin can create structured authorship edges.
+  - Robin handles fragmentation and cross-wiki routing.
+- **`Robin:log_fragment`** — pass the content, the target wiki's `threadSlug`, and optionally `authors`. Lands directly in that wiki, no routing.
 
 The decision was made in **Quick · Step C** or implicitly during Mining curation. If you got here without making it, go back and make it — don't pick by default mid-call.
 

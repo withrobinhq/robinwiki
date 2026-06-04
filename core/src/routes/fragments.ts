@@ -166,6 +166,30 @@ fragmentsRouter.get('/:id', async (c) => {
     relatedFragments.sort((a, b) => b.similarity - a.similarity)
   }
 
+  // Resolve FRAGMENT_AUTHORED_BY_PERSON edges
+  const authorEdges = await db
+    .select({ dstId: edges.dstId, attrs: edges.attrs })
+    .from(edges)
+    .where(and(eq(edges.srcId, id), eq(edges.edgeType, 'FRAGMENT_AUTHORED_BY_PERSON'), isNull(edges.deletedAt)))
+
+  const authors: { personKey: string; name: string; role: string }[] = []
+  if (authorEdges.length > 0) {
+    const personKeys = authorEdges.map((e) => e.dstId)
+    const personRows = await db
+      .select({ lookupKey: people.lookupKey, name: people.name })
+      .from(people)
+      .where(inArray(people.lookupKey, personKeys))
+    const personMap = new Map(personRows.map((p) => [p.lookupKey, p.name]))
+    for (const e of authorEdges) {
+      const attrs = e.attrs as Record<string, unknown> | null
+      authors.push({
+        personKey: e.dstId,
+        name: personMap.get(e.dstId) ?? e.dstId,
+        role: typeof attrs?.role === 'string' ? attrs.role : 'byline',
+      })
+    }
+  }
+
   return c.json(
     fragmentDetailResponseSchema.parse({
       ...fragment,
@@ -173,6 +197,7 @@ fragmentsRouter.get('/:id', async (c) => {
       content: fragment.content ?? '',
       backlinks,
       relatedFragments,
+      authors,
     })
   )
 })

@@ -14,12 +14,15 @@ import { z } from 'zod'
  * passthrough is filled in by code on top of the schema, not the
  * schema itself, to keep input and output types matching.
  */
+const authorshipRoleSchema = z.enum(['byline', 'quoted', 'mentioned']).optional()
+
 const matchedMentionSchema = z.object({
   mention: z.string(),
   inferredName: z.string(),
   matchedKey: z.string(),
   confidence: z.number(),
   sourceSpan: z.string(),
+  authorshipRole: authorshipRoleSchema,
 })
 
 const candidateMentionSchema = z.object({
@@ -27,6 +30,7 @@ const candidateMentionSchema = z.object({
   inferredName: z.string(),
   confidence: z.number(),
   sourceSpan: z.string(),
+  authorshipRole: authorshipRoleSchema,
 })
 
 const legacyMentionSchema = z.object({

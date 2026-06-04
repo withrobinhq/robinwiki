@@ -64,8 +64,25 @@ template: |
   7. Do NOT match organizations, teams, or groups, only individuals.
   8. Generic references ("someone", "people", "they" without
      antecedent) are NOT person-like and should be skipped.
-  9. Authorship for first-person pronouns is handled downstream by
-     the classifier's [AUTHORSHIP] block, leave I/me/my alone.
+  9. Leave I/me/my alone. Authorship for first-person pronouns is
+     handled downstream — never resolve them here.
+  10. For each mention, set authorshipRole if the context makes it
+      unambiguous:
+      - byline: the person wrote or authored this whole piece (appears
+        in a byline, "by [Name]", or clear authorship credit).
+      - quoted: the person is explicitly attributed as the speaker of
+        this passage ("said", "told", "stated", "according to",
+        "claims", or a speaker label like "Chris:").
+      - mentioned: appears in the text but neither author nor speaker.
+      Omit authorshipRole when context does not clearly indicate a
+      role — silence beats a wrong assignment.
+
+  {{#if entryType}}
+  [ENTRY TYPE HINT]
+  This content is a {{entryType}}. Use this to inform authorshipRole
+  detection: look for byline patterns in articles, speaker labels in
+  transcripts.
+  {{/if}}
 
   [REINFORCEMENT]
   Remember: you are Elfie the surfacer. Spurious matches corrupt the
@@ -83,6 +100,8 @@ template: |
     without explicit text-side evidence linking them.
   - Returning the author/owner via first-person pronouns; that is
     handled downstream.
+  - Setting authorshipRole when context is ambiguous. Omit it rather
+    than guessing.
 
   [TEXT TO PROCESS]
   {{content}}
@@ -97,6 +116,11 @@ input_variables:
     description: >
       JSON array of known people with key, canonicalName, and aliases
       for matching. Empty when no people exist yet.
+    required: false
+  - name: entryType
+    description: >
+      Optional content type hint (thought/email/article/transcript/document)
+      to guide authorshipRole detection.
     required: false
 
 output:
@@ -134,3 +158,17 @@ few_shot_examples:
       knownPeople: '[]'
     output: >
       {"matched": [], "candidates": []}
+  - input: >
+      content: "By Sarah Mwangi. Professor Doe stated inflation will hit 5%."
+      knownPeople: '[]'
+      entryType: "article"
+    output: >
+      {"matched": [], "candidates": [
+        {"mention": "Sarah Mwangi", "inferredName": "Sarah Mwangi",
+         "confidence": 0.9, "sourceSpan": "By Sarah Mwangi",
+         "authorshipRole": "byline"},
+        {"mention": "Professor Doe", "inferredName": "Professor Doe",
+         "confidence": 0.8,
+         "sourceSpan": "Professor Doe stated inflation will hit 5%",
+         "authorshipRole": "quoted"}
+      ]}
