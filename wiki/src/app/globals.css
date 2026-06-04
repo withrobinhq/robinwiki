@@ -1214,6 +1214,7 @@ input:focus {
 
 /* ─── Citations (.cite) ────────────────────────────────────── */
 sup.cite {
+  position: relative; /* Safari: aligns hit-test box with visual position for super-offset elements */
   font-size: 11px;
   line-height: 0;
   vertical-align: super;
