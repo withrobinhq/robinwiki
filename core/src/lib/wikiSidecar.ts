@@ -90,12 +90,22 @@ function parseSections(content: string): WikiSection[] {
 /**
  * Resolve every parsed token to a WikiRef, deduplicated on `${kind}:${slug}`.
  * Unknown slugs drop silently — render-side falls back to raw token text.
+ *
+ * Scans both the wiki body content and any infobox row values, so an
+ * infobox-only ref (e.g. a `Contradicts: [[wiki:other-belief]]` row whose
+ * token never appears in the body) still resolves into the refs map. Without
+ * this, the renderer's fallback prints the raw `[[wiki:slug]]` token to
+ * users.
  */
 async function resolveRefs(
   content: string,
+  infobox: WikiInfobox | null,
   deps: SidecarDeps
 ): Promise<Record<string, WikiRef>> {
-  const parsed = parseWikiLinks(content)
+  const infoboxText = infobox
+    ? '\n' + infobox.rows.map((row) => row.value).join('\n')
+    : ''
+  const parsed = parseWikiLinks(content + infoboxText)
   const refs: Record<string, WikiRef> = {}
   const seen = new Set<string>()
 
@@ -151,12 +161,12 @@ function pickInfobox(input: SidecarInputs): WikiInfobox | null {
 }
 
 export async function buildSidecar(input: SidecarInputs): Promise<SidecarOutputs> {
-  const refs = await resolveRefs(input.content, input.deps)
+  const infobox = pickInfobox(input)
+  const refs = await resolveRefs(input.content, infobox, input.deps)
   const sections = await attachCitations(
     parseSections(input.content),
     input.citationDeclarations,
     input.deps
   )
-  const infobox = pickInfobox(input)
   return { refs, sections, infobox }
 }

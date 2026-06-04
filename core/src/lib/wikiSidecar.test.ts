@@ -153,4 +153,33 @@ describe('buildSidecar', () => {
     })
     expect(result.infobox).toBeNull()
   })
+
+  it('resolves [[wiki:slug]] tokens that appear only inside infobox row values', async () => {
+    // Regression: a wiki whose body never references a sibling wiki but whose
+    // infobox does (e.g. a "Contradicts" row) used to render the raw token
+    // because resolveRefs only walked input.content. The infobox tokens now
+    // contribute to the refs map alongside body tokens.
+    const deps = makeDeps({
+      resolveRef: vi.fn(async (kind, slug) =>
+        kind === 'wiki' && slug === 'other-belief' ? wikiRef('other-belief') : null
+      ),
+    })
+    const infobox: WikiInfobox = {
+      rows: [
+        { label: 'Strength', value: 'provisional', valueKind: 'text' },
+        {
+          label: 'Contradicts',
+          value: '[[wiki:other-belief]]',
+          valueKind: 'ref',
+        },
+      ],
+    }
+    const result = await buildSidecar({
+      content: '# Body with no cross-refs',
+      deps,
+      metadata: { infobox },
+    })
+    expect(result.refs).toEqual({ 'wiki:other-belief': wikiRef('other-belief') })
+    expect(deps.resolveRef).toHaveBeenCalledWith('wiki', 'other-belief')
+  })
 })
