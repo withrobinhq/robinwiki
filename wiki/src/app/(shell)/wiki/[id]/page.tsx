@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useWiki } from "@/hooks/useWiki";
 import { useRegenerateWiki } from "@/hooks/useRegenerateWiki";
 import { useDeleteWiki } from "@/hooks/useDeleteWiki";
+import { useDetailsAnchorOpener } from "@/lib/useDetailsAnchorOpener";
 import { useQueryClient } from "@tanstack/react-query";
 import DestructiveConfirmDialog from "@/components/prompts/DestructiveConfirmDialog";
 import SectionEditor from "@/components/editor/SectionEditor";
@@ -173,6 +174,11 @@ function HtmlWikiBody({
 export default function WikiDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  // Open any collapsed <details> (Citations, Mentioned People) when a
+  // #fragment-<lookupKey> hash targets a row inside one. Safari does
+  // not auto-open <details> on internal-anchor navigation; without
+  // this, clicking a citation footnote silently fails on Safari.
+  useDetailsAnchorOpener();
   const { data: _wiki, isLoading, error } = useWiki(id);
   // Extend generated type with fields added in #128 (bouncerMode, edgeStatus)
   // until the OpenAPI codegen picks them up from the live spec
