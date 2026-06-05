@@ -1,10 +1,10 @@
 import { Hono } from 'hono'
-import { eq, and, desc, isNull } from 'drizzle-orm'
+import { eq, and, desc, isNull, inArray } from 'drizzle-orm'
 import { zValidator } from '@hono/zod-validator'
 import { sessionMiddleware } from '../middleware/session.js'
 import { producer } from '../queue/producer.js'
 import { db } from '../db/client.js'
-import { entries as entriesTable, fragments } from '../db/schema.js'
+import { entries as entriesTable, fragments, edges, people } from '../db/schema.js'
 import { makeLookupKey, parseLookupKey, generateSlug } from '@robin/shared'
 import { resolveEntrySlug } from '../db/slug.js'
 import { computeContentHash, findDuplicateEntry } from '../db/dedup.js'
@@ -137,12 +137,36 @@ entries.get('/:id', async (c) => {
     derivedInfobox: null,
   })
 
+  const authorEdges = await db
+    .select({ dstId: edges.dstId, attrs: edges.attrs })
+    .from(edges)
+    .where(and(eq(edges.srcId, id), eq(edges.edgeType, 'ENTRY_AUTHORED_BY_PERSON'), isNull(edges.deletedAt)))
+
+  const authors: { personKey: string; name: string; role: string }[] = []
+  if (authorEdges.length > 0) {
+    const personKeys = authorEdges.map((e) => e.dstId)
+    const personRows = await db
+      .select({ lookupKey: people.lookupKey, name: people.name })
+      .from(people)
+      .where(inArray(people.lookupKey, personKeys))
+    const personMap = new Map(personRows.map((p) => [p.lookupKey, p.name]))
+    for (const e of authorEdges) {
+      const attrs = e.attrs as Record<string, unknown> | null
+      authors.push({
+        personKey: e.dstId,
+        name: personMap.get(e.dstId) ?? e.dstId,
+        role: typeof attrs?.role === 'string' ? attrs.role : 'byline',
+      })
+    }
+  }
+
   return c.json(
     entryResponseSchema.parse({
       ...entry,
       id: entry.lookupKey,
       refs: sidecar.refs,
       sections: sidecar.sections,
+      authors,
     })
   )
 })

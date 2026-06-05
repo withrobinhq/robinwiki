@@ -54,10 +54,14 @@ export type EntryInfoboxProps = {
   type: string;
   source: string;
   createdAt: string;
+  authors?: Array<{ personKey: string; name: string; role: string }>;
 };
 
-export function EntryInfobox({ type, source, createdAt }: EntryInfoboxProps) {
+export function EntryInfobox({ type, source, createdAt, authors }: EntryInfoboxProps) {
   const rows: { label: string; value: string }[] = [
+    ...(authors && authors.length > 0
+      ? [{ label: "Authors", value: authors.map((a) => a.name).join(", ") }]
+      : []),
     { label: "Type", value: type },
     { label: "Source", value: source },
     { label: "Created", value: createdAt },

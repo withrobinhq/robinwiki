@@ -17,6 +17,9 @@ export const entryResponseSchema = z.object({
   attemptCount: z.number().optional(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
+  authors: z.array(
+    z.object({ personKey: z.string(), name: z.string(), role: z.string() })
+  ).default([]),
 })
 
 export const entryCreatedResponseSchema = entryResponseSchema.extend({

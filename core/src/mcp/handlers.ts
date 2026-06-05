@@ -36,6 +36,7 @@ import type { PeopleExtractionOutput } from '@robin/shared'
 import { resolveOrDrop } from '@robin/agent'
 import { loadAutoAcceptPersons } from '../lib/people-settings.js'
 import { loadPendingPeople } from '../lib/people-settings.js'
+import { applyExplicitAuthors } from '../lib/authorship.js'
 import type { BullMQProducer, ExtractionJob } from '@robin/queue'
 import { resolveEntrySlug, resolveFragmentSlug, resolveWikiSlug } from '../db/slug.js'
 import { computeContentHash, findDuplicateEntry, findDuplicateFragment } from '../db/dedup.js'
@@ -159,6 +160,10 @@ export async function handleLogEntry(
   input: {
     content: string
     source?: 'mcp' | 'api' | 'web'
+    type?: 'thought' | 'article' | 'transcript' | 'email' | 'document'
+    /** Names of people who wrote or said this content. Creates pending Person
+     *  rows and ENTRY_AUTHORED_BY_PERSON edges immediately at capture time. */
+    authors?: string[]
     /**
      * MCP `clientInfo` payload (Stream C / C2). Persisted to
      * `entries.source_client` jsonb. NULL when the caller is the legacy
@@ -205,10 +210,14 @@ export async function handleLogEntry(
       title,
       content: trimmed,
       dedupHash: hash,
-      type: 'thought',
+      type: input.type ?? 'thought',
       source: entrySource,
       sourceClient: input.sourceClient ?? null,
     })
+
+    if (input.authors && input.authors.length > 0) {
+      await applyExplicitAuthors(deps.db, 'raw_source', entryKey, input.authors)
+    }
 
     const job: ExtractionJob = {
       type: 'extraction',
@@ -272,6 +281,9 @@ export async function handleLogFragment(
     threadSlug: string
     title?: string
     tags?: string[]
+    /** Names of people who wrote or said this fragment. Creates pending Person
+     *  rows and FRAGMENT_AUTHORED_BY_PERSON edges immediately at capture time. */
+    authors?: string[]
     /**
      * MCP `clientInfo` payload (Stream C / C2). After Stream V the
      * fragments table carries its own `source_client text` column
@@ -487,6 +499,10 @@ export async function handleLogFragment(
           attrs,
         })
         .onConflictDoNothing()
+    }
+
+    if (input.authors && input.authors.length > 0) {
+      await applyExplicitAuthors(deps.db, 'fragment', fragKey, input.authors)
     }
 
     // Stream P: new persons are inserted by `resolveOrDrop` via the

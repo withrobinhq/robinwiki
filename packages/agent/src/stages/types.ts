@@ -21,6 +21,7 @@ export interface ExtractionInput {
   entryKey: string
   source: string
   jobId: string
+  entryType?: string
 }
 
 export interface LinkingInput {
@@ -239,5 +240,13 @@ export interface EntityExtractResult {
     verified: boolean
     /** Stream P quarantine status, surfaced for telemetry only. */
     status?: 'verified' | 'pending'
+  }>
+  /** Elfie-detected byline and quoted mentions. Worker uses these to create
+   *  ENTRY_AUTHORED_BY_PERSON (byline) and FRAGMENT_AUTHORED_BY_PERSON (quoted) edges. */
+  authorshipMentions: Array<{
+    personKey: string
+    role: 'byline' | 'quoted'
+    sourceSpan: string
+    mention: string
   }>
 }

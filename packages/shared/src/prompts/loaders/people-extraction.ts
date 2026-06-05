@@ -6,11 +6,13 @@ import type { PromptResult } from '../types.js'
 const inputSchema = z.object({
   content: z.string(),
   knownPeople: z.string().optional(),
+  entryType: z.string().optional(),
 })
 
 export function loadPeopleExtractionSpec(vars: {
   content: string
   knownPeople?: string
+  entryType?: string
 }): PromptResult {
   const validated = inputSchema.parse(vars)
   const spec = loadSpec('people-extraction.yaml')

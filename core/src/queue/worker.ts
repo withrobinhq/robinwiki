@@ -61,6 +61,11 @@ import {
   loadAutoAcceptPersons,
   insertExtractedPerson,
 } from '../lib/people-settings.js'
+import {
+  applyThoughtAuthorship,
+  applyEmailAuthorship,
+  applyElfieAuthorship,
+} from '../lib/authorship.js'
 import { producer } from './producer.js'
 import { processRegenJob, processRegenBatchJob } from './regen-worker.js'
 import { processEmbeddingRetryJob } from './embedding-retry-worker.js'
@@ -435,13 +440,37 @@ async function processExtractionJob(job: ExtractionJob): Promise<JobResult> {
     },
   }
 
+  // Look up entry type from DB — the entry is pre-created by the route/MCP
+  // handler before the job is enqueued, so this is always safe.
+  const [entryRow] = await db
+    .select({ type: entries.type })
+    .from(entries)
+    .where(eq(entries.lookupKey, job.entryKey))
+    .limit(1)
+  const entryType = entryRow?.type ?? 'thought'
+
   try {
     const result = await runExtraction(deps, {
       entryKey: job.entryKey,
       content: job.content,
       source: job.source,
       jobId: job.jobId,
+      entryType,
     })
+
+    // Authorship edges — fail-open so a broken authorship lookup never
+    // poisons an otherwise-successful extraction job.
+    try {
+      if (entryType === 'thought') {
+        await applyThoughtAuthorship(db, job.entryKey, result.fragmentKeys)
+      } else if (entryType === 'email') {
+        await applyEmailAuthorship(db, job.entryKey, job.content, result.fragmentKeys)
+      } else {
+        await applyElfieAuthorship(db, job.entryKey, result.authorshipMentions, result.fragmentContents)
+      }
+    } catch (authorshipErr) {
+      log.warn({ jobId: job.jobId, entryKey: job.entryKey, err: authorshipErr }, 'authorship edge creation failed (non-fatal)')
+    }
 
     await db
       .update(entries)

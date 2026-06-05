@@ -100,12 +100,14 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
       inputSchema: {
         content: z.string().describe('The text content to log'),
         source: z.enum(['mcp', 'api', 'web']).optional().describe('Origin of the entry'),
+        type: z.enum(['thought', 'article', 'transcript', 'email', 'document']).optional().describe('Content type — defaults to thought'),
+        authors: z.array(z.string()).optional().describe('Names of the people who wrote or said this content (e.g. ["Sarah Mwangi", "Chris Okoth"])'),
       },
     },
-    async ({ content, source }, extra) => {
+    async ({ content, source, type, authors }, extra) => {
       return handleLogEntry(
         deps,
-        { content, source, sourceClient: (deps.getClientInfo?.() as { [key: string]: unknown; name: string; version?: string } | undefined) ?? null },
+        { content, source, type, authors, sourceClient: (deps.getClientInfo?.() as { [key: string]: unknown; name: string; version?: string } | undefined) ?? null },
         extra.authInfo?.clientId as string
       )
     }
@@ -125,12 +127,13 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
           .describe('Exact wiki slug to attach to (from list_wikis or get_wiki)'),
         title: z.string().optional().describe('Fragment title (derived from content if omitted)'),
         tags: z.array(z.string()).optional().describe('Optional tags'),
+        authors: z.array(z.string()).optional().describe('Names of the people who wrote or said this (e.g. ["Sarah Mwangi"])'),
       },
     },
-    async ({ content, threadSlug, title, tags }, extra) => {
+    async ({ content, threadSlug, title, tags, authors }, extra) => {
       return handleLogFragment(
         deps,
-        { content, threadSlug, title, tags, sourceClient: (deps.getClientInfo?.() as { [key: string]: unknown; name: string; version?: string } | undefined) ?? null },
+        { content, threadSlug, title, tags, authors, sourceClient: (deps.getClientInfo?.() as { [key: string]: unknown; name: string; version?: string } | undefined) ?? null },
         extra.authInfo?.clientId as string
       )
     }

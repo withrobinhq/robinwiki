@@ -24,6 +24,7 @@ type FragmentData = Omit<FragmentWithContentResponseSchema, "entryId"> & {
   entryId: string | null;
   backlinks?: Array<{ id: string; name: string; type: string; bouncerMode?: string }>;
   relatedFragments?: Array<{ id: string; slug: string; title: string; similarity: number }>;
+  authors?: Array<{ personKey: string; name: string; role: string }>;
 };
 
 function formatDate(iso: string) {
@@ -68,6 +69,13 @@ function FragmentInfobox({ fragment }: { fragment: FragmentData }) {
         alignSelf: "flex-start",
       }}
     >
+      {fragment.authors && fragment.authors.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <p style={label}>Authors</p>
+          <p style={body}>{fragment.authors.map((a) => a.name).join(", ")}</p>
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <p style={label}>Type</p>
         <p style={body}>{fragment.type}</p>
@@ -399,6 +407,7 @@ function FragmentReviewActions({ fragmentId, backlinks }: { fragmentId: string; 
 export default function FragmentPage() {
   const { id } = useParams<{ id: string }>();
   const { data: fragment, isLoading, error } = useFragment(id);
+  const queryClient = useQueryClient();
 
   const bodyStyle = {
     ...T.bodySmall,
@@ -427,7 +436,6 @@ export default function FragmentPage() {
 
   const frag = fragment as FragmentData;
   const backlinks = frag.backlinks ?? [];
-  const queryClient = useQueryClient();
 
   const handleSaveToApi = async (data: { title: string; chipLabel: string; content: string }) => {
     try {
