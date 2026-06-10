@@ -590,9 +590,13 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
     // lastRebuiltAt so the next regen takes the first-regen full-synthesis
     // path (regen.ts) instead of the empty-partition short-circuit, which
     // would otherwise leave the old type's content in place untouched.
+    // Also stamp dirtySince so editorialStateOf reads 'learning' (new
+    // content awaiting regen) rather than 'empty' (never regenned) while
+    // the old content is still on display.
     if (body.type !== existing.type) {
       updates.state = 'PENDING'
       updates.lastRebuiltAt = null
+      updates.dirtySince = new Date()
     }
   }
   if (body.prompt != null) {
@@ -603,6 +607,7 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
     if (body.prompt !== existing.prompt) {
       updates.state = 'PENDING'
       updates.lastRebuiltAt = null
+      updates.dirtySince = new Date()
     }
   }
   // Document-structure override (#244). Sibling of `prompt`; same PENDING
@@ -613,6 +618,7 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
     if (body.structure !== existing.structure) {
       updates.state = 'PENDING'
       updates.lastRebuiltAt = null
+      updates.dirtySince = new Date()
     }
   }
   // T4-bundle (v0.2.2): autoregen flag now editable via the unified PUT body.

@@ -361,6 +361,9 @@ describe('PUT /wikis/:id — agent_schema refresh on description change (#69 D6,
 // take the cached-partition path (regen.ts) and short-circuit on an empty
 // diff, leaving the old type's content in place. Clearing lastRebuiltAt
 // routes the next regen through the first-regen full-synthesis path instead.
+// dirtySince is stamped alongside it so editorialStateOf reads 'learning'
+// (new content awaiting regen) rather than 'empty' (never regenned) while
+// the old content is still on display.
 
 describe('PUT /wikis/:id — type/prompt/structure changes reset lastRebuiltAt', () => {
   beforeEach(() => {
@@ -388,6 +391,7 @@ describe('PUT /wikis/:id — type/prompt/structure changes reset lastRebuiltAt',
     expect(setArg.type).toBe('log')
     expect(setArg.state).toBe('PENDING')
     expect(setArg.lastRebuiltAt).toBeNull()
+    expect(setArg.dirtySince).toBeInstanceOf(Date)
   })
 
   it('marks PENDING and clears lastRebuiltAt when prompt changes', async () => {
@@ -408,6 +412,7 @@ describe('PUT /wikis/:id — type/prompt/structure changes reset lastRebuiltAt',
     const setArg = updateChain.set.mock.calls[0][0]
     expect(setArg.state).toBe('PENDING')
     expect(setArg.lastRebuiltAt).toBeNull()
+    expect(setArg.dirtySince).toBeInstanceOf(Date)
   })
 
   it('marks PENDING and clears lastRebuiltAt when structure changes', async () => {
@@ -428,9 +433,10 @@ describe('PUT /wikis/:id — type/prompt/structure changes reset lastRebuiltAt',
     const setArg = updateChain.set.mock.calls[0][0]
     expect(setArg.state).toBe('PENDING')
     expect(setArg.lastRebuiltAt).toBeNull()
+    expect(setArg.dirtySince).toBeInstanceOf(Date)
   })
 
-  it('does not touch state or lastRebuiltAt when type is set to its current value', async () => {
+  it('does not touch state, lastRebuiltAt, or dirtySince when type is set to its current value', async () => {
     const existing = makeWiki({ type: 'log', lastRebuiltAt: new Date() })
     const updated = makeWiki({ type: 'log' })
     mockDbSelect
@@ -450,5 +456,6 @@ describe('PUT /wikis/:id — type/prompt/structure changes reset lastRebuiltAt',
     const setArg = updateChain.set.mock.calls[0][0]
     expect(setArg.state).toBeUndefined()
     expect(setArg.lastRebuiltAt).toBeUndefined()
+    expect(setArg.dirtySince).toBeUndefined()
   })
 })
