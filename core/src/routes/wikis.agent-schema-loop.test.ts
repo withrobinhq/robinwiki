@@ -353,3 +353,102 @@ describe('PUT /wikis/:id — agent_schema refresh on description change (#69 D6,
     expect(optionsArg.alsoStaleHyde).toBe(true)
   })
 })
+
+// ── PUT /wikis/:id — type/prompt/structure changes reset lastRebuiltAt ─────
+//
+// A type/prompt/structure change marks the wiki PENDING so the next regen
+// rebuilds it. Without also clearing lastRebuiltAt, that regen would still
+// take the cached-partition path (regen.ts) and short-circuit on an empty
+// diff, leaving the old type's content in place. Clearing lastRebuiltAt
+// routes the next regen through the first-regen full-synthesis path instead.
+
+describe('PUT /wikis/:id — type/prompt/structure changes reset lastRebuiltAt', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('marks PENDING and clears lastRebuiltAt when type changes', async () => {
+    const existing = makeWiki({ type: 'decision', lastRebuiltAt: new Date() })
+    const updated = makeWiki({ type: 'log', state: 'PENDING', lastRebuiltAt: null })
+    mockDbSelect
+      .mockReturnValueOnce(selectChainMock([existing]))
+      .mockReturnValueOnce(selectChainMock([{ slug: 'log' }]))
+    const updateChain = updateChainMock([updated])
+    mockDbUpdate.mockReturnValueOnce(updateChain)
+
+    const app = createApp()
+    const res = await app.request('/wikis/wiki01TEST', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'log' }),
+    })
+
+    expect(res.status).toBe(200)
+    const setArg = updateChain.set.mock.calls[0][0]
+    expect(setArg.type).toBe('log')
+    expect(setArg.state).toBe('PENDING')
+    expect(setArg.lastRebuiltAt).toBeNull()
+  })
+
+  it('marks PENDING and clears lastRebuiltAt when prompt changes', async () => {
+    const existing = makeWiki({ prompt: 'old prompt', lastRebuiltAt: new Date() })
+    const updated = makeWiki({ prompt: 'new prompt', state: 'PENDING', lastRebuiltAt: null })
+    mockDbSelect.mockReturnValueOnce(selectChainMock([existing]))
+    const updateChain = updateChainMock([updated])
+    mockDbUpdate.mockReturnValueOnce(updateChain)
+
+    const app = createApp()
+    const res = await app.request('/wikis/wiki01TEST', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'new prompt' }),
+    })
+
+    expect(res.status).toBe(200)
+    const setArg = updateChain.set.mock.calls[0][0]
+    expect(setArg.state).toBe('PENDING')
+    expect(setArg.lastRebuiltAt).toBeNull()
+  })
+
+  it('marks PENDING and clears lastRebuiltAt when structure changes', async () => {
+    const existing = makeWiki({ structure: 'old skeleton', lastRebuiltAt: new Date() })
+    const updated = makeWiki({ structure: 'new skeleton', state: 'PENDING', lastRebuiltAt: null })
+    mockDbSelect.mockReturnValueOnce(selectChainMock([existing]))
+    const updateChain = updateChainMock([updated])
+    mockDbUpdate.mockReturnValueOnce(updateChain)
+
+    const app = createApp()
+    const res = await app.request('/wikis/wiki01TEST', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ structure: 'new skeleton' }),
+    })
+
+    expect(res.status).toBe(200)
+    const setArg = updateChain.set.mock.calls[0][0]
+    expect(setArg.state).toBe('PENDING')
+    expect(setArg.lastRebuiltAt).toBeNull()
+  })
+
+  it('does not touch state or lastRebuiltAt when type is set to its current value', async () => {
+    const existing = makeWiki({ type: 'log', lastRebuiltAt: new Date() })
+    const updated = makeWiki({ type: 'log' })
+    mockDbSelect
+      .mockReturnValueOnce(selectChainMock([existing]))
+      .mockReturnValueOnce(selectChainMock([{ slug: 'log' }]))
+    const updateChain = updateChainMock([updated])
+    mockDbUpdate.mockReturnValueOnce(updateChain)
+
+    const app = createApp()
+    const res = await app.request('/wikis/wiki01TEST', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'log' }),
+    })
+
+    expect(res.status).toBe(200)
+    const setArg = updateChain.set.mock.calls[0][0]
+    expect(setArg.state).toBeUndefined()
+    expect(setArg.lastRebuiltAt).toBeUndefined()
+  })
+})

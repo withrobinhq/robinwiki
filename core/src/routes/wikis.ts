@@ -586,19 +586,34 @@ wikisRouter.put('/:id', zValidator('json', updateWikiBodySchema, validationHook)
   if (body.description != null) updates.description = body.description
   if (body.type != null) {
     updates.type = body.type
-    // Type change affects wiki generation — mark PENDING so regen rebuilds with new type's prompt
-    if (body.type !== existing.type) updates.state = 'PENDING'
+    // Type change affects wiki generation — mark PENDING and clear
+    // lastRebuiltAt so the next regen takes the first-regen full-synthesis
+    // path (regen.ts) instead of the empty-partition short-circuit, which
+    // would otherwise leave the old type's content in place untouched.
+    if (body.type !== existing.type) {
+      updates.state = 'PENDING'
+      updates.lastRebuiltAt = null
+    }
   }
   if (body.prompt != null) {
     updates.prompt = body.prompt
-    // Prompt change affects wiki generation — mark PENDING so regen rebuilds with new prompt
-    if (body.prompt !== existing.prompt) updates.state = 'PENDING'
+    // Prompt change affects wiki generation — mark PENDING and clear
+    // lastRebuiltAt so the next regen rebuilds with the new prompt via
+    // full synthesis (see type-change comment above).
+    if (body.prompt !== existing.prompt) {
+      updates.state = 'PENDING'
+      updates.lastRebuiltAt = null
+    }
   }
   // Document-structure override (#244). Sibling of `prompt`; same PENDING
-  // semantics on change so the next regen rebuilds against the new skeleton.
+  // + lastRebuiltAt-reset semantics on change so the next regen rebuilds
+  // against the new skeleton via full synthesis.
   if (body.structure != null) {
     updates.structure = body.structure
-    if (body.structure !== existing.structure) updates.state = 'PENDING'
+    if (body.structure !== existing.structure) {
+      updates.state = 'PENDING'
+      updates.lastRebuiltAt = null
+    }
   }
   // T4-bundle (v0.2.2): autoregen flag now editable via the unified PUT body.
   if (body.autoregen != null) updates.autoregen = body.autoregen
