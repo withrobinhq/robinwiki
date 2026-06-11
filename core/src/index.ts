@@ -5,6 +5,7 @@ import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { cors } from 'hono/cors'
 import { sessionMiddleware } from './middleware/session.js'
+import { getAllowedOrigins } from './lib/allowed-origins.js'
 import { httpLogger } from './middleware/http-logger.js'
 import { logger } from './lib/logger.js'
 import { auth } from './auth.js'
@@ -105,13 +106,6 @@ app.use('*', httpLogger())
 //     WIKI_ORIGIN is unset, so the localhost default below is only ever
 //     used in non-prod where reflect mode supersedes the allowlist anyway.
 const isProd = process.env.NODE_ENV === 'production'
-const allowedOrigins = new Set(
-  (process.env.WIKI_ORIGIN ?? 'http://localhost:8080,http://localhost:3001')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean),
-)
-allowedOrigins.add(process.env.SERVER_PUBLIC_URL ?? 'http://localhost:3000')
 
 app.use(
   '*',
@@ -119,7 +113,7 @@ app.use(
     origin: (origin) => {
       if (!origin) return null
       if (!isProd) return origin
-      return allowedOrigins.has(origin) ? origin : null
+      return getAllowedOrigins().has(origin) ? origin : null
     },
     credentials: true,
   }),

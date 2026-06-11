@@ -221,7 +221,7 @@ describe('CORS strict-mode in production rejects unknown origins', () => {
     // We assert the literal shape so a future refactor that drops the
     // strict-deny branch trips this test.
     expect(indexSrc).toMatch(/if\s*\(!isProd\)\s*return\s+origin/)
-    expect(indexSrc).toMatch(/return\s+allowedOrigins\.has\(origin\)\s*\?\s*origin\s*:\s*null/)
+    expect(indexSrc).toMatch(/return\s+getAllowedOrigins\(\)\.has\(origin\)\s*\?\s*origin\s*:\s*null/)
   })
 })
 
