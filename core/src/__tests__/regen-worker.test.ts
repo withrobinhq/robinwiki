@@ -102,7 +102,7 @@ describe('processRegenJob — wikiRegenLock wrapping (Wave 1)', () => {
 
     const params = mockUsing.mock.calls[0][0]
     expect(params.key).toBe('wiki01TEST')
-    expect(params.fromState).toBe('PENDING')
+    expect(params.fromState).toEqual(['PENDING', 'RESOLVED'])
     expect(params.toState).toBe('LINKING')
     expect(params.successState).toBe('RESOLVED')
     expect(params.failureState).toBe('PENDING')

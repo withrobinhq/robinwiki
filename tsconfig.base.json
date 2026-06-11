@@ -12,6 +12,7 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "baseUrl": ".",
     "paths": {
       "@robin/agent": ["packages/agent/src/index.ts"],
       "@robin/graph": ["packages/graph/src/index.ts"],

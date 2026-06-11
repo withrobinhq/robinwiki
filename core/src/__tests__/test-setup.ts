@@ -13,6 +13,23 @@ export const TEST_DB_URL = 'postgresql://robin:@localhost:5432/robin_test'
 const ADMIN_DB_URL = 'postgresql://robin:@localhost:5432/robin_dev'
 
 /**
+ * Returns true if the test database is reachable (used with describe.skipIf).
+ * Performs a single lightweight connection attempt with a 3-second timeout so
+ * CI without Postgres skips DB-integration suites cleanly instead of failing.
+ */
+export async function canConnectToTestDb(): Promise<boolean> {
+  const sql = postgres(TEST_DB_URL, { max: 1, connect_timeout: 3, idle_timeout: 1 })
+  try {
+    await sql`SELECT 1`
+    return true
+  } catch {
+    return false
+  } finally {
+    await sql.end({ timeout: 1 }).catch(() => {})
+  }
+}
+
+/**
  * Creates the robin_test database if it doesn't already exist.
  * Connects to robin_dev to run admin commands.
  */

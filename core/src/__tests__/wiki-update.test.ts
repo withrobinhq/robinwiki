@@ -28,6 +28,59 @@ vi.mock('../db/schema.js', () => ({
     createdAt: 'wikis.created_at',
     updatedAt: 'wikis.updated_at',
   },
+  // db/locks.js + other transitive wikis.ts imports need these at module load.
+  entries: {
+    lookupKey: 'entries.lookup_key',
+    state: 'entries.state',
+    lockedBy: 'entries.locked_by',
+    lockedAt: 'entries.locked_at',
+  },
+  fragments: {
+    lookupKey: 'fragments.lookup_key',
+    state: 'fragments.state',
+    lockedBy: 'fragments.locked_by',
+    lockedAt: 'fragments.locked_at',
+  },
+  edges: {
+    id: 'edges.id',
+    srcType: 'edges.src_type',
+    srcId: 'edges.src_id',
+    dstType: 'edges.dst_type',
+    dstId: 'edges.dst_id',
+    edgeType: 'edges.edge_type',
+    deletedAt: 'edges.deleted_at',
+  },
+  wikiTypes: {
+    slug: 'wiki_types.slug',
+    prompt: 'wiki_types.prompt',
+    userModified: 'wiki_types.user_modified',
+  },
+  people: {
+    lookupKey: 'people.lookup_key',
+    name: 'people.name',
+  },
+  auditLog: {
+    entityId: 'audit_log.entity_id',
+    createdAt: 'audit_log.created_at',
+  },
+  edits: {
+    id: 'edits.id',
+    objectType: 'edits.object_type',
+    objectId: 'edits.object_id',
+    timestamp: 'edits.timestamp',
+    type: 'edits.type',
+    content: 'edits.content',
+    source: 'edits.source',
+    diff: 'edits.diff',
+  },
+  groupWikis: {
+    wikiId: 'group_wikis.wiki_id',
+    groupId: 'group_wikis.group_id',
+  },
+  groups: {
+    id: 'groups.id',
+    name: 'groups.name',
+  },
 }))
 
 vi.mock('../queue/producer.js', () => ({
@@ -88,8 +141,14 @@ function makeWiki(overrides: Record<string, unknown> = {}) {
 
 function selectChainMock(rows: unknown[]) {
   const chain: Record<string, any> = {}
+  // biome-ignore lint/suspicious/noThenProperty: Drizzle thenable mock
+  chain.then = (resolve: (v: unknown[]) => unknown) => Promise.resolve(rows).then(resolve)
   chain.from = vi.fn().mockReturnValue(chain)
-  chain.where = vi.fn().mockResolvedValue(rows)
+  chain.where = vi.fn().mockReturnValue(chain)
+  chain.limit = vi.fn().mockResolvedValue(rows)
+  chain.orderBy = vi.fn().mockReturnValue(chain)
+  chain.leftJoin = vi.fn().mockReturnValue(chain)
+  chain.innerJoin = vi.fn().mockReturnValue(chain)
   return chain
 }
 
@@ -112,7 +171,9 @@ describe('PUT /wikis/:id — DB update', () => {
     const existing = makeWiki()
     const updated = makeWiki({ name: 'New Name', slug: 'new-name', updatedAt: new Date() })
 
-    mockDbSelect.mockReturnValue(selectChainMock([existing]))
+    // First select: wiki lookup. Subsequent selects: slug collision check → empty = no collision.
+    mockDbSelect.mockReturnValueOnce(selectChainMock([existing]))
+    mockDbSelect.mockReturnValue(selectChainMock([]))
     mockDbUpdate.mockReturnValue(updateChainMock([updated]))
 
     const app = createApp()
@@ -150,7 +211,9 @@ describe('PUT /wikis/:id — DB update', () => {
     const existing = makeWiki()
     const updated = makeWiki({ name: 'Renamed', slug: 'renamed', updatedAt: new Date() })
 
-    mockDbSelect.mockReturnValue(selectChainMock([existing]))
+    // First select: wiki lookup. Subsequent: slug collision check → no collision.
+    mockDbSelect.mockReturnValueOnce(selectChainMock([existing]))
+    mockDbSelect.mockReturnValue(selectChainMock([]))
     const updateChain = updateChainMock([updated])
     mockDbUpdate.mockReturnValue(updateChain)
 

@@ -30,16 +30,23 @@ export interface WikiLinkResult {
 /** Priority order for unqualified wiki-link resolution */
 const RESOLUTION_PRIORITY = ['wiki', 'person', 'fragment', 'entry'] as const
 
+/** Legacy type aliases: maps old qualified-link prefixes to current type names */
+const TYPE_ALIASES: Record<string, string> = {
+  thread: 'wiki',
+}
+
 /**
  * Parse wiki-links from body text. Pure function, no DB access.
  * Deduplicates by slug+typeHint combination.
+ * Legacy qualifiers (e.g. [[thread:x]]) are mapped to their current type via TYPE_ALIASES.
  */
 export function parseWikiLinks(text: string): WikiLinkParsed[] {
   const seen = new Set<string>()
   const results: WikiLinkParsed[] = []
 
   for (const match of text.matchAll(WIKI_LINK_RE)) {
-    const typeHint = match[1] || undefined
+    const rawType = match[1] || undefined
+    const typeHint = rawType !== undefined ? (TYPE_ALIASES[rawType] ?? rawType) : undefined
     const slug = match[2]
     const dedupKey = `${typeHint ?? ''}:${slug}`
 
@@ -54,7 +61,7 @@ export function parseWikiLinks(text: string): WikiLinkParsed[] {
 
 /**
  * Resolve parsed wiki-links against a lookup function.
- * For unqualified links, tries types in priority order: thread > person > fragment > entry.
+ * For unqualified links, tries types in priority order: wiki > person > fragment > entry.
  * For qualified links ([[type:slug]]), tries only the specified type.
  */
 export async function resolveWikiLinks(
@@ -66,12 +73,13 @@ export async function resolveWikiLinks(
 
   for (const link of parsed) {
     if (link.typeHint) {
-      // Qualified: try only the specified type
+      // Qualified: try only the specified (possibly aliased) type
       const result = await lookupFn(link.slug, link.typeHint)
       if (result) {
         resolved.push({ slug: link.slug, type: result.type, key: result.key })
       } else {
-        broken.push(`${link.typeHint}:${link.slug}`)
+        // Preserve the original raw qualifier in the broken label (e.g. "thread:x" not "wiki:x")
+        broken.push(link.raw.slice(2, -2))
       }
     } else {
       // Unqualified: try types in priority order

@@ -9,8 +9,13 @@ import {
   createTestUser,
   createTestVault,
   clearTestData,
+  canConnectToTestDb,
 } from './test-setup.js'
 import { createWikiLookupFn } from '../lib/wiki-lookup.js'
+
+const dbAvailable = await canConnectToTestDb()
+
+describe.skipIf(!dbAvailable)('Wiki Lookup (LINK-01)', () => {
 
 let db: ReturnType<typeof getTestDb>['db']
 let sqlConn: ReturnType<typeof postgres>
@@ -35,8 +40,7 @@ afterEach(async () => {
   await clearTestData(db)
 })
 
-describe('Wiki Lookup (LINK-01)', () => {
-  describe('createWikiLookupFn', () => {
+describe('createWikiLookupFn', () => {
     it('returns matching thread by slug and userId', async () => {
       await db.insert(wikis).values({
         id: 'thread-001',

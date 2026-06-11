@@ -70,28 +70,35 @@ vi.mock('../db/client.js', () => {
   }
 })
 
-vi.mock('../db/schema.js', () => ({
-  wikis: {
-    lookupKey: 'wikis.lookupKey',
-    deletedAt: 'wikis.deletedAt',
-    autoregen: 'wikis.autoregen',
-    dirtySince: 'wikis.dirtySince',
-    state: 'wikis.state',
-    updatedAt: 'wikis.updatedAt',
-    lastRebuiltAt: 'wikis.lastRebuiltAt',
-  },
-  edges: {
-    dstId: 'edges.dstId',
-    edgeType: 'edges.edgeType',
-    deletedAt: 'edges.deletedAt',
-    createdAt: 'edges.createdAt',
-  },
-  fragments: {
-    lookupKey: 'fragments.lookupKey',
-    deletedAt: 'fragments.deletedAt',
-    embedding: 'fragments.embedding',
-  },
-}))
+// Spread the real schema so every table export is present for transitive
+// imports (db/locks.ts needs entries + fragments, lib/search.ts needs people).
+// Only the tables actively queried by the regen batch worker need sentinels.
+vi.mock('../db/schema.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../db/schema.js')>()
+  return {
+    ...actual,
+    wikis: {
+      lookupKey: 'wikis.lookupKey',
+      deletedAt: 'wikis.deletedAt',
+      autoregen: 'wikis.autoregen',
+      dirtySince: 'wikis.dirtySince',
+      state: 'wikis.state',
+      updatedAt: 'wikis.updatedAt',
+      lastRebuiltAt: 'wikis.lastRebuiltAt',
+    },
+    edges: {
+      dstId: 'edges.dstId',
+      edgeType: 'edges.edgeType',
+      deletedAt: 'edges.deletedAt',
+      createdAt: 'edges.createdAt',
+    },
+    fragments: {
+      lookupKey: 'fragments.lookupKey',
+      deletedAt: 'fragments.deletedAt',
+      embedding: 'fragments.embedding',
+    },
+  }
+})
 
 const { processRegenBatchJob } = await import('./regen-worker.js')
 

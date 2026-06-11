@@ -163,9 +163,14 @@ describe('runLinking edge-attr citation spans', () => {
       jobId: 'job-1',
     })
 
-    expect(insertEdge).toHaveBeenCalledTimes(2)
+    // dfc33d7 (feat(edges): write WIKI_RELATED_TO_WIKI edges from Marcel secondary
+    // candidates above 0.4) added a third insertEdge call for the secondary
+    // wiki above RELATED_THRESHOLD. Two FRAGMENT_IN_WIKI + one WIKI_RELATED_TO_WIKI.
+    expect(insertEdge).toHaveBeenCalledTimes(3)
     const byWiki = new Map(
-      insertEdge.mock.calls.map((c) => [c[0].dstId, c[0].attrs])
+      insertEdge.mock.calls
+        .filter((c) => c[0].edgeType === 'FRAGMENT_IN_WIKI')
+        .map((c) => [c[0].dstId, c[0].attrs])
     )
     expect(byWiki.get('wiki-top')).toEqual({
       score: 0.95,

@@ -22,7 +22,12 @@ import {
   createTestUser,
   createTestVault,
   clearTestData,
+  canConnectToTestDb,
 } from './test-setup.js'
+
+const dbAvailable = await canConnectToTestDb()
+
+describe.skipIf(!dbAvailable)('schema DB integration', () => {
 
 let db: ReturnType<typeof getTestDb>['db']
 let sqlConn: ReturnType<typeof postgres>
@@ -548,3 +553,5 @@ describe('REQ-SCH-04: auth tables preserved', () => {
     expect(cols).toContain('expires_at')
   })
 })
+
+}) // end describe.skipIf(!dbAvailable)

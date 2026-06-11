@@ -44,22 +44,27 @@ function makeFragment(overrides: Partial<FragmentResult> = {}): FragmentResult {
   }
 }
 
+// vaultId was stripped from the persist pipeline in 096b835
+// (refactor: strip vaultId from extraction/linking pipeline and agent factory).
 const baseInput = {
   entryKey: 'entry01HTEST1234567890ABCDEF',
   entryContent: 'Had coffee with Sarah at the park. Bob said hello.',
-  vaultId: 'vault1',
   source: 'web',
   primaryTopic: 'Coffee meetup',
   jobId: 'job1',
 }
 
 // Block network calls to OpenRouter in embedText — return null gracefully.
+// embedText calls res.text() on !res.ok responses (added alongside the
+// EmbedFailure diagnostics), so the mock must include text() to avoid
+// falling into the catch branch and noisy stderr output.
 beforeEach(() => {
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
+      text: async () => '',
       json: async () => ({}),
     })
   )
@@ -169,7 +174,7 @@ describe('persist — Postgres inserts', () => {
     expect(deps.insertEntry).toHaveBeenCalledTimes(1)
     const entryRow = (deps.insertEntry as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(entryRow.lookupKey).toBe(baseInput.entryKey)
-    expect(entryRow.vaultId).toBe('vault1')
+    // vaultId removed from entry row in 096b835
     expect(entryRow.state).toBe('PENDING')
     expect(entryRow.slug).toBeTruthy()
     expect(entryRow.title).toBe(baseInput.primaryTopic)
@@ -186,7 +191,7 @@ describe('persist — Postgres inserts', () => {
     expect(deps.insertFragment).toHaveBeenCalledTimes(2)
     const calls = (deps.insertFragment as ReturnType<typeof vi.fn>).mock.calls
     for (const [row] of calls) {
-      expect(row.vaultId).toBe('vault1')
+      // vaultId removed from fragment row in 096b835
       expect(row.entryId).toBe(baseInput.entryKey)
       expect(row.state).toBe('PENDING')
     }
@@ -287,13 +292,11 @@ describe('persist — Postgres inserts', () => {
     const edgeCalls = (deps.insertEdge as ReturnType<typeof vi.fn>).mock.calls.map(
       (c) => c[0] as Record<string, unknown>
     )
-    const entryInVault = edgeCalls.filter((e) => e.edgeType === 'ENTRY_IN_VAULT')
+    // ENTRY_IN_VAULT and FRAGMENT_IN_VAULT were removed in 096b835
+    // (refactor: strip vaultId from extraction/linking pipeline and agent factory).
     const entryHasFragment = edgeCalls.filter((e) => e.edgeType === 'ENTRY_HAS_FRAGMENT')
-    const fragmentInVault = edgeCalls.filter((e) => e.edgeType === 'FRAGMENT_IN_VAULT')
 
-    expect(entryInVault).toHaveLength(1)
     expect(entryHasFragment).toHaveLength(2)
-    expect(fragmentInVault).toHaveLength(2)
   })
 
   it("ENTRY_HAS_FRAGMENT edges write with src_type='raw_source'", async () => {

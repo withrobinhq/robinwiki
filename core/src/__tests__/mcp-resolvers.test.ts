@@ -95,9 +95,12 @@ import {
   createTestUser,
   createTestVault,
   clearTestData,
+  canConnectToTestDb,
 } from './test-setup.js'
 
-describe('MCP resolvers (real DB)', () => {
+const dbAvailable = await canConnectToTestDb()
+
+describe.skipIf(!dbAvailable)('MCP resolvers (real DB)', () => {
   let db: ReturnType<typeof getTestDb>['db']
   let sqlConn: ReturnType<typeof postgres>
   let testUserId: string

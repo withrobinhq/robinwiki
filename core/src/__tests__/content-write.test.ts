@@ -112,7 +112,13 @@ function createApp() {
 
 function chainMock(finalValue: unknown) {
   const chain: Record<string, any> = {}
+  // Make the chain itself thenable so callers that await it directly
+  // (e.g. the innerJoin path that ends with .where()) get finalValue,
+  // while callers that chain .limit() afterwards still resolve correctly.
+  // biome-ignore lint/suspicious/noThenProperty: intentional thenable mock for await interop
+  chain.then = (resolve: (v: unknown) => unknown) => Promise.resolve(finalValue).then(resolve)
   chain.from = vi.fn().mockReturnValue(chain)
+  chain.innerJoin = vi.fn().mockReturnValue(chain)
   chain.where = vi.fn().mockReturnValue(chain)
   chain.limit = vi.fn().mockResolvedValue(finalValue)
   chain.set = vi.fn().mockReturnValue(chain)

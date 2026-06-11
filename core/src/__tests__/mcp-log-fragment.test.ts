@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
+
+// handlers.js → openrouter-config.js → db/client.ts throws when DATABASE_URL
+// is absent. The handlers use DI (deps.db), not the global db singleton, so
+// a stub here has no effect on the real DB queries in this test.
+vi.mock('../db/client.js', () => ({ db: {} }))
+
 import { handleLogFragment, type McpServerDeps } from '../mcp/handlers.js'
 import {
   fragments as fragmentsTable,
@@ -15,8 +21,13 @@ import {
   createTestUser,
   createTestVault,
   clearTestData,
+  canConnectToTestDb,
 } from './test-setup.js'
 import type postgres from 'postgres'
+
+const dbAvailable = await canConnectToTestDb()
+
+describe.skipIf(!dbAvailable)('handleLogFragment DB integration', () => {
 
 // ─── Test Setup ───
 
@@ -325,3 +336,5 @@ describe('handleLogFragment', () => {
     expect(personRows[0].state).toBe('RESOLVED')
   })
 })
+
+}) // end describe.skipIf(!dbAvailable)

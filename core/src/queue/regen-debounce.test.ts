@@ -67,6 +67,12 @@ vi.mock('../db/client.js', () => {
 })
 
 vi.mock('../db/schema.js', () => ({
+  // entries is required by locks.ts (entryLock) which is imported by regen-worker.ts
+  // Added after 8c30af3 (refactor(db): m2 — wire @robin/caslock) introduced locks.ts
+  entries: {
+    lookupKey: 'entries.lookupKey',
+    state: 'entries.state',
+  },
   wikis: {
     lookupKey: 'wikis.lookupKey',
     slug: 'wikis.slug',

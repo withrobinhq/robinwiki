@@ -267,9 +267,9 @@ describe('PUT /wiki-types/:slug', () => {
     expect(json.ok).toBe(true)
     expect(mockUpdateCalls).toHaveLength(1)
     expect(mockUpdateCalls[0].userModified).toBe(true)
-    // log.yaml top-level `version: 2` (bumped in m-wiki-sidecar for
-    // infobox + citation declarations output contract).
-    expect(mockUpdateCalls[0].basedOnVersion).toBe(2)
+    // log.yaml top-level version is currently 7 (multiple prompt-quality bumps
+    // since the original infobox + citation declarations bump at v2).
+    expect(mockUpdateCalls[0].basedOnVersion).toBe(7)
     expect(mockUpdateCalls[0].prompt).toBe(LOG_YAML_VALID)
   })
 
@@ -414,9 +414,9 @@ describe('POST /wiki-types/:slug/reset', () => {
     expect(mockUpdateCalls).toHaveLength(1)
     expect(mockUpdateCalls[0].userModified).toBe(false)
     expect(mockUpdateCalls[0].prompt).toContain('name: QuillTheWriter')
-    // log.yaml is now version 2 (m-wiki-sidecar rev introduces infobox +
-    // citation declarations in the output contract).
-    expect(mockUpdateCalls[0].basedOnVersion).toBe(2)
+    // log.yaml is now version 7 (multiple prompt-quality bumps since the
+    // original infobox + citation declarations bump at v2).
+    expect(mockUpdateCalls[0].basedOnVersion).toBe(7)
   })
 
   it('returns 404 when slug does not exist', async () => {

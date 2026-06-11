@@ -47,6 +47,9 @@ vi.mock('../db/schema.js', () => ({
     slug: 'fragments.slug',
     title: 'fragments.title',
     content: 'fragments.content',
+    state: 'fragments.state',
+    lockedBy: 'fragments.locked_by',
+    lockedAt: 'fragments.locked_at',
   },
   people: {
     lookupKey: 'people.lookup_key',
@@ -65,6 +68,13 @@ vi.mock('../db/schema.js', () => ({
     content: 'edits.content',
     source: 'edits.source',
     diff: 'edits.diff',
+  },
+  // db/locks.js imports these at module load — required for vitest to collect.
+  entries: {
+    lookupKey: 'entries.lookup_key',
+    state: 'entries.state',
+    lockedBy: 'entries.locked_by',
+    lockedAt: 'entries.locked_at',
   },
 }))
 
@@ -97,6 +107,11 @@ vi.mock('../db/slug.js', () => ({
 vi.mock('@robin/shared', () => ({
   generateSlug: (name: string) => name.toLowerCase().replace(/\s+/g, '-'),
   makeLookupKey: (prefix: string) => `${prefix}-test-key`,
+  // openrouter-config.js (imported transitively via wikis.ts) reads these at
+  // module load — required for vitest to collect (f500031).
+  DEFAULT_MODEL: 'anthropic/claude-sonnet-4.6',
+  FRAGMENT_MODEL: 'google/gemini-2.5-pro',
+  FAST_MODEL: 'google/gemini-flash-2.5',
 }))
 
 vi.mock('@robin/agent', () => ({
