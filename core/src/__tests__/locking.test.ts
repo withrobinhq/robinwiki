@@ -1,372 +1,72 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
-import { eq, sql } from 'drizzle-orm'
-import type postgres from 'postgres'
-import { makeLookupKey, ObjectType } from '@robin/shared'
-import { entries, fragments, wikis, edges } from '../db/schema.js'
-import {
-  ensureTestDatabase,
-  pushTestSchema,
-  getTestDb,
-  cleanupTestDb,
-  createTestUser,
-  createTestVault,
-  clearTestData,
-} from './test-setup.js'
-import { acquireLock, releaseLock, canRebuildThread, LOCK_TTL_SECONDS } from '../db/locking.js'
+import { describe, it, expect, vi } from 'vitest'
 
-let db: ReturnType<typeof getTestDb>['db']
-let sqlConn: ReturnType<typeof postgres>
-let testUserId: string
-let testVaultId: string
+// db/locking.js was deleted in 8c30af3 and replaced by @robin/caslock + db/locks.js.
+// The old acquireLock/releaseLock/canRebuildThread helpers are gone; lock
+// lifecycle is now managed by CasLock instances.
+//
+// This test verifies that the three exported CasLock instances are properly
+// configured — their presence and basic shapes are the unit-testable surface
+// without a live DB.
 
-beforeAll(async () => {
-  await ensureTestDatabase()
-  pushTestSchema()
-  const conn = getTestDb()
-  db = conn.db
-  sqlConn = conn.sql
-  testUserId = await createTestUser(db)
-  testVaultId = await createTestVault(db)
-}, 60_000)
+// Prevent db/client.js from throwing on missing DATABASE_URL at module load.
+vi.mock('../db/client.js', () => ({
+  db: {},
+}))
 
-afterAll(async () => {
-  await cleanupTestDb(sqlConn)
+// Stub the CasLock constructor to capture config for assertion.
+const capturedConfigs: Record<string, { keyColumn: string; stateColumn: string; lockTtlMs: number }> = {}
+
+vi.mock('@robin/caslock', () => {
+  class FakeCasLock {
+    config: { keyColumn: string; stateColumn: string; lockTtlMs: number }
+    constructor(cfg: { keyColumn: string; stateColumn: string; lockTtlMs: number; [k: string]: unknown }) {
+      this.config = { keyColumn: cfg.keyColumn, stateColumn: cfg.stateColumn, lockTtlMs: cfg.lockTtlMs }
+    }
+    on() {}
+  }
+  return { CasLock: FakeCasLock }
 })
 
-afterEach(async () => {
-  await clearTestData(db)
-})
+vi.mock('../db/schema.js', () => ({
+  entries: { lookupKey: 'entries.lookup_key', state: 'entries.state', lockedBy: 'entries.locked_by', lockedAt: 'entries.locked_at' },
+  fragments: { lookupKey: 'fragments.lookup_key', state: 'fragments.state', lockedBy: 'fragments.locked_by', lockedAt: 'fragments.locked_at' },
+  wikis: { lookupKey: 'wikis.lookup_key', state: 'wikis.state', lockedBy: 'wikis.locked_by', lockedAt: 'wikis.locked_at' },
+}))
 
-// ─── acquireLock ───
+vi.mock('../lib/logger.js', () => ({
+  logger: { child: () => ({ debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
+}))
 
-describe('acquireLock', () => {
-  it('acquires lock on RESOLVED entry, sets state=LINKING with lockedBy and lockedAt', async () => {
-    const key = makeLookupKey(ObjectType.ENTRY)
-    await db.insert(entries).values({
-      lookupKey: key,
-      userId: testUserId,
-      slug: `entry-${Date.now()}`,
-      title: 'Lock Test',
-      content: '',
-      state: 'RESOLVED',
-      vaultId: testVaultId,
-    })
+const { entryLock, fragmentLock, wikiRegenLock } = await import('../db/locks.js')
 
-    const result = await acquireLock(db, 'entries', key, 'worker-1', 'RESOLVED')
-
-    expect(result).not.toBeNull()
-    expect(result?.state).toBe('LINKING')
-    expect(result?.lockedBy).toBe('worker-1')
-    expect(result?.lockedAt).toBeInstanceOf(Date)
+describe('lock instances (db/locks.js — 8c30af3)', () => {
+  it('exports entryLock, fragmentLock, and wikiRegenLock', () => {
+    expect(entryLock).toBeDefined()
+    expect(fragmentLock).toBeDefined()
+    expect(wikiRegenLock).toBeDefined()
   })
 
-  it('returns null when entry is already LINKING (lock not expired)', async () => {
-    const key = makeLookupKey(ObjectType.ENTRY)
-    await db.insert(entries).values({
-      lookupKey: key,
-      userId: testUserId,
-      slug: `entry-${Date.now()}`,
-      title: 'Lock Test',
-      content: '',
-      state: 'RESOLVED',
-      vaultId: testVaultId,
-    })
-
-    // First acquire succeeds
-    await acquireLock(db, 'entries', key, 'worker-1', 'RESOLVED')
-
-    // Second acquire should fail (lock is fresh)
-    const result = await acquireLock(db, 'entries', key, 'worker-2', 'RESOLVED')
-    expect(result).toBeNull()
+  it('entryLock is keyed on lookup_key with state column', () => {
+    // @ts-ignore — accessing FakeCasLock internals
+    expect(entryLock.config.keyColumn).toBe('lookup_key')
+    // @ts-ignore
+    expect(entryLock.config.stateColumn).toBe('state')
   })
 
-  it('steals expired lock (lockedAt older than 30s)', async () => {
-    const key = makeLookupKey(ObjectType.ENTRY)
-    await db.insert(entries).values({
-      lookupKey: key,
-      userId: testUserId,
-      slug: `entry-${Date.now()}`,
-      title: 'Lock Test',
-      content: '',
-      state: 'LINKING',
-      lockedBy: 'dead-worker',
-      lockedAt: new Date(Date.now() - 60_000), // 60s ago
-      vaultId: testVaultId,
-    })
-
-    const result = await acquireLock(db, 'entries', key, 'worker-2', 'RESOLVED')
-
-    expect(result).not.toBeNull()
-    expect(result?.state).toBe('LINKING')
-    expect(result?.lockedBy).toBe('worker-2')
+  it('fragmentLock is keyed on lookup_key with state column', () => {
+    // @ts-ignore
+    expect(fragmentLock.config.keyColumn).toBe('lookup_key')
+    // @ts-ignore
+    expect(fragmentLock.config.stateColumn).toBe('state')
   })
 
-  it('works on fragments table', async () => {
-    const entryKey = makeLookupKey(ObjectType.ENTRY)
-    await db.insert(entries).values({
-      lookupKey: entryKey,
-      userId: testUserId,
-      slug: `entry-${Date.now()}`,
-      title: 'Parent',
-      content: '',
-      state: 'RESOLVED',
-      vaultId: testVaultId,
-    })
-
-    const fragKey = makeLookupKey(ObjectType.FRAGMENT)
-    await db.insert(fragments).values({
-      lookupKey: fragKey,
-      userId: testUserId,
-      slug: `frag-${Date.now()}`,
-      title: 'Frag Lock Test',
-      state: 'RESOLVED',
-      entryId: entryKey,
-    })
-
-    const result = await acquireLock(db, 'fragments', fragKey, 'worker-1', 'RESOLVED')
-    expect(result).not.toBeNull()
-    expect(result?.state).toBe('LINKING')
-  })
-
-  it('works on wikis table', async () => {
-    const key = makeLookupKey(ObjectType.THREAD)
-    await db.insert(wikis).values({
-      lookupKey: key,
-      userId: testUserId,
-      slug: `wiki-${Date.now()}`,
-      name: 'Wiki Lock Test',
-      state: 'RESOLVED',
-    })
-
-    const result = await acquireLock(db, 'wikis', key, 'worker-1', 'RESOLVED')
-    expect(result).not.toBeNull()
-    expect(result?.state).toBe('LINKING')
-  })
-})
-
-// ─── releaseLock ───
-
-describe('releaseLock', () => {
-  it('releases lock and sets state to RESOLVED', async () => {
-    const key = makeLookupKey(ObjectType.ENTRY)
-    await db.insert(entries).values({
-      lookupKey: key,
-      userId: testUserId,
-      slug: `entry-${Date.now()}`,
-      title: 'Release Test',
-      content: '',
-      state: 'RESOLVED',
-      vaultId: testVaultId,
-    })
-
-    await acquireLock(db, 'entries', key, 'worker-1', 'RESOLVED')
-    await releaseLock(db, 'entries', key, 'RESOLVED')
-
-    const [row] = await db.select().from(entries).where(eq(entries.lookupKey, key))
-    expect(row.state).toBe('RESOLVED')
-    expect(row.lockedBy).toBeNull()
-    expect(row.lockedAt).toBeNull()
-  })
-
-  it('releases lock and sets state to DIRTY', async () => {
-    const key = makeLookupKey(ObjectType.ENTRY)
-    await db.insert(entries).values({
-      lookupKey: key,
-      userId: testUserId,
-      slug: `entry-${Date.now()}`,
-      title: 'Release Dirty Test',
-      content: '',
-      state: 'RESOLVED',
-      vaultId: testVaultId,
-    })
-
-    await acquireLock(db, 'entries', key, 'worker-1', 'RESOLVED')
-    await releaseLock(db, 'entries', key, 'DIRTY')
-
-    const [row] = await db.select().from(entries).where(eq(entries.lookupKey, key))
-    expect(row.state).toBe('DIRTY')
-    expect(row.lockedBy).toBeNull()
-    expect(row.lockedAt).toBeNull()
-  })
-})
-
-// ─── canRebuildThread ───
-
-describe('canRebuildThread', () => {
-  it('returns false when a linked fragment is PENDING', async () => {
-    const entryKey = makeLookupKey(ObjectType.ENTRY)
-    await db.insert(entries).values({
-      lookupKey: entryKey,
-      userId: testUserId,
-      slug: `entry-${Date.now()}`,
-      title: 'Parent',
-      content: '',
-      vaultId: testVaultId,
-    })
-
-    const wikiKey = makeLookupKey(ObjectType.THREAD)
-    await db.insert(wikis).values({
-      lookupKey: wikiKey,
-      userId: testUserId,
-      slug: `wiki-${Date.now()}`,
-      name: 'Rebuild Test',
-      state: 'RESOLVED',
-    })
-
-    const fragKey = makeLookupKey(ObjectType.FRAGMENT)
-    await db.insert(fragments).values({
-      lookupKey: fragKey,
-      userId: testUserId,
-      slug: `frag-${Date.now()}`,
-      title: 'Pending Frag',
-      state: 'PENDING',
-      entryId: entryKey,
-    })
-
-    await db.insert(edges).values({
-      id: crypto.randomUUID(),
-      userId: testUserId,
-      srcType: 'frag',
-      srcId: fragKey,
-      dstType: 'wiki',
-      dstId: wikiKey,
-      edgeType: 'FRAGMENT_IN_WIKI',
-    })
-
-    const result = await canRebuildThread(db, wikiKey)
-    expect(result).toBe(false)
-  })
-
-  it('returns false when a linked fragment is LINKING', async () => {
-    const entryKey = makeLookupKey(ObjectType.ENTRY)
-    await db.insert(entries).values({
-      lookupKey: entryKey,
-      userId: testUserId,
-      slug: `entry-${Date.now()}`,
-      title: 'Parent',
-      content: '',
-      vaultId: testVaultId,
-    })
-
-    const wikiKey = makeLookupKey(ObjectType.THREAD)
-    await db.insert(wikis).values({
-      lookupKey: wikiKey,
-      userId: testUserId,
-      slug: `wiki-${Date.now()}`,
-      name: 'Rebuild Test',
-      state: 'RESOLVED',
-    })
-
-    const fragKey = makeLookupKey(ObjectType.FRAGMENT)
-    await db.insert(fragments).values({
-      lookupKey: fragKey,
-      userId: testUserId,
-      slug: `frag-${Date.now()}`,
-      title: 'Linking Frag',
-      state: 'LINKING',
-      lockedBy: 'worker-1',
-      lockedAt: new Date(),
-      entryId: entryKey,
-    })
-
-    await db.insert(edges).values({
-      id: crypto.randomUUID(),
-      userId: testUserId,
-      srcType: 'frag',
-      srcId: fragKey,
-      dstType: 'wiki',
-      dstId: wikiKey,
-      edgeType: 'FRAGMENT_IN_WIKI',
-    })
-
-    const result = await canRebuildThread(db, wikiKey)
-    expect(result).toBe(false)
-  })
-
-  it('returns true when all linked fragments are RESOLVED or DIRTY', async () => {
-    const entryKey = makeLookupKey(ObjectType.ENTRY)
-    await db.insert(entries).values({
-      lookupKey: entryKey,
-      userId: testUserId,
-      slug: `entry-${Date.now()}`,
-      title: 'Parent',
-      content: '',
-      vaultId: testVaultId,
-    })
-
-    const wikiKey = makeLookupKey(ObjectType.THREAD)
-    await db.insert(wikis).values({
-      lookupKey: wikiKey,
-      userId: testUserId,
-      slug: `wiki-${Date.now()}`,
-      name: 'Rebuild Test',
-      state: 'RESOLVED',
-    })
-
-    const fragKey1 = makeLookupKey(ObjectType.FRAGMENT)
-    await db.insert(fragments).values({
-      lookupKey: fragKey1,
-      userId: testUserId,
-      slug: `frag-resolved-${Date.now()}`,
-      title: 'Resolved Frag',
-      state: 'RESOLVED',
-      entryId: entryKey,
-    })
-
-    const fragKey2 = makeLookupKey(ObjectType.FRAGMENT)
-    await db.insert(fragments).values({
-      lookupKey: fragKey2,
-      userId: testUserId,
-      slug: `frag-dirty-${Date.now()}`,
-      title: 'Dirty Frag',
-      state: 'DIRTY',
-      entryId: entryKey,
-    })
-
-    await db.insert(edges).values([
-      {
-        id: crypto.randomUUID(),
-        userId: testUserId,
-        srcType: 'frag',
-        srcId: fragKey1,
-        dstType: 'wiki',
-        dstId: wikiKey,
-        edgeType: 'FRAGMENT_IN_WIKI',
-      },
-      {
-        id: crypto.randomUUID(),
-        userId: testUserId,
-        srcType: 'frag',
-        srcId: fragKey2,
-        dstType: 'wiki',
-        dstId: wikiKey,
-        edgeType: 'FRAGMENT_IN_WIKI',
-      },
-    ])
-
-    const result = await canRebuildThread(db, wikiKey)
-    expect(result).toBe(true)
-  })
-
-  it('returns true when wiki has no linked fragments', async () => {
-    const wikiKey = makeLookupKey(ObjectType.THREAD)
-    await db.insert(wikis).values({
-      lookupKey: wikiKey,
-      userId: testUserId,
-      slug: `wiki-${Date.now()}`,
-      name: 'Empty Wiki',
-      state: 'RESOLVED',
-    })
-
-    const result = await canRebuildThread(db, wikiKey)
-    expect(result).toBe(true)
-  })
-})
-
-// ─── LOCK_TTL_SECONDS constant ───
-
-describe('LOCK_TTL_SECONDS', () => {
-  it('exports TTL constant of 30', () => {
-    expect(LOCK_TTL_SECONDS).toBe(30)
+  it('wikiRegenLock has a higher TTL than entry/fragment locks (90s vs 60s)', () => {
+    // wikiRegenLock is padded to 90s because regen can take ~30s on long wikis.
+    // @ts-ignore
+    expect(wikiRegenLock.config.lockTtlMs).toBe(90_000)
+    // @ts-ignore
+    expect(entryLock.config.lockTtlMs).toBe(60_000)
+    // @ts-ignore
+    expect(fragmentLock.config.lockTtlMs).toBe(60_000)
   })
 })
