@@ -122,20 +122,28 @@ vi.mock('../db/client.js', () => ({
   },
 }))
 
-vi.mock('../db/schema.js', () => ({
-  wikis: {
-    lookupKey: 'wikis.lookup_key',
-    name: 'wikis.name',
-    type: 'wikis.type',
-    prompt: 'wikis.prompt',
-    state: 'wikis.state',
-    vaultId: 'wikis.vault_id',
-    lastRebuiltAt: 'wikis.last_rebuilt_at',
-    createdAt: 'wikis.created_at',
-    updatedAt: 'wikis.updated_at',
-    progress: 'wikis.progress',
-  },
-}))
+// Spread the real schema so every table export (entries, fragments, people, etc.)
+// is present for transitive imports (db/locks.ts, lib/search.ts, lib/regen.ts).
+// Only the wikis stub needs overriding — the query chains in this test use
+// plain string sentinels so the drizzle table shape doesn't matter.
+vi.mock('../db/schema.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../db/schema.js')>()
+  return {
+    ...actual,
+    wikis: {
+      lookupKey: 'wikis.lookup_key',
+      name: 'wikis.name',
+      type: 'wikis.type',
+      prompt: 'wikis.prompt',
+      state: 'wikis.state',
+      vaultId: 'wikis.vault_id',
+      lastRebuiltAt: 'wikis.last_rebuilt_at',
+      createdAt: 'wikis.created_at',
+      updatedAt: 'wikis.updated_at',
+      progress: 'wikis.progress',
+    },
+  }
+})
 
 const mockEmitAuditEvent = vi.fn()
 vi.mock('../db/audit.js', () => ({
