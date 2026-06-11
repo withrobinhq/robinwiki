@@ -260,9 +260,10 @@ describe('regenerateWiki — override hierarchy integration', () => {
 
     expect(result).toBeDefined()
     expect(llmCalls).toHaveLength(1)
-    // log.yaml system_message identifies Quill as a changelog author.
+    // log.yaml system_message (v7): "You are Quill, the voice of this knowledge base."
+    // The "changelog author" phrasing was removed in earlier prompt-quality bumps.
     expect(llmCalls[0].system).toContain('Quill')
-    expect(llmCalls[0].system).toContain('changelog author')
+    expect(llmCalls[0].system).toContain('knowledge base')
     // Template render includes the wiki title and the canonical DOCUMENT STRUCTURE marker.
     expect(llmCalls[0].user).toContain('Test Wiki')
     expect(llmCalls[0].user).toContain('DOCUMENT STRUCTURE')
@@ -281,8 +282,9 @@ describe('regenerateWiki — override hierarchy integration', () => {
 
     expect(llmCalls).toHaveLength(1)
     // System message APPENDS: Quill base stays, pirate text follows after a blank-line.
+    // log.yaml system_message no longer uses "changelog author" phrasing (v7).
     expect(llmCalls[0].system).toContain('Quill')
-    expect(llmCalls[0].system).toContain('changelog author')
+    expect(llmCalls[0].system).toContain('knowledge base')
     expect(llmCalls[0].system).toContain('You are a pirate poet, yarrr.')
     expect(llmCalls[0].system).toMatch(/\n\nYou are a pirate poet, yarrr\.$/)
     // Template (user) is still the disk default — title + DOCUMENT STRUCTURE intact.
@@ -290,12 +292,12 @@ describe('regenerateWiki — override hierarchy integration', () => {
     expect(llmCalls[0].user).toContain('DOCUMENT STRUCTURE')
   })
 
-  it('honors a user-customized wiki_type YAML blob for template (system_message stays disk-sourced after sec-phase-4)', async () => {
-    // SEC-H4 lockdown (sec-phase-4-pipeline 01): user YAML overrides may
-    // change template, temperature, etc. — but system_message always comes
-    // from the disk default. Even if a stored row carried a forbidden
-    // override, the lenient loader strips it silently and the disk
-    // system_message wins.
+  it('honors a user-customized wiki_type YAML blob (system_message and template stay disk-sourced after sec-phase-4)', async () => {
+    // SEC-H4 lockdown: user YAML overrides may change temperature,
+    // default_structure, and internal_framing — but system_message AND
+    // template are locked to the disk spec. The lenient loader strips
+    // forbidden fields silently and the disk template+system_message win.
+    // (loadWikiGenerationSpec: effective.template = diskSpec.template)
     const customYaml = `name: CustomLog
 version: 7
 category: generation
@@ -336,11 +338,10 @@ input_variables:
     // System message: disk default wins, the forbidden user override is stripped.
     expect(llmCalls[0].system).not.toContain('CUSTOM_SYSTEM_MARKER')
     expect(llmCalls[0].system).toContain('Quill')
-    // Template (allowed override): the user's CUSTOM_TEMPLATE_MARKER drives the user prompt.
-    expect(llmCalls[0].user).toContain('CUSTOM_TEMPLATE_MARKER')
-    expect(llmCalls[0].user).toContain('Title: Test Wiki')
-    expect(llmCalls[0].user).toContain('Count: 0')
-    expect(llmCalls[0].user).not.toContain('DOCUMENT STRUCTURE')
+    // Template: also locked to disk — CUSTOM_TEMPLATE_MARKER never reaches the prompt.
+    expect(llmCalls[0].user).not.toContain('CUSTOM_TEMPLATE_MARKER')
+    // Disk template is in use — canonical DOCUMENT STRUCTURE marker is present.
+    expect(llmCalls[0].user).toContain('DOCUMENT STRUCTURE')
   })
 
   it('emits a forbidden_field_stripped audit row when the stored YAML carries a system_message override', async () => {
@@ -535,12 +536,17 @@ describe('regenerateWiki — sidecar persistence', () => {
 
     expect(result.content).toBe(llmResponse.markdown)
 
-    // First update is the LINKING guard; second writes content + sidecar
-    const contentUpdate = dbUpdates[1]
+    // LINKING guard removed in 4d12b57 — outer CasLock manages state.
+    // dbUpdates[0] is the content+sidecar update.
+    const contentUpdate = dbUpdates[0]
     expect(contentUpdate).toBeDefined()
     expect(contentUpdate.content).toBe(llmResponse.markdown)
-    expect(contentUpdate.citationDeclarations).toEqual(llmResponse.citations)
-    expect(contentUpdate.state).toBe('RESOLVED')
+    // citationDeclarations are now derived from inline [[fragment:slug]] tokens
+    // in the markdown (23dd23a), not from llmResponse.citations. The test
+    // markdown has no fragment tokens, so derivedCitations = [].
+    expect(Array.isArray(contentUpdate.citationDeclarations)).toBe(true)
+    // state is no longer in the update — managed by outer CasLock (4d12b57).
+    expect(contentUpdate.state).toBeUndefined()
     const merged = contentUpdate.metadata as { infobox: unknown }
     expect(merged).toBeDefined()
     expect(merged.infobox).toEqual(llmResponse.infobox)
@@ -563,12 +569,15 @@ describe('regenerateWiki — sidecar persistence', () => {
 
     await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
 
-    // dbUpdates[0] is the LINKING guard; [1] is the content update
-    const contentUpdate = dbUpdates[1]
+    // LINKING guard removed in 4d12b57 — outer CasLock manages state.
+    // dbUpdates[0] is the content+sidecar update.
+    const contentUpdate = dbUpdates[0]
     expect(contentUpdate).toBeDefined()
     expect(contentUpdate.content).toBe('# Minimal output')
+    // No fragment tokens → derivedCitations = [].
     expect(contentUpdate.citationDeclarations).toEqual([])
-    expect(contentUpdate.state).toBe('RESOLVED')
+    // state is not in the update — managed by outer CasLock (4d12b57).
+    expect(contentUpdate.state).toBeUndefined()
     const merged = contentUpdate.metadata as { infobox: unknown }
     expect(merged.infobox).toBeNull()
   })
@@ -595,8 +604,8 @@ describe('regenerateWiki — sidecar persistence', () => {
 
     await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
 
-    // dbUpdates[0] is the LINKING guard; [1] is the content update
-    const contentUpdate = dbUpdates[1]
+    // LINKING guard removed in 4d12b57 — dbUpdates[0] is the content update.
+    const contentUpdate = dbUpdates[0]
     const merged = contentUpdate.metadata as { infobox: unknown; futureField?: unknown }
     expect(merged.infobox).toEqual(llmResponse.infobox)
     expect(merged.futureField).toEqual({ answer: 42 })
@@ -634,17 +643,18 @@ describe('regenerateWiki — E1 partition (post-first-regen)', () => {
 
     await regenerateWiki(mockDb, 'wiki-key-1', { skipEmbedding: true })
 
-    // dbUpdates[0] is the LINKING flip (editorial 'dreaming' is derived).
-    // dbUpdates[1] is content + RESOLVED + dirtySince=null (editorial 'filed'
-    // is derived from those signals).
-    expect(dbUpdates[0]).toMatchObject({ state: 'LINKING' })
-    expect(dbUpdates[1]).toMatchObject({ state: 'RESOLVED', dirtySince: null })
-    // last_regen_at is stamped on success (not on the LINKING flip).
-    expect(dbUpdates[1].lastRegenAt).toBeInstanceOf(Date)
-    // Sanity: the dropped column name is not in either payload.
+    // LINKING guard removed in 4d12b57: state transitions are managed by the
+    // outer CasLock (wikiRegenLock.using). regenerateWiki() now writes a
+    // single content+sidecar update; state is NOT in the payload.
+    // dbUpdates[0] is the content update.
+    expect(dbUpdates[0]).toMatchObject({ dirtySince: null })
+    expect(dbUpdates[0].content).toBeDefined()
+    // last_regen_at is stamped on success.
+    expect(dbUpdates[0].lastRegenAt).toBeInstanceOf(Date)
+    // Sanity: state and lifecycleState are not in the update payload.
     const droppedKey = ['lifecycle', 'State'].join('')
     expect(Object.keys(dbUpdates[0])).not.toContain(droppedKey)
-    expect(Object.keys(dbUpdates[1])).not.toContain(droppedKey)
+    expect(dbUpdates[0].state).toBeUndefined()
   })
 
   it('returns triggeringFragments=undefined and skipped=undefined on first regen', async () => {
@@ -697,14 +707,15 @@ describe('regenerateWiki — E1 partition (post-first-regen)', () => {
     expect(result.skipped).toBe(true)
     // No LLM call when partition is empty.
     expect(llmCalls).toHaveLength(0)
-    // Still clears dirty_since and bumps last_rebuilt_at, editorial returns
-    // to 'filed' (derived from RESOLVED + dirtySince=null + lastRebuiltAt set).
+    // Still clears dirty_since and bumps last_rebuilt_at. State is managed by
+    // the outer CasLock (4d12b57), so it is absent from the skip-path update.
     const skipUpdate = dbUpdates.find(
-      (u) => u.dirtySince === null && u.state === 'RESOLVED' && u.content === undefined
+      (u) => u.dirtySince === null && u.content === undefined
     )
     expect(skipUpdate).toBeDefined()
     const droppedKey = ['lifecycle', 'State'].join('')
     expect(Object.keys(skipUpdate ?? {})).not.toContain(droppedKey)
+    expect((skipUpdate ?? {}).state).toBeUndefined()
     // Body stays the same — content key not in the skip-path update.
     // triggeringFragments still surfaces the integrated count for audit.
     expect(result.triggeringFragments).toBeDefined()
