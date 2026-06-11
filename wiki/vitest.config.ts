@@ -22,6 +22,7 @@ export default defineConfig({
         __dirname,
         '../packages/shared/src/fixtures/index.ts',
       ),
+      '@robin/shared/browser': resolve(__dirname, '../packages/shared/src/browser.ts'),
       '@robin/shared': resolve(__dirname, '../packages/shared/src/index.ts'),
       // Next.js-style path alias for wiki-local imports
       '@': resolve(__dirname, './src'),
