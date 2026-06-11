@@ -26,8 +26,8 @@ export function buildAdjacencyMap<E extends GraphEdgeLike>(
   for (const edge of edges) {
     if (!adj.has(edge.source)) adj.set(edge.source, [])
     if (!adj.has(edge.target)) adj.set(edge.target, [])
-    adj.get(edge.source)!.push(edge.target)
-    adj.get(edge.target)!.push(edge.source)
+    adj.get(edge.source)?.push(edge.target)
+    adj.get(edge.target)?.push(edge.source)
   }
   return adj
 }
@@ -50,8 +50,9 @@ export function extractEgoSubgraph<E extends GraphEdgeLike>(
   const queue = [focusId]
 
   while (queue.length > 0) {
-    const current = queue.shift()!
-    const currentHop = hopLevels.get(current)!
+    const current = queue.shift()
+    if (current === undefined) break
+    const currentHop = hopLevels.get(current) ?? 0
     if (currentHop >= maxDepth) continue
     for (const neighbor of adj.get(current) ?? []) {
       if (!hopLevels.has(neighbor)) {
@@ -89,9 +90,9 @@ export function shouldShowLabel(
 ): number {
   if (nodeId === focusNodeId) return 1
   if (!focusNodeId) return 1 // no ego focus, show all labels
-  const threshold = zoom < 0.5 ? 0 : zoom < 0.8 ? 3 : zoom < 1.2 ? 8 : Infinity
+  const threshold = zoom < 0.5 ? 0 : zoom < 0.8 ? 3 : zoom < 1.2 ? 8 : Number.POSITIVE_INFINITY
   if (threshold === 0) return 0
-  if (threshold === Infinity) return 1
+  if (threshold === Number.POSITIVE_INFINITY) return 1
   if (rank >= threshold) return 0
   const fadeRange = 2
   if (rank > threshold - fadeRange) {

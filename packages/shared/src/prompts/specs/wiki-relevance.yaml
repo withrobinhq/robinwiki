@@ -24,7 +24,7 @@ template: |
   Score how relevant this fragment is to the given thread.
 
   [THREAD]
-  Name: {{threadName}}
+  Name: {{wikiName}}
   Type: {{threadType}}
   Description: {{threadDescription}}
   {{#if threadSummary}}
@@ -71,8 +71,8 @@ template: |
   {"score": <number>, "reasoning": "<your reasoning>"}
 
 input_variables:
-  - name: threadName
-    description: The thread's display name
+  - name: wikiName
+    description: The wiki's display name
     required: true
   - name: threadType
     description: The thread's type
