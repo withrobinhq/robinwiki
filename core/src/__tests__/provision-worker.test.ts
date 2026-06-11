@@ -138,7 +138,7 @@ describe('processProvisionJob', () => {
     mockWhere.mockResolvedValueOnce([{ id: 'u1', publicKey: '', encryptedPrivateKey: '' }])
 
     const origSecret = process.env.KEY_ENCRYPTION_SECRET
-    delete process.env.KEY_ENCRYPTION_SECRET
+    Reflect.deleteProperty(process.env, 'KEY_ENCRYPTION_SECRET')
 
     try {
       await expect(processProvisionJob(makeJob())).rejects.toThrow('KEY_ENCRYPTION_SECRET')
