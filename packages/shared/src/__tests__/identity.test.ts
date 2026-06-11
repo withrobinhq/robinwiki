@@ -7,22 +7,20 @@ const fixturesPath = path.resolve(__dirname, '../../../../fixtures/identity-case
 const fixtures = JSON.parse(fs.readFileSync(fixturesPath, 'utf-8'))
 
 describe('ObjectType', () => {
-  it('defines all 5 types', () => {
+  it('defines all 4 types', () => {
     expect(ObjectType.ENTRY).toBe('entry')
     expect(ObjectType.FRAGMENT).toBe('frag')
-    expect(ObjectType.THREAD).toBe('wiki')
+    expect(ObjectType.WIKI).toBe('wiki')
     expect(ObjectType.PERSON).toBe('person')
-    expect(ObjectType.VAULT).toBe('vault')
   })
 })
 
 describe('TYPE_TO_DIR', () => {
-  it('maps entry->entries, frag->fragments, thread->wikis, person->people, vault->""', () => {
+  it('maps entry->entries, frag->fragments, wiki->wikis, person->people', () => {
     expect(TYPE_TO_DIR.entry).toBe('entries')
     expect(TYPE_TO_DIR.frag).toBe('fragments')
-    expect(TYPE_TO_DIR.thread).toBe('wikis')
+    expect(TYPE_TO_DIR.wiki).toBe('wikis')
     expect(TYPE_TO_DIR.person).toBe('people')
-    expect(TYPE_TO_DIR.vault).toBe('')
   })
 })
 
@@ -37,8 +35,8 @@ describe('makeLookupKey', () => {
     expect(key).toMatch(/^frag[0-9A-Z]{26}$/)
   })
 
-  it('produces valid prefixed keys for all 5 types', () => {
-    const types = ['entry', 'frag', 'wiki', 'person', 'vault'] as const
+  it('produces valid prefixed keys for all 4 types', () => {
+    const types = ['entry', 'frag', 'wiki', 'person'] as const
     for (const type of types) {
       const key = makeLookupKey(type)
       expect(key.startsWith(type)).toBe(true)
@@ -50,7 +48,7 @@ describe('makeLookupKey', () => {
 
 describe('parseLookupKey', () => {
   it('round-trips: parseLookupKey(makeLookupKey(type)).type === type', () => {
-    const types = ['entry', 'frag', 'wiki', 'person', 'vault'] as const
+    const types = ['entry', 'frag', 'wiki', 'person'] as const
     for (const type of types) {
       const key = makeLookupKey(type)
       const parsed = parseLookupKey(key)
