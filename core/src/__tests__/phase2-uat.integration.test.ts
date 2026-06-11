@@ -149,7 +149,6 @@ beforeEach(() => {
   auditCalls.length = 0
   emitAuditEventImpl.mockClear()
   dbExecuteImpl.mockClear()
-  dbTransactionImpl.mockClear()
 })
 
 afterEach(() => {
