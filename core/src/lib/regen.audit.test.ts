@@ -122,13 +122,10 @@ vi.mock('../db/client.js', () => {
   return {
     db: {
       select: () => selectChain(),
-      insert: () => ({
-        values: () => ({
-          onConflictDoNothing: () => ({
-            returning: async () => [{ id: 'edge-id' }],
-          }),
-        }),
-      }),
+      // execute() is used by the conditional INSERT ... WHERE EXISTS in regen.ts.
+      // Return a non-empty array so the insert is treated as successful and the
+      // createRelatedToEdges call proceeds (which is what we want to throw).
+      execute: async () => [{ id: 'edge-id' }],
     },
   }
 })
@@ -176,7 +173,8 @@ describe('classifyUnfiledFragments — RELATED_TO edge failure (#274)', () => {
     //   1. wiki lookup (.where().limit(1))           → return one wiki
     //   2. fragments select for content (.where())   → return content row
     //   3. filed-frag-keys select (.where())         → empty so all are unfiled
-    //   4. wikis-still-live check (.where().limit(1)) → return live row
+    //   4. FRAGMENT_IN_WIKI insert is now execute() (conditional INSERT ... WHERE
+    //      EXISTS) — handled by the execute mock, not the select queue.
     //   5. createRelatedToEdges → first .where().limit(1) call throws.
     //
     // In practice the mock pops one queue entry per terminal-call. The order
@@ -184,19 +182,18 @@ describe('classifyUnfiledFragments — RELATED_TO edge failure (#274)', () => {
     //   - wiki lookup: select().from(wikis).where().limit(1) → stage 1
     //   - filedFragKeys: select(srcId).from(edges).where() → stage 2
     //   - candidate frag content: select.from(fragments).where() → stage 3
-    //   - wiki-still-live: select.from(wikis).where().limit(1) → stage 4
     // The createRelatedToEdges path then runs and throws on its own first
     // select call (the embedding lookup) — we trip that with the throw flag.
     stageDbResponses([
       [{ lookupKey: 'wiki-target', name: 'Target', type: 'log', prompt: null, description: 'desc' }], // .where().limit(1) #1 — wiki lookup
       [],                                                                                              // .where() thenable — filedFragKeys
       [{ lookupKey: 'frag-source', content: 'source content' }],                                      // .where() thenable — candidate frag content
-      [{ key: 'wiki-target' }],                                                                       // .where().limit(1) #2 — wiki-still-live
-      // .where().limit(1) #3 — createRelatedToEdges embedding lookup → throws
+      // .where().limit(1) #2 — createRelatedToEdges embedding lookup → throws
     ])
-    // Trip the throw on the 3rd .where().limit(1) call — the embedding
-    // select inside createRelatedToEdges.
-    throwOnLimitCallNumber = 3
+    // Trip the throw on the 2nd .where().limit(1) call — the embedding
+    // select inside createRelatedToEdges (wiki-still-live select removed;
+    // now handled atomically by execute()).
+    throwOnLimitCallNumber = 2
 
     const result = await classifyUnfiledFragments(mockDb, 'wiki-target')
 

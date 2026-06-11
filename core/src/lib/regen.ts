@@ -376,20 +376,6 @@ export async function classifyUnfiledFragments(
             .sort((a, b) => b.score - a.score)[0].wikiKey
 
           for (const edge of result.data.wikiEdges) {
-            // Re-check the destination wiki right before the insert.
-            // The LLM call is slow; the wiki may have been soft-
-            // deleted while we were waiting. Without this, we close
-            // a TOCTOU window that the regen-entry deletedAt check
-            // can't (10c surfaced ~1 of these per UAT run).
-            const [stillLive] = await database
-              .select({ key: wikis.lookupKey })
-              .from(wikis)
-              .where(and(eq(wikis.lookupKey, edge.wikiKey), isNull(wikis.deletedAt)))
-              .limit(1)
-            if (!stillLive) {
-              log.warn({ fragmentKey: frag.lookupKey, wikiKey: edge.wikiKey }, 'skipping FRAGMENT_IN_WIKI insert: wiki was soft-deleted during LLM call')
-              continue
-            }
             const isTop = edge.wikiKey === topWikiKey
             const attrs: Record<string, unknown> = {
               score: edge.score,
@@ -400,18 +386,24 @@ export async function classifyUnfiledFragments(
             if (isTop && edge.citationSpans && edge.citationSpans.length > 0) {
               attrs.citationSpans = edge.citationSpans
             }
-            await database
-              .insert(edges)
-              .values({
-                id: crypto.randomUUID(),
-                srcType: 'fragment',
-                srcId: frag.lookupKey,
-                dstType: 'wiki',
-                dstId: edge.wikiKey,
-                edgeType: 'FRAGMENT_IN_WIKI',
-                attrs,
-              })
-              .onConflictDoNothing()
+            // Atomic conditional insert: only inserts if the destination wiki
+            // still exists (deleted_at IS NULL). Replaces the two-statement
+            // select-then-insert that had a TOCTOU window (10c surfaced ~1 per
+            // UAT run). ON CONFLICT DO NOTHING preserves the original dedup
+            // contract; RETURNING id lets us detect the wiki-deleted case.
+            const inserted = await database.execute<{ id: string }>(
+              sql`INSERT INTO edges (id, src_type, src_id, dst_type, dst_id, edge_type, attrs)
+                  SELECT ${crypto.randomUUID()}, 'fragment', ${frag.lookupKey}, 'wiki', ${edge.wikiKey}, 'FRAGMENT_IN_WIKI', ${JSON.stringify(attrs)}::jsonb
+                  WHERE EXISTS (
+                    SELECT 1 FROM wikis WHERE lookup_key = ${edge.wikiKey} AND deleted_at IS NULL
+                  )
+                  ON CONFLICT DO NOTHING
+                  RETURNING id`
+            )
+            if (inserted.length === 0) {
+              log.warn({ fragmentKey: frag.lookupKey, wikiKey: edge.wikiKey }, 'skipping FRAGMENT_IN_WIKI insert: wiki was soft-deleted during LLM call')
+              continue
+            }
             llmFiled++
             try {
               await createRelatedToEdges(database, frag.lookupKey, edge.wikiKey)

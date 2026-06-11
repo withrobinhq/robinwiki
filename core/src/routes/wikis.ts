@@ -273,18 +273,17 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
       const matched = candidates.filter((c) => 1 - c.distance > 0.6)
 
       for (const frag of matched) {
-        await db
-          .insert(edges)
-          .values({
-            id: crypto.randomUUID(),
-            srcType: 'fragment',
-            srcId: frag.lookupKey,
-            dstType: 'wiki',
-            dstId: lookupKey,
-            edgeType: 'FRAGMENT_IN_WIKI',
-            attrs: { score: 1 - frag.distance },
-          })
-          .onConflictDoNothing()
+        // Conditional insert: only inserts if the wiki is still live.
+        // The query-then-insert TOCTOU window is closed by making the
+        // existence check and the insert a single atomic statement.
+        await db.execute(
+          sql`INSERT INTO edges (id, src_type, src_id, dst_type, dst_id, edge_type, attrs)
+              SELECT ${crypto.randomUUID()}, 'fragment', ${frag.lookupKey}, 'wiki', ${lookupKey}, 'FRAGMENT_IN_WIKI', ${JSON.stringify({ score: 1 - frag.distance })}::jsonb
+              WHERE EXISTS (
+                SELECT 1 FROM wikis WHERE lookup_key = ${lookupKey} AND deleted_at IS NULL
+              )
+              ON CONFLICT DO NOTHING`
+        )
       }
 
       if (matched.length > 0) {
