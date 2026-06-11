@@ -1024,28 +1024,30 @@ wikisRouter.delete('/:id', async (c) => {
   if (!wiki) return c.json({ error: 'Not found' }, 404)
 
   const now = new Date()
-  await db
-    .update(wikis)
-    .set({ deletedAt: now, updatedAt: now })
-    .where(eq(wikis.lookupKey, id))
+  await db.transaction(async (tx) => {
+    await tx
+      .update(wikis)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(eq(wikis.lookupKey, id))
 
-  // Cascade: soft-delete every edge that references this wiki on
-  // either side. Without this the graph keeps zombie nodes alive
-  // and the classifier can route fresh fragments through stale
-  // FRAGMENT_IN_WIKI edges. Mirrors the read-side soft-delete
-  // contract used everywhere else in the codebase.
-  await db
-    .update(edges)
-    .set({ deletedAt: now })
-    .where(
-      and(
-        isNull(edges.deletedAt),
-        sql`(${edges.srcId} = ${id} OR ${edges.dstId} = ${id})`,
-      ),
-    )
+    // Cascade: soft-delete every edge that references this wiki on
+    // either side. Without this the graph keeps zombie nodes alive
+    // and the classifier can route fresh fragments through stale
+    // FRAGMENT_IN_WIKI edges. Mirrors the read-side soft-delete
+    // contract used everywhere else in the codebase.
+    await tx
+      .update(edges)
+      .set({ deletedAt: now })
+      .where(
+        and(
+          isNull(edges.deletedAt),
+          sql`(${edges.srcId} = ${id} OR ${edges.dstId} = ${id})`,
+        ),
+      )
 
-  // Hard-delete group memberships — soft-delete doesn't trigger FK CASCADE
-  await db.delete(groupWikis).where(eq(groupWikis.wikiId, id))
+    // Hard-delete group memberships — soft-delete doesn't trigger FK CASCADE
+    await tx.delete(groupWikis).where(eq(groupWikis.wikiId, id))
+  })
 
   await emitAuditEvent(db, {
     entityType: 'wiki',
