@@ -27,6 +27,6 @@
     "@types/node": "^25.3.2",
     "tsdown": "^0.21.0",
     "typescript": "^5.4.0",
-    "vitest": "^3.2.1"
+    "vitest": "^3.2.6"
   }
 }
