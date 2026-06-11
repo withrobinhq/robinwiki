@@ -13,11 +13,11 @@ findings table and rejected list below record everything else.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Restore verification baseline (typecheck + all tests green) | P1 | M | — | TODO |
-| 002 | CI gate: typecheck + full test suite on every PR | P1 | S | 001 | TODO |
-| 003 | Dependency security sweep (next, hono, better-auth, vitest, transitive) | P1 | M | 001 | TODO |
-| 004 | CSRF Origin check on session-authenticated mutations | P1 | S | 001 | TODO |
-| 005 | Transactional wiki delete + conditional classify inserts (zombie edges) | P2 | M | 001 | TODO |
+| 001 | Restore verification baseline (typecheck + all tests green) | P1 | M | — | DONE — branch advisor/001-final (8bc88aa) |
+| 002 | CI gate: typecheck + full test suite on every PR | P1 | S | 001 | DONE — branch advisor/002-ci-typecheck-test-gate (95d9f1d) |
+| 003 | Dependency security sweep (next, hono, better-auth, vitest, transitive) | P1 | M | 001 | DONE — branch advisor/003-dependency-security-sweep (c9e6ab8) |
+| 004 | CSRF Origin check on session-authenticated mutations | P1 | S | 001 | DONE — branch advisor/004-csrf-origin-check (cf0670c) |
+| 005 | Transactional wiki delete + conditional classify inserts (zombie edges) | P2 | M | 001 | DONE — branch advisor/005-wiki-delete-zombie-edges (3f43f8b) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
