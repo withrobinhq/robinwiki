@@ -1,9 +1,10 @@
 name: Pre-merge
 
-# Three-job CI gate (Phase A2): a PR that breaks deploy cannot merge to main.
+# Four-job CI gate (Phase A2): a PR that breaks deploy or the test suite cannot merge to main.
 #   1. db:push against ephemeral Postgres — fails on destructive-op warnings.
 #   2. Core boot health — start core against ephemeral Postgres + Redis, hit /health.
 #   3. Wiki build against core's /openapi.json artifact — fails on type mismatch.
+#   4. typecheck + tests across all workspaces — runs in parallel with job 1.
 
 on:
   pull_request:
@@ -225,3 +226,27 @@ jobs:
       - name: Stop static server
         if: always()
         run: kill $SERVE_PID || true
+
+  # ─── Job 4: typecheck + tests ────────────────────────────────────────────
+  typecheck-test:
+    name: typecheck + test (all workspaces)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
