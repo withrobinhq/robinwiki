@@ -273,18 +273,17 @@ wikisRouter.post('/', zValidator('json', createWikiBodySchema, validationHook), 
       const matched = candidates.filter((c) => 1 - c.distance > 0.6)
 
       for (const frag of matched) {
-        await db
-          .insert(edges)
-          .values({
-            id: crypto.randomUUID(),
-            srcType: 'fragment',
-            srcId: frag.lookupKey,
-            dstType: 'wiki',
-            dstId: lookupKey,
-            edgeType: 'FRAGMENT_IN_WIKI',
-            attrs: { score: 1 - frag.distance },
-          })
-          .onConflictDoNothing()
+        // Conditional insert: only inserts if the wiki is still live.
+        // The query-then-insert TOCTOU window is closed by making the
+        // existence check and the insert a single atomic statement.
+        await db.execute(
+          sql`INSERT INTO edges (id, src_type, src_id, dst_type, dst_id, edge_type, attrs)
+              SELECT ${crypto.randomUUID()}, 'fragment', ${frag.lookupKey}, 'wiki', ${lookupKey}, 'FRAGMENT_IN_WIKI', ${JSON.stringify({ score: 1 - frag.distance })}::jsonb
+              WHERE EXISTS (
+                SELECT 1 FROM wikis WHERE lookup_key = ${lookupKey} AND deleted_at IS NULL
+              )
+              ON CONFLICT DO NOTHING`
+        )
       }
 
       if (matched.length > 0) {
@@ -1024,28 +1023,30 @@ wikisRouter.delete('/:id', async (c) => {
   if (!wiki) return c.json({ error: 'Not found' }, 404)
 
   const now = new Date()
-  await db
-    .update(wikis)
-    .set({ deletedAt: now, updatedAt: now })
-    .where(eq(wikis.lookupKey, id))
+  await db.transaction(async (tx) => {
+    await tx
+      .update(wikis)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(eq(wikis.lookupKey, id))
 
-  // Cascade: soft-delete every edge that references this wiki on
-  // either side. Without this the graph keeps zombie nodes alive
-  // and the classifier can route fresh fragments through stale
-  // FRAGMENT_IN_WIKI edges. Mirrors the read-side soft-delete
-  // contract used everywhere else in the codebase.
-  await db
-    .update(edges)
-    .set({ deletedAt: now })
-    .where(
-      and(
-        isNull(edges.deletedAt),
-        sql`(${edges.srcId} = ${id} OR ${edges.dstId} = ${id})`,
-      ),
-    )
+    // Cascade: soft-delete every edge that references this wiki on
+    // either side. Without this the graph keeps zombie nodes alive
+    // and the classifier can route fresh fragments through stale
+    // FRAGMENT_IN_WIKI edges. Mirrors the read-side soft-delete
+    // contract used everywhere else in the codebase.
+    await tx
+      .update(edges)
+      .set({ deletedAt: now })
+      .where(
+        and(
+          isNull(edges.deletedAt),
+          sql`(${edges.srcId} = ${id} OR ${edges.dstId} = ${id})`,
+        ),
+      )
 
-  // Hard-delete group memberships — soft-delete doesn't trigger FK CASCADE
-  await db.delete(groupWikis).where(eq(groupWikis.wikiId, id))
+    // Hard-delete group memberships — soft-delete doesn't trigger FK CASCADE
+    await tx.delete(groupWikis).where(eq(groupWikis.wikiId, id))
+  })
 
   await emitAuditEvent(db, {
     entityType: 'wiki',
