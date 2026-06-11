@@ -11,10 +11,14 @@ import { resetJobSigningSecretCacheForTesting } from '../job-signing.js'
 const mockChangePriority = vi.fn().mockResolvedValue(undefined)
 const mockGetState = vi.fn()
 const mockAdd = vi.fn()
+// mockGetJob returns undefined by default (no pre-existing job).
+// Individual tests that cover the evict path (completed/failed) override this.
+const mockGetJob = vi.fn().mockResolvedValue(undefined)
 
 vi.mock('bullmq', () => ({
   Queue: vi.fn().mockImplementation(() => ({
     add: (...args: unknown[]) => mockAdd(...args),
+    getJob: (...args: unknown[]) => mockGetJob(...args),
     close: vi.fn().mockResolvedValue(undefined),
   })),
   Worker: vi.fn(),
@@ -36,6 +40,8 @@ beforeEach(() => {
   resetJobSigningSecretCacheForTesting()
 
   vi.clearAllMocks()
+  // Restore defaults wiped by clearAllMocks.
+  mockGetJob.mockResolvedValue(undefined)
   mockAdd.mockResolvedValue({
     id: 'regen-wikiXYZ',
     getState: mockGetState,
