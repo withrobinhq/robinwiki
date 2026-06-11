@@ -11,27 +11,24 @@ next-env.d.ts
 .uat
 *.rdb
 .claude/*
-!.claude/skills/
-!.claude/gitkeep
-
 .nvim.lua
 .design
 
 .env
 .env.*
-!.env.example
-
-.dev
-.planning 
+!.env.example 
 
 
 ## docs/plans tracked for design decisions
 
+.dev
+.planning
+
 # >>> studio (managed) >>>
 .jira
-.planning
-.retrospective
+.project
 .uat
+.warden
 .studio
 .workspacerc
 # <<< studio (managed) <<<
