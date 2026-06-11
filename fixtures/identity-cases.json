@@ -1,0 +1,61 @@
+{
+  "lookupKeys": [
+    {
+      "type": "entry",
+      "ulid": "01HZY3Q9R3TSV4RRFFQ69G5FAV",
+      "key": "entry01HZY3Q9R3TSV4RRFFQ69G5FAV"
+    },
+    {
+      "type": "frag",
+      "ulid": "01HZY3Q9R4TSV4RRFFQ69G5FAW",
+      "key": "frag01HZY3Q9R4TSV4RRFFQ69G5FAW"
+    },
+    {
+      "type": "wiki",
+      "ulid": "01HZY3Q9R5TSV4RRFFQ69G5FAX",
+      "key": "wiki01HZY3Q9R5TSV4RRFFQ69G5FAX"
+    },
+    {
+      "type": "person",
+      "ulid": "01HZY3Q9R6TSV4RRFFQ69G5FAY",
+      "key": "person01HZY3Q9R6TSV4RRFFQ69G5FAY"
+    }
+  ],
+  "slugs": [
+    { "input": "Hello World", "expected": "hello-world" },
+    { "input": "My Journal Entry", "expected": "my-journal-entry" },
+    { "input": "Nairobi Trip 2026", "expected": "nairobi-trip-2026" },
+    { "input": "Café notes", "expected": "cafe-notes" },
+    { "input": "React & TypeScript", "expected": "react-typescript" }
+  ],
+  "filenames": [
+    {
+      "filename": "20260305-moving-to-nairobi.frag01HZY3Q9R3TSV4RRFFQ69G5FAV.md",
+      "date": "20260305",
+      "slug": "moving-to-nairobi",
+      "type": "frag",
+      "ulid": "01HZY3Q9R3TSV4RRFFQ69G5FAV"
+    },
+    {
+      "filename": "20260101-my-first-entry.entry01HZY3Q9R4TSV4RRFFQ69G5FAW.md",
+      "date": "20260101",
+      "slug": "my-first-entry",
+      "type": "entry",
+      "ulid": "01HZY3Q9R4TSV4RRFFQ69G5FAW"
+    },
+    {
+      "filename": "20260610-sarah-jones.person01HZY3Q9R5TSV4RRFFQ69G5FAX.md",
+      "date": "20260610",
+      "slug": "sarah-jones",
+      "type": "person",
+      "ulid": "01HZY3Q9R5TSV4RRFFQ69G5FAX"
+    }
+  ],
+  "invalidFilenames": [
+    "not-a-filename.txt",
+    "20260305.frag01HZY3Q9R3TSV4RRFFQ69G5FAV.md",
+    "20260305-moving-to-nairobi.frag.md",
+    "moving-to-nairobi.frag01HZY3Q9R3TSV4RRFFQ69G5FAV.md",
+    "20260305-moving-to-nairobi.unknown01HZY3Q9R3TSV4RRFFQ69G5FAV.md"
+  ]
+}
