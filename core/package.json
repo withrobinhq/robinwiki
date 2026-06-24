@@ -31,7 +31,7 @@
     "@robin/queue": "workspace:*",
     "@robin/shared": "workspace:*",
     "archiver": "^7.0.1",
-    "better-auth": "^1.6.11",
+    "better-auth": "1.6.15",
     "diff": "^8.0.3",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.1",
