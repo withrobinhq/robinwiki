@@ -130,7 +130,17 @@ async function isRedisLive(): Promise<boolean> {
   process.env.REDIS_URL = REDIS_URL
   const probe = createRedisConnection()
   try {
-    const reply = await probe.ping()
+    // createRedisConnection sets maxRetriesPerRequest: null (required for
+    // BullMQ's blocking commands elsewhere), so a genuinely unreachable
+    // Redis retries forever instead of rejecting — race against a short
+    // timeout so this probe still resolves to `false` promptly in CI jobs
+    // that don't run a Redis service container.
+    const reply = await Promise.race([
+      probe.ping(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('redis probe timed out')), 2000)
+      ),
+    ])
     return reply === 'PONG'
   } catch {
     return false
