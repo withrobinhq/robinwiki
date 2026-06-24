@@ -84,12 +84,15 @@ export const auth = betterAuth({
     after: async (rawCtx) => {
       const ctx = rawCtx as Record<string, unknown>
 
-      // better-auth's dispatcher only overrides the response when the hook
-      // return value's `response` is `!== undefined` -- `null` counts as an
-      // override (see dispatch.mjs). This hook only has side effects to run
-      // (provisioning on sign-up); returning nothing leaves every endpoint's
-      // real response (sign-in, get-session, etc.) untouched.
-      if (ctx.path !== '/sign-up/email') return
+      // better-auth's dispatcher always dereferences the hook's return value
+      // (`result.headers` in runAfterHooks -- see dispatch.mjs), so the hook
+      // must resolve to an object, never bare `undefined`. It only overrides
+      // the response when `response` is `!== undefined` -- `null` counts as
+      // a real override. This hook only has side effects to run
+      // (provisioning on sign-up); returning `{}` leaves every endpoint's
+      // real response (sign-in, get-session, etc.) untouched without
+      // tripping the dispatcher's unconditional `.headers` access.
+      if (ctx.path !== '/sign-up/email') return {}
 
       const c = ctx.context as Record<string, unknown> | undefined
       const newSession = c?.newSession as Record<string, unknown> | undefined
@@ -99,7 +102,7 @@ export const auth = betterAuth({
       log.debug({ path: ctx.path, userId }, 'after hook')
       if (!userId) {
         log.error('after hook: could not find userId in context')
-        return
+        return {}
       }
 
       producer
@@ -110,6 +113,8 @@ export const auth = betterAuth({
           enqueuedAt: new Date().toISOString(),
         })
         .catch((err) => log.error({ userId, err }, 'failed to enqueue provision'))
+
+      return {}
     },
   },
 })
