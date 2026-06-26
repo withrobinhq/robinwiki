@@ -715,7 +715,7 @@ describe('regenerateWiki — E1 partition (post-first-regen)', () => {
     expect(skipUpdate).toBeDefined()
     const droppedKey = ['lifecycle', 'State'].join('')
     expect(Object.keys(skipUpdate ?? {})).not.toContain(droppedKey)
-    expect((skipUpdate ?? {}).state).toBeUndefined()
+    expect(skipUpdate?.state).toBeUndefined()
     // Body stays the same — content key not in the skip-path update.
     // triggeringFragments still surfaces the integrated count for audit.
     expect(result.triggeringFragments).toBeDefined()

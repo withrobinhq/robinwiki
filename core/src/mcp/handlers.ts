@@ -1762,7 +1762,7 @@ export async function handleUpdatePerson(
         }
       }
     }
-    if (input.updates.notes !== undefined && input.updates.notes.trim()) {
+    if (input.updates.notes?.trim()) {
       const next = appendContextNote(
         person.contextNotes ?? null,
         input.updates.notes,

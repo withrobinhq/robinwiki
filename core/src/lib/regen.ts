@@ -311,7 +311,7 @@ export async function classifyUnfiledFragments(
     hybridScore: r.score,
   }))
 
-  let autoFiled = 0
+  const autoFiled = 0
   let llmFiled = 0
   let llmRejected = 0
   let edgesFailed = 0

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { Readable } from 'node:stream'
+import type { Readable } from 'node:stream'
 import yauzl from 'yauzl'
 
 // Stubbed rows mimicking the drizzle row shape buildExportZip selects.

@@ -57,7 +57,7 @@ describe('alias-registry — registerAliasTool', () => {
     })._registeredTools
     expect(registered).toBeDefined()
     expect(registered!['short-capture']).toBeDefined()
-    expect(registered!['log_entry']).toBeDefined()
+    expect(registered!.log_entry).toBeDefined()
   })
 
   it('drops aliases pointing at unknown canonical tools and returns false', () => {
@@ -74,7 +74,7 @@ describe('alias-registry — registerAliasTool', () => {
     const registered = (server as unknown as {
       _registeredTools?: Record<string, unknown>
     })._registeredTools
-    expect(registered!['oops']).toBeUndefined()
+    expect(registered!.oops).toBeUndefined()
     warnSpy.mockRestore()
   })
 

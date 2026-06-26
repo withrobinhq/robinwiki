@@ -411,7 +411,7 @@ peopleRouter.post(
         .where(
           and(
             isNull(wikis.deletedAt),
-            sql`${wikis.content} like ${'%' + sourceToken + '%'}`
+            sql`${wikis.content} like ${`%${sourceToken}%`}`
           )
         )
         .returning({ id: wikis.lookupKey })

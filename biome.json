@@ -27,5 +27,16 @@
   },
   "files": {
     "ignore": ["node_modules", "dist", ".turbo", ".mastra", "*.env", "*.env.*", "tsconfig*.json", "wiki"]
-  }
+  },
+  "overrides": [
+    {
+      "include": ["**/*.test.ts", "**/__tests__/**"],
+      "linter": {
+        "rules": {
+          "style": { "noNonNullAssertion": "off" },
+          "performance": { "noDelete": "off" }
+        }
+      }
+    }
+  ]
 }

@@ -136,11 +136,7 @@ describe('default-deny route audit (source-scan)', () => {
   // Resolve a routes-module file by scanning index.ts imports for the ident.
   function resolveModulePath(ident: string): string | null {
     const importRegex = new RegExp(
-      `import\\s+(?:` +
-        `(?:\\*\\s+as\\s+${ident})` +
-        `|(?:\\{[^}]*\\b${ident}\\b[^}]*\\})` +
-        `|(?:${ident}\\b)` +
-        `)[^'"\`]*from\\s+['"\`]([^'"\`]+)['"\`]`
+      `import\\s+(?:(?:\\*\\s+as\\s+${ident})|(?:\\{[^}]*\\b${ident}\\b[^}]*\\})|(?:${ident}\\b))[^'"\`]*from\\s+['"\`]([^'"\`]+)['"\`]`
     )
     const m = importRegex.exec(indexSrc)
     if (!m) return null

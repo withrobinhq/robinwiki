@@ -41,7 +41,7 @@
  * the output while still preserving their text content.
  */
 
-import { parse, HTMLElement, Node, NodeType, TextNode } from 'node-html-parser'
+import { parse, type HTMLElement, type Node, NodeType, type TextNode } from 'node-html-parser'
 
 /**
  * Public entry point. Parses the input HTML and returns canonical markdown
@@ -58,7 +58,7 @@ export function htmlToWikiMarkdown(html: string): string {
   // round-tripping through the editor). Treat as opaque, but ensure a
   // trailing newline so the body matches the canonical form the parser
   // path emits (otherwise the next save logs a no-op edit row).
-  if (!/<[a-zA-Z!\/]/.test(trimmed)) return trimmed.endsWith('\n') ? trimmed : trimmed + '\n'
+  if (!/<[a-zA-Z!\/]/.test(trimmed)) return trimmed.endsWith('\n') ? trimmed : `${trimmed}\n`
 
   // parse() wraps the input in a synthetic root; childNodes are the
   // top-level blocks the editor emitted.
@@ -72,7 +72,7 @@ export function htmlToWikiMarkdown(html: string): string {
 
   // Single trailing newline. parseSections is tolerant of either, but a
   // canonical form keeps round-trips stable across edits.
-  return out.join('\n\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
+  return `${out.join('\n\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`
 }
 
 // ── Block-level rendering ─────────────────────────────────────────────────
@@ -216,7 +216,7 @@ function renderPreCode(el: HTMLElement): string {
   let code = el.text
   const wrapped = code.match(/^\s*<code[^>]*>([\s\S]*?)<\/code>\s*$/)
   if (wrapped) code = wrapped[1]
-  return '```\n' + code.replace(/\n+$/, '') + '\n```'
+  return `\`\`\`\n${code.replace(/\n+$/, '')}\n\`\`\``
 }
 
 // ── Inline rendering ──────────────────────────────────────────────────────

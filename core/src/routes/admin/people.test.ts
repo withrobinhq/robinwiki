@@ -56,6 +56,7 @@ vi.mock('../../db/client.js', () => ({
               }),
               limit: async () => out,
               [Symbol.iterator]: undefined,
+              // biome-ignore lint/suspicious/noThenProperty: thenable test mock
               then: (resolve: (v: unknown) => void) => resolve(out),
             }
           },

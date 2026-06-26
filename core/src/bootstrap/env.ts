@@ -38,9 +38,7 @@ export function assertProdEnv(): void {
       const ephemeral = randomBytes(32).toString('hex')
       process.env[key] = ephemeral
       console.warn(
-        `[WARN] ${key} not set — generated ephemeral value for this boot.\n` +
-          `       Set a persistent value in your environment to avoid regeneration on restart:\n` +
-          `       ${key}=$(openssl rand -hex 32)`,
+        `[WARN] ${key} not set — generated ephemeral value for this boot.\n       Set a persistent value in your environment to avoid regeneration on restart:\n       ${key}=$(openssl rand -hex 32)`,
       )
     }
   }
@@ -62,8 +60,7 @@ export function assertProdEnv(): void {
   const missing = required.filter((k) => !process.env[k])
   if (missing.length) {
     throw new ProdSafetyError(
-      `missing required env vars in production: ${missing.join(', ')}. ` +
-        'Set these in your deployment environment before starting the server.',
+      `missing required env vars in production: ${missing.join(', ')}. Set these in your deployment environment before starting the server.`,
     )
   }
 
@@ -85,10 +82,7 @@ export function assertProdEnv(): void {
   const publicUrl = process.env.SERVER_PUBLIC_URL
   if (!publicUrl?.startsWith('https://')) {
     throw new ProdSafetyError(
-      'SERVER_PUBLIC_URL must start with https:// in production. ' +
-        `Got: ${publicUrl ?? '(unset)'}. ` +
-        'Fix by setting SERVER_PUBLIC_URL to your HTTPS deploy URL ' +
-        '(e.g. https://api.example.com) and redeploying.',
+      `SERVER_PUBLIC_URL must start with https:// in production. Got: ${publicUrl ?? '(unset)'}. Fix by setting SERVER_PUBLIC_URL to your HTTPS deploy URL (e.g. https://api.example.com) and redeploying.`,
     )
   }
 

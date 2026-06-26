@@ -1,4 +1,4 @@
-import { Readable } from 'node:stream'
+import type { Readable } from 'node:stream'
 import archiver from 'archiver'
 import { isNull } from 'drizzle-orm'
 import { db } from '../db/client.js'

@@ -103,7 +103,7 @@ async function resolveRefs(
   deps: SidecarDeps
 ): Promise<Record<string, WikiRef>> {
   const infoboxText = infobox
-    ? '\n' + infobox.rows.map((row) => row.value).join('\n')
+    ? `\n${infobox.rows.map((row) => row.value).join('\n')}`
     : ''
   const parsed = parseWikiLinks(content + infoboxText)
   const refs: Record<string, WikiRef> = {}

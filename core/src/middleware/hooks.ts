@@ -1,4 +1,4 @@
-import { Context, Next } from 'hono';
+import type { Context, Next } from 'hono';
 
 // These are our default "No-op" implementations
 export const defaultResolveOrg = async (c: Context, next: Next) => {

@@ -121,7 +121,6 @@ describe('regen-debounce: filterDebouncedWikiKeys', () => {
       [{ wikiKey: 'wiki-chatty', dirtySince: recentDirty }],
     ])
     const { eligible, debounced } = await filterDebouncedWikiKeys(
-      // biome-ignore lint/suspicious/noExplicitAny: drizzle stub
       mockDb as any,
       ['wiki-chatty'],
       now
@@ -140,7 +139,6 @@ describe('regen-debounce: filterDebouncedWikiKeys', () => {
       [{ wikiKey: 'wiki-quiet', dirtySince: oldDirty }],
     ])
     const { eligible, debounced } = await filterDebouncedWikiKeys(
-      // biome-ignore lint/suspicious/noExplicitAny: drizzle stub
       mockDb as any,
       ['wiki-quiet'],
       now
@@ -153,7 +151,6 @@ describe('regen-debounce: filterDebouncedWikiKeys', () => {
     process.env.REGEN_DEBOUNCE_MS = '300000'
     stageDbResponses([[{ wikiKey: 'wiki-empty', dirtySince: null }]])
     const { eligible, debounced } = await filterDebouncedWikiKeys(
-      // biome-ignore lint/suspicious/noExplicitAny: drizzle stub
       mockDb as any,
       ['wiki-empty']
     )
@@ -163,7 +160,6 @@ describe('regen-debounce: filterDebouncedWikiKeys', () => {
 
   it('skips the DB call entirely when the candidate list is empty', async () => {
     const { eligible, debounced } = await filterDebouncedWikiKeys(
-      // biome-ignore lint/suspicious/noExplicitAny: drizzle stub
       mockDb as any,
       []
     )

@@ -42,6 +42,7 @@ const mockSelectChain: any = {
   limit: () => mockSelectChain,
 }
 let mockSelectResolve: unknown[] = []
+// biome-ignore lint/suspicious/noThenProperty: thenable test mock
 mockSelectChain.then = (resolve: (v: unknown) => void) => {
   resolve(mockSelectResolve)
   return Promise.resolve(mockSelectResolve)
