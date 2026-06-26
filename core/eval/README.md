@@ -1,8 +1,8 @@
 # Robin core evals
 
-Evalite + autoevals harness for the fragmentation (Component #7) and
-classification (Component #8) agents. The corpora are hand-authored and
-checked in; rerunning evals shouldn't regenerate them.
+Evalite + autoevals harness for the fragmentation and classification agents.
+The corpora are hand-authored and checked in; rerunning evals shouldn't
+regenerate them.
 
 ## Run
 
@@ -13,7 +13,7 @@ pnpm -F @robin/core eval:watch   # iterative dev loop
 
 `eval` exits non-zero if the average score falls below `scoreThreshold` in
 `evalite.config.ts`. The default threshold is intentionally low until the
-baselines settle — bump it after Phyl has reviewed the corpora.
+baselines settle — raise it once the corpora have been reviewed.
 
 ## Layout
 
@@ -24,7 +24,7 @@ core/eval/
     fixture-loader.ts        # YAML/JSON → typed fixture loader
     scorers.ts               # autoevals re-exports + custom shape scorer
   fragmentation/
-    fixtures/*.json          # 20 hand-crafted entries (Component #7 corpus)
+    fixtures/*.json          # 20 hand-crafted entries (eval corpus)
     fragmentation.eval.ts    # evalite suite
   classification/
     fixtures/*.json          # 20 hand-crafted fragments (eval corpus)
