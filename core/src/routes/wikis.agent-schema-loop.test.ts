@@ -150,6 +150,7 @@ function selectChainMock(rows: unknown[]) {
   chain.from = vi.fn().mockReturnValue(chain)
   chain.where = vi.fn().mockReturnValue(chain)
   chain.limit = vi.fn().mockResolvedValue(rows)
+  // biome-ignore lint/suspicious/noThenProperty: thenable test mock
   chain.then = (resolve: (v: unknown) => void) => resolve(rows)
   chain.orderBy = vi.fn().mockReturnValue(chain)
   return chain

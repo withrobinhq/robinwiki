@@ -146,9 +146,9 @@ adminBackfillRoutes.post('/wiki-agent-schema', async (c) => {
     jobId,
     scope,
     wikiKey: wikiKey ?? null,
-    ok: result!.ok,
-    failed: result!.failed,
-    scanned: result!.scanned,
+    ok: result?.ok ?? 0,
+    failed: result?.failed ?? 0,
+    scanned: result?.scanned ?? 0,
     durationMs,
   })
 })
