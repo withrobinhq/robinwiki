@@ -72,11 +72,16 @@ For a full `log_entry`, the stages are:
 3. **Classify** — for each fragment, the system runs three sub-steps:
    - **Entity extraction** (*Elfie*) surfaces every person-like mention and
      splits it into known matches versus new candidates.
-   - **Wiki classification** (*Marcel*) proposes which wiki each fragment
-     belongs to, with a confidence score and the verbatim citation spans the
-     fragment matched on. A relevance scorer (*Judge*) gates weak matches.
-   - Fragments above the confidence threshold (`WIKI_CLASSIFY_THRESHOLD`,
-     default `0.65`) get a `FRAGMENT_IN_WIKI` edge.
+   - **Wiki classification** routes each fragment by cosine similarity to
+     candidate wikis, in two tiers (`core/src/lib/regen.ts`). A fragment whose
+     similarity clears `AUTO_FILE_THRESHOLD` (`0.8`) is filed immediately with
+     no LLM call; one in the middle band (≥ `LLM_REVIEW_THRESHOLD`, `0.5`) is
+     sent to an LLM judge (*Marcel*) that decides placement and returns the
+     verbatim citation spans it matched on; anything below `0.5` is skipped.
+     The judge's own confidence is graded against `STRONG_SIGNAL_THRESHOLD`
+     (`0.7`) and recorded on the edge as a strong or weak signal.
+   - Each accepted match becomes a `FRAGMENT_IN_WIKI` edge, with the match
+     score (and, for the top match, the citation spans) carried on its `attrs`.
 4. **Regen** — wikis that gained fragments are regenerated. The writer agent
    (*Quill*) rewrites the wiki body from its attached fragments using a
    type-specific prompt, preserving prior edits and emitting citations.
