@@ -138,7 +138,6 @@ describe('getRegenStatus - snapshot assembly', () => {
       ],
     ])
 
-    // biome-ignore lint/suspicious/noExplicitAny: drizzle stub
     const snap = await getRegenStatus(mockDb as any, { recentLimit: 5 })
 
     expect(snap.debounceMs).toBe(300_000)
@@ -170,7 +169,6 @@ describe('getRegenStatus - snapshot assembly', () => {
       [],
     ])
 
-    // biome-ignore lint/suspicious/noExplicitAny: drizzle stub
     const snap = await getRegenStatus(mockDb as any)
     expect(snap.inFlight).toEqual([])
     expect(Array.isArray(snap.debounced)).toBe(true)
