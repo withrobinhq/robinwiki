@@ -35,7 +35,7 @@ People extraction overhaul, quarantine model, settings shell, graph observabilit
 - `source_client` columns on `fragments`, `wikis`, `wiki_types`, `groups` tables. All audit-log writers converted from `detail.source_client` JSON to direct column writes. `AuditDetail` type guard prevents regression.
 - `rawMentionsSeen` and `dropRatePct` telemetry on entity-extract pipeline events, surfacing the real LLM drop rate for people extraction.
 - Shared `resolveOrDrop` helper unifies the worker pipeline and MCP `log_fragment` paths for person resolution. No more behavioral divergence between the two ingest paths.
-- `docs/architecture/wiki-state.md`, `docs/architecture/people-quarantine.md`, `docs/architecture/observability.md`, `docs/architecture/citation-rendering.md`, `docs/architecture/seed-data.md`, `docs/operator-guide/settings.md`.
+- Architecture docs for wiki state, people quarantine, observability, citation rendering, and seed data (now consolidated into `docs/ARCHITECTURE.md`), plus `docs/operator-guide/settings.md`.
 
 ### Changed
 
@@ -101,7 +101,7 @@ First feature-complete Robin release. Adds AI cost telemetry, the wiki retrieval
 
 #### Knowledge graph and retrieval substrate
 - `@robin/graph` workspace package with utilities and a typed edge adapter.
-- `wiki_agent_schema` table holding retrieval-optimized representations distinct from the human-edited wiki body. See `docs/architecture/wiki-agent-schema.md`.
+- `wiki_agent_schema` table holding retrieval-optimized representations distinct from the human-edited wiki body. See `docs/ARCHITECTURE.md`.
 - `wiki_types.internal_framing` column.
 - HyDE retrieval-index generator wired into regen. Synthetic example fragments per wiki improve cosine retrieval over the prose body alone.
 - Retrieval cutover: search and the classifier read `wiki_agent_schema` first, with legacy fallback.
