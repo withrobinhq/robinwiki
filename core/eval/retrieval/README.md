@@ -12,9 +12,8 @@ v1 golden set used to gate ranking changes (Wave G6).
 
 ## Status
 
-Stream D ships the eval-runner harness (D2). Until that lands, this
-directory holds the inputs as raw fixtures. Once D2 ships, wire the
-fixture loader into evalite via:
+Until the eval-runner harness is wired up, this directory holds the inputs
+as raw fixtures. To run them, wire the fixture loader into evalite via:
 
 ```ts
 import corpus from './corpus.json'
