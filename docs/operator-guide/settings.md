@@ -77,8 +77,8 @@ the last time the backfill ran and its outcome.
 Pending persons are visible to operators in the Settings People panel
 and in the QuarantineTopbar on their wiki page. They are excluded from:
 
-- hybrid search (Stream P filters by status='verified').
-- Quill citations.
+- hybrid search (which filters to `status='verified'`).
+- wiki citations.
 - automatic wiki regen involvement.
 
 Approving flips the row to status='verified' and brings the person back
