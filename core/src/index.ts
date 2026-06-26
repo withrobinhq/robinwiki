@@ -169,7 +169,7 @@ app.get('/', (c) => {
     )
   const wikiBlock = wikiUrl
     ? `<p>Your Robin wiki is at <a href="${esc(wikiUrl)}">${esc(wikiUrl)}</a>. Visit it to get started.</p>`
-    : `<p>Your Robin wiki origin is not configured yet — set <code>WIKI_ORIGIN</code> in your env vars.</p>`
+    : '<p>Your Robin wiki origin is not configured yet — set <code>WIKI_ORIGIN</code> in your env vars.</p>'
   return c.html(`<!DOCTYPE html>
 <html lang="en">
 <head>
